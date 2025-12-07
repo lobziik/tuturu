@@ -39,17 +39,6 @@ export interface IceServerConfig {
 }
 
 /**
- * Server configuration
- */
-export interface ServerConfig {
-  port: number;
-  turnUsername?: string;
-  turnPassword?: string;
-  turnRealm?: string;
-  externalIp?: string;
-}
-
-/**
  * Error types for explicit failure handling
  */
 export class SignalingError extends Error {

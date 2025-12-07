@@ -3,12 +3,12 @@ import type { ServerWebSocket } from 'bun';
 import {
   type Message,
   type ClientData,
-  type ServerConfig,
   type IceServerConfig,
   InvalidPinError,
   RoomFullError,
   InvalidMessageError,
 } from './types';
+import { config, isTurnConfigured } from './config';
 
 /**
  * Client connection information (server-side)
@@ -29,17 +29,6 @@ interface Room {
   clients: Client[];
   createdAt: number;
 }
-
-/**
- * Server configuration from environment variables
- */
-const config: ServerConfig = {
-  port: parseInt(process.env.BUN_PORT || '3000'),
-  turnUsername: process.env.TURN_USERNAME,
-  turnPassword: process.env.TURN_PASSWORD,
-  turnRealm: process.env.TURN_REALM,
-  externalIp: process.env.EXTERNAL_IP,
-};
 
 /**
  * Active rooms: Map<PIN, Room>
@@ -192,19 +181,20 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
         addClientToRoom(room, client);
 
         // Send ICE server configuration
-        const iceServers: IceServerConfig[] = [
-          { urls: 'stun:stun.l.google.com:19302' },
-        ];
+        // STUN servers from config (validated and parsed)
+        const iceServers: IceServerConfig[] = config.stunServers.map((url) => ({
+          urls: url,
+        }));
 
         // Add TURN server if configured
-        if (config.turnUsername && config.turnPassword && config.externalIp) {
+        if (isTurnConfigured()) {
           iceServers.push({
             urls: [
               `turn:${config.externalIp}:3478?transport=udp`,
               `turn:${config.externalIp}:3478?transport=tcp`,
             ],
-            username: config.turnUsername,
-            credential: config.turnPassword,
+            username: config.turnUsername!,
+            credential: config.turnPassword!,
           });
         }
 
@@ -297,7 +287,7 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
 /**
  * Start HTTP and WebSocket server
  */
-const server = serve({
+const server = serve<ClientData>({
   port: config.port,
 
   fetch(req, server) {
@@ -357,17 +347,8 @@ const server = serve({
       removeClientFromRoom(client);
     },
 
-    error(ws, error) {
-      const clientData = ws.data as ClientData;
-      console.error(`[WS ERROR] Client ${clientData.id}:`, error);
-
-      // Create full Client object to remove from room
-      const client: Client = {
-        ...clientData,
-        ws,
-      };
-      removeClientFromRoom(client);
-    },
+    // Note: Bun's WebSocket error handler removed from types in recent versions
+    // Errors are handled in message/close handlers
   },
 });
 
@@ -379,9 +360,11 @@ console.log(`
 🚀 Server running on http://localhost:${config.port}
 📞 WebSocket endpoint: ws://localhost:${config.port}/ws
 🏥 Health check: http://localhost:${config.port}/health
+🌍 Environment: ${config.nodeEnv}
 
+📡 STUN servers: ${config.stunServers.length} configured
 ${config.externalIp ? `🌐 External IP: ${config.externalIp}` : '⚠️  No EXTERNAL_IP configured'}
-${config.turnUsername ? `✅ TURN server configured` : '⚠️  No TURN server configured (STUN only)'}
+${isTurnConfigured() ? `✅ TURN server configured` : '⚠️  No TURN server configured (STUN only)'}
 
 Press Ctrl+C to stop
 `);

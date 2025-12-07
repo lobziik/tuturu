@@ -3,7 +3,7 @@
  * Handles WebSocket signaling and WebRTC peer connection
  */
 
-import type { Message, IceServerConfig } from './types';
+import type { ServerToClientMessage, ClientToServerMessage, IceServerConfig } from './types';
 
 // DOM Elements
 const pinEntry = document.getElementById('pin-entry') as HTMLDivElement;
@@ -25,12 +25,10 @@ const errorMessage = document.getElementById('error-message') as HTMLSpanElement
 let ws: WebSocket | null = null;
 let pc: RTCPeerConnection | null = null;
 let localStream: MediaStream | null = null;
-let currentPin: string | null = null;
 let iceServers: IceServerConfig[] | null = null;
 let isMuted = false;
 let isVideoOff = false;
 let isIntentionalClose = false; // Track intentional disconnections
-let hasVideo = false; // Track if video is available
 
 /**
  * FAIL FAST error display
@@ -104,9 +102,9 @@ function connectWebSocket(): Promise<void> {
       }
     };
 
-    ws.onmessage = (event: MessageEvent) => {
-      const message: Message = JSON.parse(event.data);
-      handleSignalingMessage(message);
+    ws.onmessage = (event: MessageEvent<string>) => {
+      const message: ServerToClientMessage = JSON.parse(event.data);
+      void handleSignalingMessage(message);
     };
   });
 }
@@ -133,7 +131,7 @@ function getCloseCodeDescription(code: number): string {
  * Send message via WebSocket
  * FAILS if WebSocket is not connected
  */
-function sendMessage(message: Message): void {
+function sendMessage(message: ClientToServerMessage): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     throw new Error('WebSocket is not connected');
   }
@@ -167,7 +165,6 @@ async function getUserMedia(): Promise<MediaStream> {
 
     localStream = stream;
     localVideo.srcObject = stream;
-    hasVideo = true;
     console.log('[MEDIA] Video + audio stream acquired');
 
     return stream;
@@ -183,8 +180,6 @@ async function getUserMedia(): Promise<MediaStream> {
       });
 
       localStream = stream;
-      hasVideo = false;
-
       // Hide local video element since we don't have video
       localVideo.style.display = 'none';
 
@@ -238,7 +233,10 @@ function createPeerConnection(): RTCPeerConnection {
   // Handle incoming tracks
   pc.ontrack = (event: RTCTrackEvent) => {
     console.log('[RTC] Received remote track:', event.track.kind);
-    remoteVideo.srcObject = event.streams[0];
+    const stream = event.streams[0];
+    if (stream) {
+      remoteVideo.srcObject = stream;
+    }
     updateStatus('Connected');
   };
 
@@ -289,7 +287,7 @@ function createPeerConnection(): RTCPeerConnection {
 /**
  * Handle signaling messages from server
  */
-async function handleSignalingMessage(message: Message): Promise<void> {
+async function handleSignalingMessage(message: ServerToClientMessage): Promise<void> {
   console.log('[WS] Received:', message.type);
 
   try {
@@ -367,8 +365,7 @@ async function handleSignalingMessage(message: Message): Promise<void> {
         // Server sent error - FAIL LOUD
         throw new Error(message.error);
 
-      default:
-        console.warn('[WS] Unknown message type:', message.type);
+      // No default on purpose — union is exhaustive at compile time
     }
   } catch (error) {
     const err = error as Error;
@@ -395,8 +392,6 @@ async function startCall(pin: string): Promise<void> {
       type: 'join-pin',
       pin: pin,
     });
-
-    currentPin = pin;
 
     // Show call interface
     pinEntry.classList.add('hidden');
@@ -447,11 +442,9 @@ function cleanup(): void {
   callInterface.classList.add('hidden');
   pinEntry.classList.remove('hidden');
   pinInput.value = '';
-  currentPin = null;
   iceServers = null;
   isMuted = false;
   isVideoOff = false;
-  hasVideo = false;
 
   // Re-enable video button
   videoBtn.disabled = false;
@@ -546,7 +539,7 @@ pinForm.addEventListener('submit', async (e: SubmitEvent) => {
 
   try {
     await startCall(pin);
-  } catch (error) {
+  } catch {
     connectBtn.disabled = false;
     connectBtn.textContent = 'Connect';
   }

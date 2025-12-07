@@ -1,7 +1,8 @@
 import { serve, file } from 'bun';
 import type { ServerWebSocket } from 'bun';
 import {
-  type Message,
+  type ClientToServerMessage,
+  type ServerToClientMessage,
   type ClientData,
   type IceServerConfig,
   InvalidPinError,
@@ -100,7 +101,10 @@ function removeClientFromRoom(client: Client): void {
 
   // Notify other peer that this client left
   if (room.clients.length === 1) {
-    sendMessage(room.clients[0].ws, { type: 'peer-left' });
+    const remaining = room.clients[0];
+    if (remaining) {
+      sendMessage(remaining.ws, { type: 'peer-left' });
+    }
   }
 
   // Cleanup empty room
@@ -125,7 +129,7 @@ function getPeer(client: Client): Client | null {
  * FAILS LOUD on serialization or send errors
  * Note: Bun's ServerWebSocket doesn't expose readyState, so we rely on send() throwing if closed
  */
-function sendMessage(ws: ServerWebSocket<ClientData>, message: Message): void {
+function sendMessage(ws: ServerWebSocket<ClientData>, message: ServerToClientMessage): void {
   try {
     const json = JSON.stringify(message);
     const result = ws.send(json);
@@ -147,8 +151,8 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
   const clientData = ws.data;
 
   try {
-    // Parse message
-    const message: Message = JSON.parse(rawMessage.toString());
+    // Parse message (validated below)
+    const message = JSON.parse(rawMessage.toString()) as ClientToServerMessage;
 
     if (!message.type) {
       throw new InvalidMessageError('Missing message type');
@@ -215,9 +219,7 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
         break;
       }
 
-      case 'offer':
-      case 'answer':
-      case 'ice-candidate': {
+      case 'offer': {
         // Create full Client object to find peer
         const client: Client = {
           ...clientData,
@@ -232,10 +234,44 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
         }
 
         sendMessage(peer.ws, {
-          type: message.type,
+          type: 'offer',
           data: message.data,
         });
 
+        break;
+      }
+
+      case 'answer': {
+        const client: Client = {
+          ...clientData,
+          ws,
+        };
+        const peer = getPeer(client);
+        if (!peer) {
+          console.warn(`[MSG] No peer found for ${clientData.id} to relay ${message.type}`);
+          return;
+        }
+        sendMessage(peer.ws, {
+          type: 'answer',
+          data: message.data,
+        });
+        break;
+      }
+
+      case 'ice-candidate': {
+        const client: Client = {
+          ...clientData,
+          ws,
+        };
+        const peer = getPeer(client);
+        if (!peer) {
+          console.warn(`[MSG] No peer found for ${clientData.id} to relay ${message.type}`);
+          return;
+        }
+        sendMessage(peer.ws, {
+          type: 'ice-candidate',
+          data: message.data,
+        });
         break;
       }
 
@@ -250,7 +286,7 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
       }
 
       default:
-        throw new InvalidMessageError(`Unknown message type: ${message.type}`);
+        throw new InvalidMessageError('Unknown message type');
     }
   } catch (error) {
     // FAIL LOUD: Send error to client and log
@@ -276,7 +312,7 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
     ) {
       try {
         ws.close(1008, errorMessage);
-      } catch (closeError) {
+      } catch {
         // Connection already closed
         console.error(`[ERROR] Could not close connection for ${clientData.id}: already closed`);
       }
@@ -372,6 +408,7 @@ Press Ctrl+C to stop
 // Cleanup on exit
 process.on('SIGINT', () => {
   console.log('\n\n👋 Shutting down server...');
-  server.stop();
+  // Intentionally ignore the Promise; we're exiting immediately
+  void server.stop();
   process.exit(0);
 });

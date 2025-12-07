@@ -50,7 +50,7 @@ docker-compose up -d
 - **Runtime**: Bun
 - **Signaling**: Native WebSockets
 - **TURN/STUN**: coturn
-- **Frontend**: Vanilla JavaScript
+- **Frontend**: TypeScript, built with bun
 - **Deployment**: Docker Compose
 
 ## Use Case

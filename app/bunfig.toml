@@ -1,3 +1,5 @@
+telemetry = false
+
 [build]
 # Build configuration
 target = "bun"

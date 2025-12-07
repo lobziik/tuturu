@@ -1,25 +1,28 @@
 /**
- * Message types for WebSocket signaling
+ * WebSocket signaling message types
+ * Split into direction-specific unions for strict typing
  */
-export type MessageType =
-  | 'join-pin'
-  | 'offer'
-  | 'answer'
-  | 'ice-candidate'
-  | 'leave'
-  | 'peer-joined'
-  | 'peer-left'
-  | 'error';
+export type ClientToServerMessage =
+  | { type: 'join-pin'; pin: string }
+  | { type: 'offer'; data: RTCSessionDescriptionInit }
+  | { type: 'answer'; data: RTCSessionDescriptionInit }
+  | { type: 'ice-candidate'; data: RTCIceCandidateInit }
+  | { type: 'leave' };
 
-/**
- * Base message structure for WebSocket communication
- */
-export interface Message {
-  type: MessageType;
-  pin?: string;
-  data?: any;
-  error?: string;
+export interface IceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
 }
+
+export type ServerToClientMessage =
+  | { type: 'join-pin'; data: { iceServers: IceServerConfig[] } }
+  | { type: 'peer-joined' }
+  | { type: 'offer'; data: RTCSessionDescriptionInit }
+  | { type: 'answer'; data: RTCSessionDescriptionInit }
+  | { type: 'ice-candidate'; data: RTCIceCandidateInit }
+  | { type: 'peer-left' }
+  | { type: 'error'; error: string };
 
 /**
  * Client data stored in WebSocket
@@ -32,11 +35,7 @@ export interface ClientData {
 /**
  * ICE server configuration
  */
-export interface IceServerConfig {
-  urls: string | string[];
-  username?: string;
-  credential?: string;
-}
+// Note: `IceServerConfig` moved above to allow use in ServerToClientMessage
 
 /**
  * Error types for explicit failure handling

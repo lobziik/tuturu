@@ -62,9 +62,9 @@ function loadConfig() {
   if (!parseResult.success) {
     // FAIL FAST with detailed error messages
     console.error('[CONFIG ERROR] Invalid configuration:');
-    parseResult.error.errors.forEach((err) => {
-      console.error(`  - ${err.path.join('.')}: ${err.message}`);
-    });
+    for (const issue of parseResult.error.issues) {
+      console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
+    }
     throw new Error(
       `Configuration validation failed. Fix the errors above and restart the server.`
     );

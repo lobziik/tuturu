@@ -2,14 +2,33 @@ import { serve, file } from 'bun';
 import type { ServerWebSocket } from 'bun';
 import {
   type Message,
-  type Client,
-  type Room,
+  type ClientData,
   type ServerConfig,
   type IceServerConfig,
   InvalidPinError,
   RoomFullError,
   InvalidMessageError,
 } from './types';
+
+/**
+ * Client connection information (server-side)
+ * Combines ClientData with Bun's ServerWebSocket reference
+ */
+interface Client {
+  id: string;
+  pin: string;
+  ws: ServerWebSocket<ClientData>;
+}
+
+/**
+ * Room for PIN-based matching
+ * Maximum 2 clients per room for peer-to-peer calls
+ */
+interface Room {
+  pin: string;
+  clients: Client[];
+  createdAt: number;
+}
 
 /**
  * Server configuration from environment variables
@@ -114,14 +133,20 @@ function getPeer(client: Client): Client | null {
 
 /**
  * Send message to WebSocket client
- * FAILS LOUD on serialization errors
+ * FAILS LOUD on serialization or send errors
+ * Note: Bun's ServerWebSocket doesn't expose readyState, so we rely on send() throwing if closed
  */
-function sendMessage(ws: ServerWebSocket<Client>, message: Message): void {
+function sendMessage(ws: ServerWebSocket<ClientData>, message: Message): void {
   try {
     const json = JSON.stringify(message);
-    ws.send(json);
+    const result = ws.send(json);
+
+    // Bun's send() returns a number (bytes sent) or -1 on failure
+    if (result === -1) {
+      throw new Error('WebSocket send failed (connection may be closed)');
+    }
   } catch (error) {
-    throw new Error(`Failed to serialize message: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Failed to send message: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -129,8 +154,8 @@ function sendMessage(ws: ServerWebSocket<Client>, message: Message): void {
  * Handle incoming WebSocket message
  * FAILS FAST on invalid messages
  */
-function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer): void {
-  const client = ws.data;
+function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buffer): void {
+  const clientData = ws.data;
 
   try {
     // Parse message
@@ -140,7 +165,7 @@ function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer)
       throw new InvalidMessageError('Missing message type');
     }
 
-    console.log(`[MSG] ${client.id} -> ${message.type}`);
+    console.log(`[MSG] ${clientData.id} -> ${message.type}`);
 
     switch (message.type) {
       case 'join-pin': {
@@ -155,7 +180,13 @@ function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer)
         const room = getOrCreateRoom(message.pin);
 
         // Update client's PIN
-        client.pin = message.pin;
+        clientData.pin = message.pin;
+
+        // Create full Client object with WebSocket reference
+        const client: Client = {
+          ...clientData,
+          ws,
+        };
 
         // Add client to room (fails if full)
         addClientToRoom(room, client);
@@ -183,10 +214,12 @@ function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer)
         });
 
         // Notify peer if they're already in the room
+        // Only the FIRST peer (already in room) should create the offer
         const peer = getPeer(client);
         if (peer) {
           sendMessage(peer.ws, { type: 'peer-joined' });
-          sendMessage(ws, { type: 'peer-joined' });
+          // Note: New peer (ws) does NOT receive peer-joined
+          // They will wait for the incoming offer from the first peer
         }
 
         break;
@@ -195,10 +228,16 @@ function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer)
       case 'offer':
       case 'answer':
       case 'ice-candidate': {
+        // Create full Client object to find peer
+        const client: Client = {
+          ...clientData,
+          ws,
+        };
+
         // Relay message to peer
         const peer = getPeer(client);
         if (!peer) {
-          console.warn(`[MSG] No peer found for ${client.id} to relay ${message.type}`);
+          console.warn(`[MSG] No peer found for ${clientData.id} to relay ${message.type}`);
           return;
         }
 
@@ -211,6 +250,11 @@ function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer)
       }
 
       case 'leave': {
+        // Create full Client object to remove from room
+        const client: Client = {
+          ...clientData,
+          ws,
+        };
         removeClientFromRoom(client);
         break;
       }
@@ -221,12 +265,18 @@ function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer)
   } catch (error) {
     // FAIL LOUD: Send error to client and log
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error(`[ERROR] ${client.id}: ${errorMessage}`);
+    console.error(`[ERROR] ${clientData.id}: ${errorMessage}`);
 
-    sendMessage(ws, {
-      type: 'error',
-      error: errorMessage,
-    });
+    // Only send error message if WebSocket is still open
+    try {
+      sendMessage(ws, {
+        type: 'error',
+        error: errorMessage,
+      });
+    } catch (sendError) {
+      // WebSocket already closed - just log
+      console.error(`[ERROR] Could not send error to ${clientData.id}: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
+    }
 
     // Close connection on critical errors
     if (
@@ -234,7 +284,12 @@ function handleMessage(ws: ServerWebSocket<Client>, rawMessage: string | Buffer)
       error instanceof RoomFullError ||
       error instanceof InvalidMessageError
     ) {
-      ws.close(1008, errorMessage);
+      try {
+        ws.close(1008, errorMessage);
+      } catch (closeError) {
+        // Connection already closed
+        console.error(`[ERROR] Could not close connection for ${clientData.id}: already closed`);
+      }
     }
   }
 }
@@ -265,7 +320,7 @@ const server = serve({
         data: {
           id: generateClientId(),
           pin: '',
-        } as Omit<Client, 'ws'>,
+        } as ClientData,
       });
 
       if (!upgraded) {
@@ -282,8 +337,8 @@ const server = serve({
 
   websocket: {
     open(ws) {
-      const client = ws.data as Client;
-      console.log(`[WS] Client ${client.id} connected`);
+      const clientData = ws.data as ClientData;
+      console.log(`[WS] Client ${clientData.id} connected`);
     },
 
     message(ws, message) {
@@ -291,14 +346,26 @@ const server = serve({
     },
 
     close(ws) {
-      const client = ws.data as Client;
-      console.log(`[WS] Client ${client.id} disconnected`);
+      const clientData = ws.data as ClientData;
+      console.log(`[WS] Client ${clientData.id} disconnected`);
+
+      // Create full Client object to remove from room
+      const client: Client = {
+        ...clientData,
+        ws,
+      };
       removeClientFromRoom(client);
     },
 
     error(ws, error) {
-      const client = ws.data as Client;
-      console.error(`[WS ERROR] Client ${client.id}:`, error);
+      const clientData = ws.data as ClientData;
+      console.error(`[WS ERROR] Client ${clientData.id}:`, error);
+
+      // Create full Client object to remove from room
+      const client: Client = {
+        ...clientData,
+        ws,
+      };
       removeClientFromRoom(client);
     },
   },

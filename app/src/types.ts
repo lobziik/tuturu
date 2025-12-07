@@ -22,22 +22,11 @@ export interface Message {
 }
 
 /**
- * Client connection information
+ * Client data stored in WebSocket
  */
-export interface Client {
-  ws: WebSocket;
-  pin: string;
+export interface ClientData {
   id: string;
-}
-
-/**
- * Room for PIN-based matching
- * Maximum 2 clients per room for peer-to-peer calls
- */
-export interface Room {
   pin: string;
-  clients: Client[];
-  createdAt: number;
 }
 
 /**

@@ -77,38 +77,51 @@ bun run build && bun run dev
 
 ### Connection Flow
 
-1. Both users enter same 6-digit PIN
-2. WebSocket signaling matches users by PIN
-3. WebRTC negotiation (SDP offer/answer exchange via WebSocket)
-4. ICE candidates exchanged (try STUN first for direct P2P)
-5. If direct connection fails, fall back to TURN relay
-6. Media streams established
+1. **User A joins**: Enters PIN → WebSocket connects → Receives ICE servers → Waits for peer
+2. **User B joins**: Enters PIN → WebSocket connects → Receives ICE servers
+3. **Server notifies User A** (first peer): Sends `peer-joined` message
+4. **User A creates offer**: Creates RTCPeerConnection → Generates offer → Sends to User B
+5. **User B receives offer**: Creates RTCPeerConnection → Sets remote description → Creates answer → Sends to User A
+6. **User A receives answer**: Sets remote description → Connection establishing
+7. **ICE candidates exchanged**: Both peers exchange candidates (STUN for direct P2P, TURN fallback if needed)
+8. **Media streams established**: Video/audio flowing peer-to-peer (or via TURN relay)
+
+**Important**: Only the first peer creates the offer to avoid WebRTC "glare condition" (both peers creating offers simultaneously)
 
 ### Key Components
 
 **app/src/types.ts**: Shared TypeScript types:
 - `Message` - WebSocket message types
-- `Client` - Client connection info
-- `Room` - PIN-based room structure
+- `ClientData` - Client data stored in WebSocket (`id`, `pin`)
 - `IceServerConfig` - STUN/TURN configuration
-- Custom error types (InvalidPinError, RoomFullError, etc.)
+- Custom error types (InvalidPinError, RoomFullError, InvalidMessageError)
+
+**app/src/server.ts**: Server-specific types (not exported):
+- `Client` - Full client with `ServerWebSocket<ClientData>` reference
+- `Room` - PIN-based room with array of `Client[]`
 
 **app/src/server.ts**: WebSocket signaling server (TypeScript):
-- `join-pin` - User joins with PIN
-- `offer` - WebRTC offer from caller
-- `answer` - WebRTC answer from callee
-- `ice-candidate` - ICE candidate exchange
+- `join-pin` - User joins with PIN, receives ICE server config
+- `peer-joined` - Sent to FIRST peer only (triggers offer creation)
+- `offer` - WebRTC offer relayed from first peer to second peer
+- `answer` - WebRTC answer relayed from second peer to first peer
+- `ice-candidate` - ICE candidate exchange (relayed between peers)
 - `leave` - User disconnects
-- Room management (max 2 clients per PIN)
+- Room management (max 2 clients per PIN, enforced via RoomFullError)
 - ICE server configuration (STUN + TURN when configured)
+- **Glare prevention**: Only first peer receives `peer-joined`, avoiding simultaneous offers
 
 **app/src/client.ts**: WebRTC client (TypeScript, bundled to public/client.js):
 - WebSocket client connection
-- RTCPeerConnection setup
-- getUserMedia for camera/mic
-- ICE candidate handling
+- RTCPeerConnection setup (created when needed, not on join)
+- getUserMedia for camera/mic (audio fallback if no camera)
+- Offer/Answer handling:
+  - On `peer-joined`: Creates offer (first peer only)
+  - On `offer`: Creates answer (second peer)
+  - On `answer`: Sets remote description (first peer)
+- ICE candidate handling (all candidates relayed)
 - Error tracking (intentional vs unexpected disconnections)
-- Connection state management
+- Connection state management (connecting, connected, disconnected, failed)
 
 **Build Process**:
 - Client TypeScript (`src/client.ts`) is bundled by Bun → `public/client.js`
@@ -138,18 +151,26 @@ The codebase follows strict error handling principles:
 ### TypeScript & Build Process
 
 1. **Shared Types**: Import types from `types.ts` in both server and client
-2. **Client Build**: `bun build src/client.ts` bundles to `public/client.js`
-3. **Server Runtime**: Bun runs `src/server.ts` directly (no build needed)
-4. **Source Maps**: External source maps for debugging bundled client
-5. **Type Safety**: All DOM elements, WebRTC, and WebSocket APIs are typed
+2. **Type Architecture**:
+   - `ClientData` (shared): Minimal data stored in WebSocket
+   - `Client` (server-only): `ClientData` + `ServerWebSocket<ClientData>` reference
+   - No `any` types - everything strictly typed
+3. **Client Build**: `bun build src/client.ts` bundles to `public/client.js`
+4. **Server Runtime**: Bun runs `src/server.ts` directly (no build needed)
+5. **Source Maps**: External source maps for debugging bundled client
+6. **Type Safety**: All DOM elements, WebRTC, and WebSocket APIs are typed
 
 ### WebRTC-Specific Considerations
 
 1. **HTTPS/WSS Required**: WebRTC APIs require secure contexts in browsers
-2. **Perfect Negotiation Pattern**: Use W3C recommended pattern for robust offer/answer exchange
+2. **Glare Prevention**: Only first peer creates offer to avoid "glare condition"
+   - Server sends `peer-joined` to first peer only
+   - Second peer waits for incoming offer
+   - Prevents both peers from creating offers simultaneously
 3. **ICE Candidate Handling**: Must relay ALL ICE candidates, not just the first
 4. **Connection State Management**: Handle all RTCPeerConnection states (new, connecting, connected, disconnected, failed, closed)
 5. **Mobile Browser Quirks**: iOS Safari and Chrome Android have different WebRTC implementations
+6. **Audio Fallback**: If no camera available, gracefully fall back to audio-only mode
 
 ### Failure Mode Handling
 

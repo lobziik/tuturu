@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  app:
+    build: ./app
+    container_name: tuturu-app
+    ports:
+      - "${BUN_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - TURN_USERNAME=${TURN_USERNAME}
+      - TURN_PASSWORD=${TURN_PASSWORD}
+      - TURN_REALM=${TURN_REALM}
+      - EXTERNAL_IP=${EXTERNAL_IP}
+    restart: unless-stopped
+    networks:
+      - tuturu-network
+
+  # coturn service - Phase 3
+  # coturn:
+  #   image: coturn/coturn:latest
+  #   container_name: tuturu-coturn
+  #   ports:
+  #     - "3478:3478/udp"
+  #     - "3478:3478/tcp"
+  #     - "5349:5349/tcp"
+  #     - "49152-49200:49152-49200/udp"
+  #   volumes:
+  #     - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+  #   environment:
+  #     - EXTERNAL_IP=${EXTERNAL_IP}
+  #   restart: unless-stopped
+  #   networks:
+  #     - tuturu-network
+
+  # nginx service - Phase 5
+  # nginx:
+  #   build: ./nginx
+  #   container_name: tuturu-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - app
+  #   restart: unless-stopped
+  #   networks:
+  #     - tuturu-network
+
+networks:
+  tuturu-network:
+    driver: bridge

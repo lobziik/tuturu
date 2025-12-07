@@ -1,0 +1,15 @@
+[build]
+# Build configuration
+target = "bun"
+
+[run]
+# Hot reload in development
+hot = true
+
+[install]
+# Package installation settings
+registry = "https://registry.npmjs.org/"
+
+[test]
+# Test configuration (for future use)
+preload = []

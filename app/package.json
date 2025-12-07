@@ -10,7 +10,9 @@
     "start": "bun run src/server.ts",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "lint": "bunx eslint . --ext .ts --max-warnings=0",
-    "lint:fix": "bunx eslint . --ext .ts --fix"
+    "lint:fix": "bunx eslint . --ext .ts --fix",
+    "format": "bunx prettier . --write",
+    "format:check": "bunx prettier . --check"
   },
   "dependencies": {
     "bun": "^1.3.4",

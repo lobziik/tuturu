@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  lint_and_typecheck:
+  lint_typecheck_format:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,6 +25,10 @@ jobs:
         working-directory: app
         run: bun run typecheck
 
-      - name: Lint
+      - name: ESLint
         working-directory: app
         run: bun run lint
+
+      - name: Prettier check
+        working-directory: app
+        run: bun run format:check

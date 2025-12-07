@@ -114,16 +114,26 @@ function connectWebSocket(): Promise<void> {
  */
 function getCloseCodeDescription(code: number): string {
   switch (code) {
-    case 1000: return 'Normal closure';
-    case 1001: return 'Server going away';
-    case 1002: return 'Protocol error';
-    case 1003: return 'Unsupported data type';
-    case 1006: return 'Connection lost (no close frame)';
-    case 1007: return 'Invalid message data';
-    case 1008: return 'Policy violation';
-    case 1009: return 'Message too large';
-    case 1011: return 'Server error';
-    default: return `Unexpected error (code ${code})`;
+    case 1000:
+      return 'Normal closure';
+    case 1001:
+      return 'Server going away';
+    case 1002:
+      return 'Protocol error';
+    case 1003:
+      return 'Unsupported data type';
+    case 1006:
+      return 'Connection lost (no close frame)';
+    case 1007:
+      return 'Invalid message data';
+    case 1008:
+      return 'Policy violation';
+    case 1009:
+      return 'Message too large';
+    case 1011:
+      return 'Server error';
+    default:
+      return `Unexpected error (code ${code})`;
   }
 }
 
@@ -277,7 +287,9 @@ function createPeerConnection(): RTCPeerConnection {
     console.log('[RTC] ICE connection state:', pc!.iceConnectionState);
 
     if (pc!.iceConnectionState === 'failed') {
-      showError('ICE connection failed. Your network may be blocking WebRTC. Try a different network or contact your IT admin.');
+      showError(
+        'ICE connection failed. Your network may be blocking WebRTC. Try a different network or contact your IT admin.',
+      );
     }
   };
 
@@ -397,7 +409,6 @@ async function startCall(pin: string): Promise<void> {
     pinEntry.classList.add('hidden');
     callInterface.classList.remove('hidden');
     pinDisplay.textContent = `PIN: ${pin}`;
-
   } catch (error) {
     const err = error as Error;
     showError(err.message);

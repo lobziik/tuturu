@@ -16,20 +16,14 @@ const configSchema = z.object({
     .max(65535, 'Port must be at most 65535')
     .default(3000),
 
-  nodeEnv: z
-    .enum(['development', 'production', 'test'])
-    .default('development'),
+  nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
 
   // STUN servers (comma-separated list)
   stunServers: z
     .string()
     .default('stun:stun.l.google.com:19302')
     .transform((str) => str.split(',').map((s) => s.trim()))
-    .pipe(
-      z.array(
-        z.string().min(1, 'STUN server URL cannot be empty')
-      )
-    ),
+    .pipe(z.array(z.string().min(1, 'STUN server URL cannot be empty'))),
 
   // TURN server configuration (optional, but all fields required together)
   turnUsername: z.string().min(1).optional(),
@@ -39,7 +33,7 @@ const configSchema = z.object({
     .string()
     .regex(
       /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-      'External IP must be a valid IPv4 address'
+      'External IP must be a valid IPv4 address',
     )
     .optional(),
 });
@@ -66,7 +60,7 @@ function loadConfig() {
       console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
     }
     throw new Error(
-      `Configuration validation failed. Fix the errors above and restart the server.`
+      `Configuration validation failed. Fix the errors above and restart the server.`,
     );
   }
 
@@ -90,7 +84,7 @@ function loadConfig() {
 
     throw new Error(
       `TURN server configuration incomplete. Missing: ${missingFields.join(', ')}. ` +
-      `All TURN fields must be provided together or all omitted.`
+        `All TURN fields must be provided together or all omitted.`,
     );
   }
 
@@ -113,10 +107,5 @@ export type Config = z.infer<typeof configSchema>;
  * Check if TURN server is configured
  */
 export function isTurnConfigured(): boolean {
-  return !!(
-    config.turnUsername &&
-    config.turnPassword &&
-    config.turnRealm &&
-    config.externalIp
-  );
+  return !!(config.turnUsername && config.turnPassword && config.turnRealm && config.externalIp);
 }

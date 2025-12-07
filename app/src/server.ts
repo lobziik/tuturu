@@ -139,7 +139,9 @@ function sendMessage(ws: ServerWebSocket<ClientData>, message: ServerToClientMes
       throw new Error('WebSocket send failed (connection may be closed)');
     }
   } catch (error) {
-    throw new Error(`Failed to send message: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -301,7 +303,9 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
       });
     } catch (sendError) {
       // WebSocket already closed - just log
-      console.error(`[ERROR] Could not send error to ${clientData.id}: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
+      console.error(
+        `[ERROR] Could not send error to ${clientData.id}: ${sendError instanceof Error ? sendError.message : String(sendError)}`,
+      );
     }
 
     // Close connection on critical errors
@@ -331,13 +335,16 @@ const server = serve<ClientData>({
 
     // Health check endpoint
     if (url.pathname === '/health') {
-      return new Response(JSON.stringify({
-        status: 'ok',
-        rooms: rooms.size,
-        timestamp: Date.now(),
-      }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({
+          status: 'ok',
+          rooms: rooms.size,
+          timestamp: Date.now(),
+        }),
+        {
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
     }
 
     // WebSocket upgrade

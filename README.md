@@ -64,7 +64,7 @@ Built for connecting with family and friends in regions with messenger restricti
 
 ## Documentation
 
-See [PROJECT_OUTLINE.md](PROJECT_OUTLINE.md) for complete architecture, development phases, and implementation details.
+See [PROJECT_OUTLINE.md](ai/PROJECT_OUTLINE.md) for complete architecture, development phases, and implementation details.
 
 ## Requirements
 

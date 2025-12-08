@@ -8,6 +8,8 @@ bun.lockb
 # Build artifacts
 app/public/client.js
 app/public/client.js.map
+app/public/index.js
+app/public/index.js.map
 
 # IDE
 .idea/
@@ -32,3 +34,6 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# ai
+ai

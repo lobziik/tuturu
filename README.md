@@ -50,8 +50,17 @@ docker-compose up -d
 - **Runtime**: Bun
 - **Signaling**: Native WebSockets
 - **TURN/STUN**: coturn
-- **Frontend**: TypeScript, built with bun
+- **Frontend**: TypeScript with state machine architecture (8 modular files)
+- **Build**: Single executable with embedded assets (58 MB)
 - **Deployment**: Docker Compose
+
+## Architecture Highlights
+
+- **State Machine Pattern**: Unidirectional data flow with pure reducer (Action → State → Render)
+- **Production Bundling**: Single executable contains Bun runtime + all code + all static assets
+- **No External Dependencies**: Production deployment requires only the compiled binary
+- **Unit Tested**: 25 tests covering all state transitions
+- **Mobile-Friendly**: iOS Safari and Chrome Android compatible
 
 ## Use Case
 
@@ -62,9 +71,31 @@ Built for connecting with family and friends in regions with messenger restricti
 - Restrictive ISPs
 - VPN-unfriendly networks
 
+## Local Development
+
+```bash
+cd app
+bun install
+
+# Development (2 terminals)
+bun run build:watch    # Terminal 1: Watch client changes
+bun run dev            # Terminal 2: Run server with hot reload
+
+# Production build
+bun run build:prod     # Build client + bundle server
+./dist/server          # Run standalone executable
+
+# Testing
+bun test               # Run unit tests (25 tests)
+bun run lint           # Run linter
+bun run typecheck      # Type check
+```
+
 ## Documentation
 
-See [PROJECT_OUTLINE.md](ai/PROJECT_OUTLINE.md) for complete architecture, development phases, and implementation details.
+See [CLAUDE.md](CLAUDE.md) for development guidelines and architecture details.
+
+See [PROJECT_OUTLINE.md](ai/PROJECT_OUTLINE.md) for complete implementation phases.
 
 ## Requirements
 

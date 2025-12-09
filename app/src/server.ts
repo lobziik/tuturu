@@ -1,4 +1,4 @@
-import { serve, file } from 'bun';
+import { serve } from 'bun';
 import type { ServerWebSocket } from 'bun';
 import {
   type ClientToServerMessage,
@@ -10,6 +10,16 @@ import {
   InvalidMessageError,
 } from './types';
 import { config, isTurnConfigured } from './config';
+
+// Embedded static assets (bundled at compile time)
+import indexHtml from '../public/index.html' with { type: 'text' };
+import styles from '../public/styles.css' with { type: 'text' };
+import clientJs from '../public/index.js' with { type: 'text' };
+
+// Type assertions to ensure TypeScript treats these as strings
+const indexHtmlStr = indexHtml as unknown as string;
+const stylesStr = styles as unknown as string;
+const clientJsStr = clientJs as unknown as string;
 
 /**
  * Client connection information (server-side)
@@ -363,9 +373,39 @@ const server = serve<ClientData>({
       return undefined;
     }
 
-    // Serve static files from public/
-    const filePath = url.pathname === '/' ? '/index.html' : url.pathname;
-    return new Response(file(`./public${filePath}`));
+    // Serve embedded static assets
+    if (url.pathname === '/' || url.pathname === '/index.html') {
+      return new Response(indexHtmlStr, {
+        headers: {
+          'Content-Type': 'text/html',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    }
+
+    if (url.pathname === '/styles.css') {
+      return new Response(stylesStr, {
+        headers: {
+          'Content-Type': 'text/css',
+          'Cache-Control': 'public, max-age=86400',
+        },
+      });
+    }
+
+    if (url.pathname === '/index.js') {
+      return new Response(clientJsStr, {
+        headers: {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    }
+
+    // 404 for unknown paths
+    return new Response('Not found', {
+      status: 404,
+      headers: { 'Content-Type': 'text/plain' },
+    });
   },
 
   websocket: {

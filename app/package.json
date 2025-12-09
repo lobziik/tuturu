@@ -6,8 +6,11 @@
   "scripts": {
     "build": "bun build src/client/index.ts --minify --outdir public --target browser --sourcemap=inline",
     "build:watch": "bun build src/client/index.ts --outdir public --target browser --sourcemap=inline --watch",
+    "build:server": "bun build --compile --minify --sourcemap ./src/server.ts --outfile ./dist/server",
+    "build:prod": "bun run build && bun run build:server",
     "dev": "bun run --hot src/server.ts",
     "start": "bun run src/server.ts",
+    "start:prod": "./dist/server",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",

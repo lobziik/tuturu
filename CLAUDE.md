@@ -26,16 +26,25 @@ cd app
 bun install              # Install dependencies
 
 # Build client TypeScript
-bun run build            # Build client once (src/client.ts → public/client.js)
+bun run build            # Build client once (src/client/index.ts → public/index.js)
 bun run build:watch      # Build client in watch mode (rebuilds on changes)
 
+# Build production bundle (single executable)
+bun run build:server     # Bundle server with embedded assets → dist/server
+bun run build:prod       # Build client + bundle server (full production build)
+
 # Run server
-bun run dev              # Run server with hot reload
-bun run start            # Run server in production mode
+bun run dev              # Run server from source with hot reload (development)
+bun run start            # Run server from source (production mode)
+bun run start:prod       # Run bundled executable (dist/server)
 
 # Development workflow (2 terminals)
 # Terminal 1: bun run build:watch
 # Terminal 2: bun run dev
+
+# Production workflow
+bun run build:prod       # Build everything
+./dist/server            # Run single executable (no dependencies!)
 ```
 
 ### Docker Deployment
@@ -111,23 +120,33 @@ bun run build && bun run dev
 - ICE server configuration (STUN + TURN when configured)
 - **Glare prevention**: Only first peer receives `peer-joined`, avoiding simultaneous offers
 
-**app/src/client.ts**: WebRTC client (TypeScript, bundled to public/client.js):
-- WebSocket client connection
-- RTCPeerConnection setup (created when needed, not on join)
-- getUserMedia for camera/mic (audio fallback if no camera)
-- Offer/Answer handling:
-  - On `peer-joined`: Creates offer (first peer only)
-  - On `offer`: Creates answer (second peer)
-  - On `answer`: Sets remote description (first peer)
-- ICE candidate handling (all candidates relayed)
-- Error tracking (intentional vs unexpected disconnections)
-- Connection state management (connecting, connected, disconnected, failed)
+**app/src/client/**: WebRTC client (State Machine Architecture):
+
+Modular architecture with unidirectional data flow:
+- `index.ts` - Entry point, dispatch loop, initialization
+- `state.ts` - State machine (types, actions, pure reducer function)
+- `render.ts` - DOM rendering (single source of truth for UI)
+- `effects.ts` - Side effect orchestration
+- `websocket.ts` - WebSocket connection management
+- `media.ts` - getUserMedia handling (with iOS Safari compatibility)
+- `webrtc.ts` - RTCPeerConnection lifecycle
+- `events.ts` - DOM event listeners
+
+**State Machine Pattern**:
+- **Unidirectional data flow**: Action → Reducer → Side Effects → Render
+- **Pure reducer**: All state transitions explicit and testable
+- **Discriminated unions**: Type-safe screen states (pin-entry, connecting, acquiring-media, waiting-for-peer, negotiating, call, error)
+- **Action logging**: Every state change logged for debugging
+- **No race conditions**: Error timeout properly managed
+- **Mobile-friendly**: iOS Safari constraints preserved (ideal vs exact getUserMedia)
 
 **Build Process**:
-- Client TypeScript (`src/client.ts`) is bundled by Bun → `public/client.js`
-- Server TypeScript (`src/server.ts`) runs directly with Bun (no build needed)
-- Types (`src/types.ts`) are shared between client and server
-- Source maps generated for debugging
+- **Client**: `src/client/index.ts` bundled by Bun → `public/index.js` (106 KB with inline sourcemaps)
+- **Server (Development)**: `src/server.ts` runs directly with Bun (hot reload)
+- **Server (Production)**: `src/server.ts` bundled with embedded assets → `dist/server` (58 MB executable)
+- **Static Assets**: HTML, CSS, and client JS embedded in server executable at compile time
+- **Types**: `src/types.ts` shared between client and server
+- **No external dependencies**: Production executable contains Bun runtime + all assets
 
 ## Development Guidelines
 
@@ -155,10 +174,21 @@ The codebase follows strict error handling principles:
    - `ClientData` (shared): Minimal data stored in WebSocket
    - `Client` (server-only): `ClientData` + `ServerWebSocket<ClientData>` reference
    - No `any` types - everything strictly typed
-3. **Client Build**: `bun build src/client.ts` bundles to `public/client.js`
-4. **Server Runtime**: Bun runs `src/server.ts` directly (no build needed)
-5. **Source Maps**: External source maps for debugging bundled client
-6. **Type Safety**: All DOM elements, WebRTC, and WebSocket APIs are typed
+3. **Client Build**:
+   - `bun build src/client/index.ts` bundles to `public/index.js` (106 KB)
+   - Inline source maps for debugging (Chrome DevTools compatible)
+   - Minified for production
+4. **Server Development**: Bun runs `src/server.ts` directly with hot reload
+5. **Server Production**:
+   - `bun build --compile src/server.ts` creates standalone executable
+   - Static assets (HTML, CSS, JS) embedded using Bun's import attributes
+   - Single 58 MB file containing Bun runtime + all code + all assets
+   - No external file dependencies at runtime
+6. **Asset Embedding**:
+   - Uses ES2025 import attributes: `import html from './file.html' with { type: 'text' }`
+   - Assets baked into executable at compile time
+   - Served from memory (faster than disk I/O)
+7. **Type Safety**: All DOM elements, WebRTC, and WebSocket APIs are typed
 
 ### WebRTC-Specific Considerations
 
@@ -220,16 +250,29 @@ When implementing, test in this order:
 ```
 app/
 ├── src/
-│   ├── server.ts        # WebSocket signaling server (runs directly)
-│   ├── client.ts        # WebRTC client (builds to public/client.js)
-│   └── types.ts         # Shared TypeScript types
+│   ├── client/          # Client state machine architecture
+│   │   ├── index.ts     # Entry point, dispatch loop
+│   │   ├── state.ts     # State machine (types, actions, reducer)
+│   │   ├── state.test.ts # Unit tests for reducer (25 tests)
+│   │   ├── render.ts    # DOM rendering
+│   │   ├── effects.ts   # Side effect orchestration
+│   │   ├── websocket.ts # WebSocket management
+│   │   ├── media.ts     # getUserMedia handling
+│   │   ├── webrtc.ts    # RTCPeerConnection lifecycle
+│   │   └── events.ts    # DOM event listeners
+│   ├── server.ts        # WebSocket signaling server
+│   ├── config.ts        # Server configuration
+│   ├── types.ts         # Shared TypeScript types
+│   └── global.d.ts      # Type declarations for asset imports
 ├── public/
-│   ├── index.html       # Static HTML
-│   ├── styles.css       # Styling
-│   └── client.js        # Generated by build (git-ignored)
-├── package.json         # Scripts: build, build:watch, dev, start
+│   ├── index.html       # Static HTML (embedded in production)
+│   ├── styles.css       # Styling (embedded in production)
+│   └── index.js         # Built client code (git-ignored, embedded in production)
+├── dist/
+│   └── server           # Compiled executable (58 MB, git-ignored)
+├── package.json         # Scripts: build, build:prod, dev, start:prod, test
 ├── bunfig.toml          # Bun configuration
-└── Dockerfile           # Includes build step
+└── Dockerfile           # Multi-stage build with bundled executable
 ```
 
 ## Implementation Phases
@@ -239,10 +282,19 @@ See PROJECT_OUTLINE.md for detailed phases.
 **Completed**:
 - ✅ Phase 1: Basic signaling (WebSocket + PIN matching)
 - ✅ Phase 2: WebRTC integration (PeerConnection, getUserMedia)
-- ✅ Phase 4 (partial): Docker setup for app service
+- ✅ **Frontend Refactor**: State machine architecture (8 modules, 25 unit tests)
+- ✅ **Production Bundling**: Single executable with embedded assets (58 MB)
+- ✅ Phase 4 (partial): Docker setup with bundled executable
 
 **Remaining**:
 - ⏳ Phase 3: TURN server setup (coturn configuration)
 - ⏳ Phase 4 (complete): Full Docker Compose with coturn
 - ⏳ Phase 5: Production setup (SSL, nginx, Let's Encrypt)
 - ⏳ Phase 6: Optimization (reconnection, bandwidth adaptation)
+
+**Recent Enhancements**:
+- **State Machine Pattern**: Predictable state transitions, action logging, pure reducer
+- **Modular Client**: 8 focused modules with single responsibility
+- **Unit Tests**: 25 tests covering all state transitions
+- **Embedded Assets**: Static files baked into executable (no file I/O)
+- **Single Executable**: 58 MB binary with no external dependencies

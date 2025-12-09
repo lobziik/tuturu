@@ -604,7 +604,12 @@ describe('reducer', () => {
      * Expected: previousScreen field populated with state before error
      */
     test('Error state preserves previous screen for context', () => {
-      const previousScreen = { type: 'call' as const, pin: '123456', muted: false, videoOff: false };
+      const previousScreen = {
+        type: 'call' as const,
+        pin: '123456',
+        muted: false,
+        videoOff: false,
+      };
       const state: AppState = {
         ...initialState,
         screen: previousScreen,

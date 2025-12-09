@@ -4,50 +4,72 @@ services:
   app:
     build: ./app
     container_name: tuturu-app
-    ports:
-      - "${BUN_PORT:-3000}:3000"
+    # No port mapping - nginx proxies to internal port 3000
     environment:
-      - NODE_ENV=${NODE_ENV:-development}
+      - NODE_ENV=${NODE_ENV:-production}
+      - BUN_PORT=3000
+      - STUN_SERVERS=${STUN_SERVERS}
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
       - TURN_REALM=${TURN_REALM}
-      - EXTERNAL_IP=${EXTERNAL_IP}
+      - DOMAIN=${DOMAIN}
     restart: unless-stopped
     networks:
       - tuturu-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
-  # coturn service - Phase 3
-  # coturn:
-  #   image: coturn/coturn:latest
-  #   container_name: tuturu-coturn
-  #   ports:
-  #     - "3478:3478/udp"
-  #     - "3478:3478/tcp"
-  #     - "5349:5349/tcp"
-  #     - "49152-49200:49152-49200/udp"
-  #   volumes:
-  #     - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-  #   environment:
-  #     - EXTERNAL_IP=${EXTERNAL_IP}
-  #   restart: unless-stopped
-  #   networks:
-  #     - tuturu-network
+  coturn:
+    image: coturn/coturn:edge-alpine
+    container_name: tuturu-coturn
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./ssl:/etc/ssl/turn:ro
+      - coturn-logs:/var/log/coturn
+    environment:
+      - EXTERNAL_IP=${EXTERNAL_IP}
+      - TURN_USERNAME=${TURN_USERNAME}
+      - TURN_PASSWORD=${TURN_PASSWORD}
+      - TURN_REALM=${TURN_REALM}
+      - DOMAIN=${DOMAIN}
+    restart: unless-stopped
+    command: ["-c", "/etc/coturn/turnserver.conf", "-v"]
 
-  # nginx service - Phase 5
-  # nginx:
-  #   build: ./nginx
-  #   container_name: tuturu-nginx
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx/ssl:/etc/nginx/ssl:ro
-  #   depends_on:
-  #     - app
-  #   restart: unless-stopped
-  #   networks:
-  #     - tuturu-network
+  nginx:
+    image: nginx:alpine
+    container_name: tuturu-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/html:/var/www/html:ro
+      - ./ssl:/etc/ssl/turn:ro
+    environment:
+      - DOMAIN=${DOMAIN}
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - tuturu-network
+    # On Linux, add host.docker.internal to reach coturn on host network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
 
 networks:
   tuturu-network:
     driver: bridge
+
+volumes:
+  coturn-logs:

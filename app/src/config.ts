@@ -29,6 +29,17 @@ const configSchema = z.object({
   turnUsername: z.string().min(1).optional(),
   turnPassword: z.string().min(8, 'TURN password must be at least 8 characters').optional(),
   turnRealm: z.string().min(1).optional(),
+
+  // Domain for TURN server URLs (used for client ICE configuration)
+  domain: z
+    .string()
+    .regex(
+      /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/i,
+      'Domain must be a valid domain name (e.g., example.com)',
+    )
+    .optional(),
+
+  // External IP (for coturn server configuration, not sent to client)
   externalIp: z
     .string()
     .regex(
@@ -50,6 +61,7 @@ function loadConfig() {
     turnUsername: process.env.TURN_USERNAME,
     turnPassword: process.env.TURN_PASSWORD,
     turnRealm: process.env.TURN_REALM,
+    domain: process.env.DOMAIN,
     externalIp: process.env.EXTERNAL_IP,
   });
 
@@ -67,12 +79,7 @@ function loadConfig() {
   const config = parseResult.data;
 
   // Validate TURN configuration: all fields required together or all absent
-  const turnFields = [
-    config.turnUsername,
-    config.turnPassword,
-    config.turnRealm,
-    config.externalIp,
-  ];
+  const turnFields = [config.turnUsername, config.turnPassword, config.turnRealm, config.domain];
   const definedCount = turnFields.filter((f) => f !== undefined).length;
 
   if (definedCount > 0 && definedCount < 4) {
@@ -80,7 +87,7 @@ function loadConfig() {
     if (!config.turnUsername) missingFields.push('TURN_USERNAME');
     if (!config.turnPassword) missingFields.push('TURN_PASSWORD');
     if (!config.turnRealm) missingFields.push('TURN_REALM');
-    if (!config.externalIp) missingFields.push('EXTERNAL_IP');
+    if (!config.domain) missingFields.push('DOMAIN');
 
     throw new Error(
       `TURN server configuration incomplete. Missing: ${missingFields.join(', ')}. ` +
@@ -107,5 +114,5 @@ export type Config = z.infer<typeof configSchema>;
  * Check if TURN server is configured
  */
 export function isTurnConfigured(): boolean {
-  return !!(config.turnUsername && config.turnPassword && config.turnRealm && config.externalIp);
+  return !!(config.turnUsername && config.turnPassword && config.turnRealm && config.domain);
 }

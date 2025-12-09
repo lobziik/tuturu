@@ -202,16 +202,43 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
           urls: url,
         }));
 
-        // Add TURN server if configured
+        // Add TURN servers if configured (DPI-resistant priority order)
         if (isTurnConfigured()) {
+          const domain = `turn.${config.domain}`;
+          const username = config.turnUsername!;
+          const credential = config.turnPassword!;
+
+          // Priority 1: TURNS on 443 (most likely to bypass DPI)
+          // Routes through nginx SNI router to coturn:5349
           iceServers.push({
-            urls: [
-              `turn:${config.externalIp}:3478?transport=udp`,
-              `turn:${config.externalIp}:3478?transport=tcp`,
-            ],
-            username: config.turnUsername!,
-            credential: config.turnPassword!,
+            urls: `turns:${domain}:443?transport=tcp`,
+            username,
+            credential,
           });
+
+          // Priority 2: TURNS on standard TLS port 5349
+          // Direct connection to coturn (fallback if nginx routing fails)
+          iceServers.push({
+            urls: `turns:${domain}:5349?transport=tcp`,
+            username,
+            credential,
+          });
+
+          // Priority 3: TURN TCP on 3478 (unencrypted but standard port)
+          iceServers.push({
+            urls: `turn:${domain}:3478?transport=tcp`,
+            username,
+            credential,
+          });
+
+          // Priority 4: TURN UDP on 3478 (likely blocked in restrictive networks)
+          iceServers.push({
+            urls: `turn:${domain}:3478?transport=udp`,
+            username,
+            credential,
+          });
+
+          console.log(`[ICE] Configured TURN server: ${domain} (4 transports)`);
         }
 
         sendMessage(ws, {

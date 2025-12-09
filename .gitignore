@@ -22,9 +22,13 @@ app/dist/
 # Docker
 docker-compose.override.yml
 
-# SSL Certificates
-nginx/ssl/*.pem
-nginx/ssl/*.key
+# SSL Certificates (Let's Encrypt)
+# Never commit private keys or certificates!
+ssl/
+*.pem
+*.key
+*.crt
+*.csr
 
 # Logs
 *.log

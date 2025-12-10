@@ -122,7 +122,7 @@ obtain_cert() {
 
     # Run certbot in podman container (standalone mode)
     echo "Running certbot..."
-    podman run --rm \
+    if podman run --rm \
         -v "$(pwd)/ssl:/etc/letsencrypt" \
         -p 80:80 \
         certbot/certbot certonly \
@@ -131,22 +131,27 @@ obtain_cert() {
         --agree-tos \
         --email "${LETSENCRYPT_EMAIL}" \
         --no-eff-email \
-        -d "${domain}"
+        -d "${domain}"; then
 
-    # Check if certificate was obtained
-    if [ ! -d "./ssl/live/${domain}" ]; then
-        echo -e "${RED}Failed to obtain certificate for ${domain}${NC}"
+        # Check if certificate was obtained
+        if [ ! -d "./ssl/live/${domain}" ]; then
+            echo -e "${RED}Failed to obtain certificate for ${domain}${NC}"
+            return 1
+        fi
+
+        # Create domain-specific directory structure expected by nginx/coturn
+        mkdir -p "./ssl/${domain}"
+        cp "./ssl/live/${domain}/fullchain.pem" "./ssl/${domain}/fullchain.pem"
+        cp "./ssl/live/${domain}/privkey.pem" "./ssl/${domain}/privkey.pem"
+        chmod 600 "./ssl/${domain}/privkey.pem"
+
+        echo -e "${GREEN}✓ Certificate obtained for ${domain}${NC}"
+        return 0
+    else
+        echo -e "${RED}Certbot command failed for ${domain} (exit code: $?)${NC}"
+        echo "This domain will be skipped. You can re-run the script later."
         return 1
     fi
-
-    # Create domain-specific directory structure expected by nginx/coturn
-    mkdir -p "./ssl/${domain}"
-    cp "./ssl/live/${domain}/fullchain.pem" "./ssl/${domain}/fullchain.pem"
-    cp "./ssl/live/${domain}/privkey.pem" "./ssl/${domain}/privkey.pem"
-    chmod 600 "./ssl/${domain}/privkey.pem"
-
-    echo -e "${GREEN}✓ Certificate obtained for ${domain}${NC}"
-    return 0
 }
 
 # Obtain certificates for all domains
@@ -155,17 +160,17 @@ TOTAL_COUNT=3
 
 # Base domain (cover website)
 if obtain_cert "${DOMAIN}" "true"; then
-    ((SUCCESS_COUNT++))
+    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 fi
 
 # App subdomain
 if obtain_cert "a.${DOMAIN}" "true"; then
-    ((SUCCESS_COUNT++))
+    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 fi
 
 # TURN subdomain
 if obtain_cert "t.${DOMAIN}" "true"; then
-    ((SUCCESS_COUNT++))
+    SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 fi
 
 echo ""

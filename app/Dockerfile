@@ -16,7 +16,7 @@ COPY public/ ./public/
 RUN bun run build
 
 # Build server with embedded assets
-RUN mkdir -p dist && bun run build:server
+RUN mkdir -p dist && bun run build:prod
 
 # Expose port
 EXPOSE 3000

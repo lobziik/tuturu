@@ -48,11 +48,12 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/html:/var/www/html:ro
       - ./ssl:/etc/ssl/turn:ro
     environment:
       - DOMAIN=${DOMAIN}
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
     depends_on:
       - app
     restart: unless-stopped

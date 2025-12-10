@@ -3,7 +3,7 @@ set -e
 
 # tuturu SSL Certificate Setup Script
 # Obtains Let's Encrypt certificates for all required subdomains
-# Uses certbot Docker container (no installation required)
+# Uses certbot podman container (no installation required)
 
 # Colors for output
 RED='\033[0;31m'
@@ -51,8 +51,8 @@ echo ""
 
 echo -e "${YELLOW}This script will obtain Let's Encrypt certificates for:${NC}"
 echo "  1. ${DOMAIN} (cover website)"
-echo "  2. app.${DOMAIN} (Bun signaling app)"
-echo "  3. turn.${DOMAIN} (coturn TURN server)"
+echo "  2. a.${DOMAIN} (Bun signaling app)"
+echo "  3. t.${DOMAIN} (coturn TURN server)"
 echo ""
 
 echo -e "${YELLOW}Prerequisites:${NC}"
@@ -60,8 +60,8 @@ echo "  - Ports 80 and 443 must be accessible from the internet"
 echo "  - DNS records must point to this server's IP (${SERVER_IP}):"
 echo ""
 echo "    ${DOMAIN}          A    ${SERVER_IP}"
-echo "    app.${DOMAIN}      A    ${SERVER_IP}"
-echo "    turn.${DOMAIN}     A    ${SERVER_IP}"
+echo "    a.${DOMAIN}      A    ${SERVER_IP}"
+echo "    t.${DOMAIN}     A    ${SERVER_IP}"
 echo ""
 echo -e "${YELLOW}Important:${NC}"
 echo "  - If nginx is running, it will be stopped temporarily"
@@ -80,10 +80,10 @@ fi
 mkdir -p ./ssl
 
 # Stop nginx if running (needs port 80)
-if docker ps --format '{{.Names}}' | grep -q tuturu-nginx; then
+if podman ps --format '{{.Names}}' | grep -q tuturu-nginx; then
     echo ""
     echo -e "${YELLOW}Stopping nginx container to free port 80...${NC}"
-    docker stop tuturu-nginx
+    podman stop tuturu-nginx
 fi
 
 # Function to obtain certificate for a domain
@@ -120,9 +120,9 @@ obtain_cert() {
         fi
     fi
 
-    # Run certbot in Docker container (standalone mode)
+    # Run certbot in podman container (standalone mode)
     echo "Running certbot..."
-    docker run --rm \
+    podman run --rm \
         -v "$(pwd)/ssl:/etc/letsencrypt" \
         -p 80:80 \
         certbot/certbot certonly \
@@ -182,11 +182,11 @@ if [ $SUCCESS_COUNT -eq $TOTAL_COUNT ]; then
     echo "Next steps:"
     echo "  1. Review your .env configuration"
     echo "  2. Start all services:"
-    echo "       docker-compose up -d"
+    echo "       podman-compose up -d"
     echo "  3. Check service status:"
-    echo "       docker-compose ps"
+    echo "       podman-compose ps"
     echo "  4. View logs:"
-    echo "       docker-compose logs -f"
+    echo "       podman-compose logs -f"
     echo ""
     echo "Certificate renewal:"
     echo "  Certificates expire in 90 days. To renew:"

@@ -49,6 +49,14 @@ export function createPeerConnection(state: AppState, dispatch: Dispatch): RTCPe
         console.log('[RTC] Added local track:', track.kind);
       }
     });
+
+    // If no video track, add recvonly transceiver to receive peer's video
+    // Without this, audio-only callers would create offers without video m-line,
+    // preventing peers with cameras from sending their video
+    if (state.localStream.getVideoTracks().length === 0) {
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      console.log('[RTC] Added recvonly video transceiver (audio-only mode)');
+    }
   }
 
   /**

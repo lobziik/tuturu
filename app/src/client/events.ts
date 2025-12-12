@@ -31,6 +31,7 @@ export function setupEventListeners(dispatch: Dispatch): void {
   const pinInput = document.getElementById('pin-input') as HTMLInputElement;
   const muteBtn = document.getElementById('mute-btn') as HTMLButtonElement;
   const videoBtn = document.getElementById('video-btn') as HTMLButtonElement;
+  const flipBtn = document.getElementById('flip-btn') as HTMLButtonElement;
   const hangupBtn = document.getElementById('hangup-btn') as HTMLButtonElement;
 
   /**
@@ -97,6 +98,23 @@ export function setupEventListeners(dispatch: Dispatch): void {
    */
   videoBtn.addEventListener('click', () => {
     dispatch({ type: 'TOGGLE_VIDEO' });
+  });
+
+  /**
+   * Flip camera button handler
+   * Switches between front and back cameras
+   *
+   * @remarks
+   * State machine handles:
+   * - Ignoring flip in non-call states
+   * Effects module handles:
+   * - Applying new facingMode constraints to video track
+   * - Replacing track in peer connection
+   * Render module handles:
+   * - Showing/hiding button based on camera count
+   */
+  flipBtn.addEventListener('click', () => {
+    dispatch({ type: 'FLIP_CAMERA' });
   });
 
   /**

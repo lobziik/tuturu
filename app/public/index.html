@@ -34,7 +34,7 @@
 
       <!-- Call Interface -->
       <div id="call-interface" class="hidden">
-        <div class="status-bar">
+        <div class="status-bar" id="status-bar">
           <span id="status-text">Connecting...</span>
           <span id="pin-display"></span>
         </div>
@@ -56,6 +56,11 @@
           <button id="video-btn" class="control-btn" title="Video On/Off">
             <span class="icon">📹</span>
             <span class="label">Video</span>
+          </button>
+
+          <button id="flip-btn" class="control-btn" title="Flip Camera">
+            <span class="icon">🔄</span>
+            <span class="label">Flip</span>
           </button>
 
           <button id="hangup-btn" class="control-btn danger" title="Hang Up">

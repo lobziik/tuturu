@@ -552,6 +552,37 @@ describe('reducer', () => {
       expect(newState).toBe(state);
     });
 
+    /**
+     * FLIP_CAMERA returns same state (no state mutation)
+     * Side effects handle actual camera switching
+     *
+     * Expected: State unchanged, camera flip handled in media.ts
+     */
+    test('FLIP_CAMERA returns same state in call screen', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        localStream: {} as MediaStream,
+      };
+
+      const action: Action = { type: 'FLIP_CAMERA' };
+      const newState = reducer(state, action);
+
+      expect(newState).toBe(state); // State unchanged - side effect handles flip
+    });
+
+    test('FLIP_CAMERA is ignored in non-call states', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: { type: 'waiting-for-peer', pin: '123456' },
+      };
+
+      const action: Action = { type: 'FLIP_CAMERA' };
+      const newState = reducer(state, action);
+
+      expect(newState).toBe(state);
+    });
+
     test('HANGUP returns to pin-entry', () => {
       const state: AppState = {
         ...initialState,

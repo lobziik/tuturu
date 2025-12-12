@@ -164,6 +164,7 @@ export type Action =
   | { type: 'SUBMIT_PIN'; pin: string }
   | { type: 'TOGGLE_MUTE' }
   | { type: 'TOGGLE_VIDEO' }
+  | { type: 'FLIP_CAMERA' }
   | { type: 'HANGUP' }
   | { type: 'DISMISS_ERROR' }
 
@@ -464,6 +465,13 @@ export function reducer(state: AppState, action: Action): AppState {
           videoOff: !state.screen.videoOff,
         },
       };
+    }
+
+    case 'FLIP_CAMERA': {
+      // No state change needed - side effect handles camera switch
+      // We could track facingMode in state, but it's simpler to let media.ts manage it
+      if (state.screen.type !== 'call') return state;
+      return state;
     }
 
     case 'HANGUP': {

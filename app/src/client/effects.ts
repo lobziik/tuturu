@@ -5,7 +5,7 @@
 
 import type { AppState, Action } from './state';
 import { createWebSocket, setupWebSocketHandlers, sendMessage, closeWebSocket } from './websocket';
-import { getUserMedia, stopMediaStream } from './media';
+import { getUserMedia, stopMediaStream, flipCamera } from './media';
 import {
   createPeerConnection,
   closePeerConnection,
@@ -138,6 +138,11 @@ export function handleSideEffects(
       videoTrack.enabled = !newState.screen.videoOff;
       console.log('[MEDIA] Video', newState.screen.videoOff ? 'off' : 'on');
     }
+  }
+
+  // ===== FLIP CAMERA → Switch camera facing mode =====
+  if (action.type === 'FLIP_CAMERA' && newState.localStream) {
+    void flipCamera(newState.localStream, newState.pc, dispatch);
   }
 
   // ===== HANGUP → Send leave message and cleanup =====

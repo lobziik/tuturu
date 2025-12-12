@@ -284,8 +284,22 @@ footer a:hover {
   display: none !important;
 }
 
-/* Mobile Responsive */
-@media (max-width: 768px) {
+/* Flip button - hidden by default, shown via JS when multiple cameras */
+#flip-btn {
+  display: none;
+}
+
+#flip-btn.visible {
+  display: flex;
+}
+
+#flip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Mobile Responsive - Non-call screens */
+@media (max-width: 767px) {
   header h1 {
     font-size: 2rem;
   }
@@ -293,27 +307,146 @@ footer a:hover {
   .card {
     padding: 1.5rem;
   }
+}
 
-  #local-video {
-    width: 120px;
-    bottom: 0.5rem;
-    right: 0.5rem;
+/* Mobile Full-Screen Call Mode */
+@media (max-width: 767px) {
+  /* Full-screen call interface */
+  #call-interface.mobile-call {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    z-index: 100;
+    background: #000;
+    padding: 0;
+    margin: 0;
   }
 
-  .controls {
-    flex-wrap: wrap;
+  /* Video container fills entire viewport */
+  .mobile-call .video-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: unset;
+    border-radius: 0;
+    margin: 0;
   }
 
-  .control-btn {
-    min-width: 80px;
-    padding: 0.75rem 1rem;
+  /* Remote video fills container */
+  .mobile-call #remote-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
-  .control-btn .icon {
+  /* Local video (PiP) - bottom-right, portrait orientation */
+  .mobile-call #local-video {
+    position: absolute;
+    bottom: 100px; /* Above controls */
+    right: 1rem;
+    left: auto;
+    width: 100px;
+    height: 133px; /* 3:4 portrait ratio */
+    aspect-ratio: 3 / 4;
+    border-radius: 0.75rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    object-fit: cover;
+  }
+
+  /* Status bar overlay at top-right */
+  .mobile-call .status-bar {
+    position: absolute;
+    top: 0;
+    left: auto;
+    right: 0;
+    padding: 1rem;
+    padding-top: env(safe-area-inset-top, 1rem);
+    padding-right: env(safe-area-inset-right, 1rem);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
+    border: none;
+    border-radius: 0;
+    margin: 0;
+    z-index: 10;
+    transition: opacity 0.3s ease-out;
+    text-align: right;
+  }
+
+  .mobile-call .status-bar.hidden-overlay {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .mobile-call .status-bar #pin-display {
     font-size: 1.25rem;
   }
 
-  .control-btn .label {
-    font-size: 0.75rem;
+  .mobile-call .status-bar #status-text {
+    display: none; /* Show only PIN on mobile during call */
+  }
+
+  /* Circular overlay controls at bottom */
+  .mobile-call .controls {
+    position: absolute;
+    bottom: 2rem;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 2rem);
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: 0 1rem;
+    z-index: 10;
+    flex-wrap: nowrap;
+  }
+
+  .mobile-call .control-btn {
+    width: 56px;
+    height: 56px;
+    min-width: unset;
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(30, 41, 59, 0.8);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .mobile-call .control-btn .icon {
+    font-size: 1.25rem;
+  }
+
+  .mobile-call .control-btn .label {
+    display: none; /* Hide labels on mobile */
+  }
+
+  .mobile-call .control-btn.danger {
+    background: rgba(239, 68, 68, 0.9);
+  }
+
+  .mobile-call .control-btn.active {
+    background: rgba(239, 68, 68, 0.8);
+  }
+
+  .mobile-call .control-btn:hover {
+    background: rgba(51, 65, 85, 0.9);
+  }
+
+  .mobile-call .control-btn.danger:hover {
+    background: rgba(220, 38, 38, 0.95);
+  }
+
+  /* Flip button visibility in mobile-call mode */
+  .mobile-call #flip-btn.visible {
+    display: flex;
   }
 }

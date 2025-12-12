@@ -139,4 +139,155 @@ export function stopMediaStream(stream: MediaStream): void {
     track.stop();
     console.log('[MEDIA] Stopped track:', track.kind);
   });
+
+  // Reset facing mode for next call
+  resetFacingMode();
+}
+
+/**
+ * Check if device has multiple video input devices (cameras)
+ * Used to determine whether to show flip camera button
+ *
+ * @returns Promise<boolean> - true if multiple cameras available
+ *
+ * @remarks
+ * Edge Cases:
+ * - Returns false if mediaDevices API unavailable
+ * - Returns false if permission not yet granted (devices enumerated as empty labels)
+ * - Mobile devices typically have 2+ cameras (front/back)
+ * - Desktop may have external webcam + built-in
+ */
+export async function hasMultipleCameras(): Promise<boolean> {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    return false;
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter((device) => device.kind === 'videoinput');
+    return videoInputs.length > 1;
+  } catch (error) {
+    console.warn('[MEDIA] Failed to enumerate devices:', error);
+    return false;
+  }
+}
+
+/**
+ * Current facing mode tracker
+ * Needed because applyConstraints doesn't have a getter for facingMode
+ */
+let currentFacingMode: 'user' | 'environment' = 'user';
+
+/**
+ * Reset facing mode tracker
+ * Called when media stream is stopped (on hangup)
+ */
+export function resetFacingMode(): void {
+  currentFacingMode = 'user';
+}
+
+/**
+ * Flip camera between front and back
+ * Uses MediaStreamTrack.applyConstraints() for efficient switching with getUserMedia fallback
+ *
+ * @param stream - Current MediaStream with video track
+ * @param pc - RTCPeerConnection to update with new track (optional)
+ * @param dispatch - Function to dispatch state machine actions
+ *
+ * @remarks
+ * Implementation Strategy:
+ * 1. Try applyConstraints() first (fastest, no re-acquisition)
+ * 2. Fall back to getUserMedia() if applyConstraints() fails
+ *
+ * iOS Safari Compatibility:
+ * - Some iOS versions don't support applyConstraints() with facingMode
+ * - Fallback to full getUserMedia() re-acquisition
+ *
+ * Track Replacement:
+ * - Must replace track in RTCPeerConnection for peer to see new camera
+ * - Uses RTCRtpSender.replaceTrack() (no renegotiation needed)
+ *
+ * Error Handling:
+ * - Dispatch MEDIA_ERROR with actionable message on failure
+ * - Log warnings for expected failures (device doesn't support constraint)
+ */
+export async function flipCamera(
+  stream: MediaStream,
+  pc: RTCPeerConnection | null,
+  dispatch: Dispatch,
+): Promise<void> {
+  const videoTrack = stream.getVideoTracks()[0];
+
+  if (!videoTrack) {
+    // Audio-only mode - this should never be called, but fail fast if it is
+    dispatch({
+      type: 'MEDIA_ERROR',
+      error: 'Cannot flip camera: No video track available',
+    });
+    return;
+  }
+
+  const newFacingMode: 'user' | 'environment' =
+    currentFacingMode === 'user' ? 'environment' : 'user';
+
+  console.log('[MEDIA] Flipping camera to:', newFacingMode);
+
+  // Strategy 1: Try applyConstraints (efficient, no re-acquisition)
+  try {
+    await videoTrack.applyConstraints({
+      facingMode: { exact: newFacingMode },
+    });
+
+    currentFacingMode = newFacingMode;
+    console.log('[MEDIA] Camera flipped via applyConstraints');
+    return;
+  } catch (constraintError) {
+    console.warn('[MEDIA] applyConstraints failed, falling back to getUserMedia:', constraintError);
+  }
+
+  // Strategy 2: Fallback to full getUserMedia re-acquisition
+  try {
+    // Stop current video track before acquiring new one
+    videoTrack.stop();
+
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { exact: newFacingMode },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false, // Keep existing audio track
+    });
+
+    const newVideoTrack = newStream.getVideoTracks()[0];
+
+    if (!newVideoTrack) {
+      throw new Error('No video track in new stream');
+    }
+
+    // Replace track in original stream
+    stream.removeTrack(videoTrack);
+    stream.addTrack(newVideoTrack);
+
+    // Replace track in peer connection (if connected)
+    if (pc) {
+      const videoSender = pc.getSenders().find((sender) => sender.track?.kind === 'video');
+
+      if (videoSender) {
+        await videoSender.replaceTrack(newVideoTrack);
+        console.log('[MEDIA] Replaced track in peer connection');
+      }
+    }
+
+    currentFacingMode = newFacingMode;
+    console.log('[MEDIA] Camera flipped via getUserMedia fallback');
+  } catch (error) {
+    const err = error as DOMException;
+    console.error('[MEDIA] Failed to flip camera:', err);
+
+    dispatch({
+      type: 'MEDIA_ERROR',
+      error: `Failed to switch camera: ${err.message}. Try again or use current camera.`,
+    });
+  }
 }

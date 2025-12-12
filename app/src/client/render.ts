@@ -4,6 +4,7 @@
  */
 
 import type { AppState } from './state';
+import { hasMultipleCameras } from './media';
 
 /**
  * DOM element references
@@ -13,17 +14,92 @@ const elements = {
   pinEntry: document.getElementById('pin-entry') as HTMLDivElement,
   callInterface: document.getElementById('call-interface') as HTMLDivElement,
   statusText: document.getElementById('status-text') as HTMLSpanElement,
+  statusBar: document.getElementById('status-bar') as HTMLDivElement,
   pinDisplay: document.getElementById('pin-display') as HTMLSpanElement,
   localVideo: document.getElementById('local-video') as HTMLVideoElement,
   remoteVideo: document.getElementById('remote-video') as HTMLVideoElement,
   muteBtn: document.getElementById('mute-btn') as HTMLButtonElement,
   videoBtn: document.getElementById('video-btn') as HTMLButtonElement,
+  flipBtn: document.getElementById('flip-btn') as HTMLButtonElement,
   hangupBtn: document.getElementById('hangup-btn') as HTMLButtonElement,
   errorDisplay: document.getElementById('error-display') as HTMLDivElement,
   errorMessage: document.getElementById('error-message') as HTMLSpanElement,
   connectBtn: document.getElementById('connect-btn') as HTMLButtonElement,
   pinInput: document.getElementById('pin-input') as HTMLInputElement,
 };
+
+/**
+ * Check if viewport is mobile size
+ * Used for conditional rendering of mobile-specific UI
+ */
+function isMobileViewport(): boolean {
+  return window.innerWidth < 768;
+}
+
+/**
+ * Status bar auto-hide timeout ID
+ * Cleared on state transition to prevent orphan timers
+ */
+let statusHideTimeoutId: number | null = null;
+
+/**
+ * Start auto-hide timer for status bar on mobile
+ * Shows status for 3 seconds then fades out
+ */
+function startStatusAutoHide(): void {
+  // Clear any existing timeout
+  if (statusHideTimeoutId !== null) {
+    clearTimeout(statusHideTimeoutId);
+  }
+
+  // Ensure visible initially
+  elements.statusBar.classList.remove('hidden-overlay');
+
+  // Hide after 3 seconds
+  statusHideTimeoutId = window.setTimeout(() => {
+    elements.statusBar.classList.add('hidden-overlay');
+    statusHideTimeoutId = null;
+  }, 3000);
+}
+
+/**
+ * Update flip button visibility based on camera count
+ * Called asynchronously since enumerateDevices is async
+ *
+ * @param state - Current app state
+ */
+async function updateFlipButtonVisibility(state: AppState): Promise<void> {
+  const hasMultiple = await hasMultipleCameras();
+
+  if (hasMultiple && state.screen.type === 'call' && !state.screen.videoOff) {
+    elements.flipBtn.classList.add('visible');
+    elements.flipBtn.disabled = false;
+  } else {
+    elements.flipBtn.classList.remove('visible');
+    elements.flipBtn.disabled = true;
+  }
+}
+
+/**
+ * Handle viewport resize (orientation change, etc.)
+ * Updates mobile/desktop layout accordingly
+ */
+function handleResize(): void {
+  // Only matters during call
+  const callInterface = elements.callInterface;
+  if (callInterface.classList.contains('hidden')) return;
+
+  if (isMobileViewport()) {
+    callInterface.classList.add('mobile-call');
+  } else {
+    callInterface.classList.remove('mobile-call');
+    elements.statusBar.classList.remove('hidden-overlay');
+  }
+}
+
+// Add resize/orientation handlers
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', handleResize);
 
 /**
  * Main render function - synchronizes entire DOM to current state
@@ -41,6 +117,14 @@ const elements = {
  * No manual DOM manipulation elsewhere in the codebase
  */
 export function render(state: AppState): void {
+  // Clear status bar timeout if leaving call screen
+  if (state.screen.type !== 'call' && statusHideTimeoutId !== null) {
+    clearTimeout(statusHideTimeoutId);
+    statusHideTimeoutId = null;
+    elements.statusBar.classList.remove('hidden-overlay');
+    elements.callInterface.classList.remove('mobile-call');
+  }
+
   // Hide all screens first
   elements.pinEntry.classList.add('hidden');
   elements.callInterface.classList.add('hidden');
@@ -172,6 +256,15 @@ function renderCall(state: AppState): void {
   elements.pinDisplay.textContent = `PIN: ${state.screen.pin}`;
   updateStatus('Connected');
 
+  // Toggle mobile full-screen mode
+  if (isMobileViewport()) {
+    elements.callInterface.classList.add('mobile-call');
+    startStatusAutoHide();
+  } else {
+    elements.callInterface.classList.remove('mobile-call');
+    elements.statusBar.classList.remove('hidden-overlay');
+  }
+
   // Update mute button state
   elements.muteBtn.classList.toggle('active', state.screen.muted);
   const muteLabel = elements.muteBtn.querySelector('.label');
@@ -187,16 +280,23 @@ function renderCall(state: AppState): void {
   if (videoIcon) videoIcon.textContent = state.screen.videoOff ? '🚫' : '📹';
 
   // Handle audio-only mode
-  if (state.localStream && state.localStream.getVideoTracks().length === 0) {
+  const isAudioOnly = state.localStream && state.localStream.getVideoTracks().length === 0;
+
+  if (isAudioOnly) {
     elements.localVideo.style.display = 'none';
     elements.videoBtn.disabled = true;
     elements.videoBtn.style.opacity = '0.5';
     elements.videoBtn.title = 'No camera available';
+    // Hide flip button in audio-only mode
+    elements.flipBtn.classList.remove('visible');
+    elements.flipBtn.disabled = true;
   } else {
     elements.localVideo.style.display = '';
     elements.videoBtn.disabled = false;
     elements.videoBtn.style.opacity = '';
     elements.videoBtn.title = 'Video On/Off';
+    // Update flip button visibility based on camera count (async)
+    void updateFlipButtonVisibility(state);
   }
 }
 

@@ -1,4 +1,4 @@
-import { serve } from 'bun';
+import { serve, type BunFile } from 'bun';
 import type { ServerWebSocket } from 'bun';
 import {
   type ClientToServerMessage,
@@ -16,17 +16,35 @@ import indexHtml from '../public/index.html' with { type: 'text' };
 import styles from '../public/styles.css' with { type: 'text' };
 import clientJs from '../public/index.js' with { type: 'text' };
 
-// Favicon assets - read as binary ArrayBuffer for proper serving
+// Favicon assets - embedded as BunFile in compiled mode, string path in dev mode
 import webmanifest from '../public/site.webmanifest' with { type: 'text' };
+import faviconIcoFile from '../public/favicon.ico' with { type: 'file' };
+import favicon16File from '../public/favicon-16x16.png' with { type: 'file' };
+import favicon32File from '../public/favicon-32x32.png' with { type: 'file' };
+import appleTouchIconFile from '../public/apple-touch-icon.png' with { type: 'file' };
+import androidChrome192File from '../public/android-chrome-192x192.png' with { type: 'file' };
+import androidChrome512File from '../public/android-chrome-512x512.png' with { type: 'file' };
 
-// Read favicon files as ArrayBuffer at startup (works in both dev and bundled modes)
-const publicDir = new URL('../public/', import.meta.url).pathname;
-const faviconIco = await Bun.file(`${publicDir}favicon.ico`).arrayBuffer();
-const favicon16 = await Bun.file(`${publicDir}favicon-16x16.png`).arrayBuffer();
-const favicon32 = await Bun.file(`${publicDir}favicon-32x32.png`).arrayBuffer();
-const appleTouchIcon = await Bun.file(`${publicDir}apple-touch-icon.png`).arrayBuffer();
-const androidChrome192 = await Bun.file(`${publicDir}android-chrome-192x192.png`).arrayBuffer();
-const androidChrome512 = await Bun.file(`${publicDir}android-chrome-512x512.png`).arrayBuffer();
+/**
+ * Helper to read file content - handles both dev mode (string path) and compiled mode (BunFile)
+ * In dev mode: import with { type: 'file' } returns a string path
+ * In compiled mode: import with { type: 'file' } returns a BunFile object
+ * TypeScript declares these as Blob (global.d.ts), but runtime behavior differs
+ */
+async function readFileContent(file: string | BunFile | Blob): Promise<ArrayBuffer> {
+  if (typeof file === 'string') {
+    return await Bun.file(file).arrayBuffer();
+  }
+  return await file.arrayBuffer();
+}
+
+// Read binary content at startup
+const faviconIco = await readFileContent(faviconIcoFile);
+const favicon16 = await readFileContent(favicon16File);
+const favicon32 = await readFileContent(favicon32File);
+const appleTouchIcon = await readFileContent(appleTouchIconFile);
+const androidChrome192 = await readFileContent(androidChrome192File);
+const androidChrome512 = await readFileContent(androidChrome512File);
 
 // Type assertions to ensure TypeScript treats these as strings
 const indexHtmlStr = indexHtml as unknown as string;

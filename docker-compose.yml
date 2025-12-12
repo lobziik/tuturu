@@ -24,11 +24,11 @@ services:
       start_period: 10s
 
   coturn:
-    image: coturn/coturn:edge-alpine
+    build: ./coturn
     container_name: tuturu-coturn
     network_mode: host
     volumes:
-      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./coturn/turnserver.conf.template:/etc/coturn/turnserver.conf.template:ro
       - ./ssl:/etc/ssl/turn:ro
       - coturn-logs:/var/log/coturn
     environment:
@@ -36,6 +36,7 @@ services:
       - TURN_USERNAME=${TURN_USERNAME}
       - TURN_PASSWORD=${TURN_PASSWORD}
       - TURN_REALM=${TURN_REALM}
+      - STURN_PORT=${STURN_PORT:-5439}
       - DOMAIN=${DOMAIN}
     restart: unless-stopped
     command: ["-c", "/etc/coturn/turnserver.conf", "-v"]

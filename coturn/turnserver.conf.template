@@ -3,18 +3,18 @@
 
 # === Basic Configuration ===
 # Server name (must match SSL certificate CN/SAN)
-server-name=turn.${DOMAIN}
+server-name=t.${DOMAIN}
 realm=${TURN_REALM}
 
 # Listening ports
 # Standard TURN ports (fallback option)
-listening-port=3478
-alt-listening-port=3479
+# listening-port=3478
+# alt-listening-port=3479
 
 # TLS ports for encrypted TURN traffic
 # NOTE: nginx stream module routes port 443 traffic here via SNI
-# Port 5349 receives both direct connections AND traffic routed from nginx:443
-tls-listening-port=5349
+# Port STURN_PORT receives both direct connections AND traffic routed from nginx:443
+tls-listening-port=${STURN_PORT}
 
 # === Network Configuration ===
 # External IP for ICE candidate generation
@@ -30,8 +30,8 @@ max-port=49200
 # === TLS Configuration ===
 # SSL certificates (mounted from ./ssl volume)
 # Must match subdomain: turn.yourdomain.com
-cert=/etc/ssl/turn/turn.${DOMAIN}/fullchain.pem
-pkey=/etc/ssl/turn/turn.${DOMAIN}/privkey.pem
+cert=/etc/ssl/turn/t.${DOMAIN}/fullchain.pem
+pkey=/etc/ssl/turn/t.${DOMAIN}/privkey.pem
 
 # Strong cipher suites only (TLS 1.2 and 1.3)
 cipher-list=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256
@@ -39,9 +39,7 @@ cipher-list=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-
 # Elliptic curve for ECDHE
 ec-curve-name=prime256v1
 
-# Disable old TLS versions (security hardening)
-no-tlsv1
-no-tlsv1_1
+# TLS 1.0 and 1.1 are disabled by default in coturn 4.7.0+
 # TLS 1.2 and 1.3 are enabled by default
 
 # === Authentication ===
@@ -59,8 +57,8 @@ no-multicast-peers
 # Disable CLI (no interactive access needed)
 no-cli
 
-# Disable loopback peers (prevent local relay abuse)
-no-loopback-peers
+# Loopback peers are blocked by default in coturn 4.7.0+
+# Use allow-loopback-peers to enable (not recommended for production)
 
 # Disable STUN-only mode (we provide full TURN service)
 # Note: Removed 'no-stun' flag - STUN is needed for initial NAT discovery

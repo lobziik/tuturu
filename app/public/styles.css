@@ -4,6 +4,12 @@
   padding: 0;
 }
 
+/* Prevent scrolling and overscroll bounce on mobile */
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 :root {
   --primary: #6366f1;
   --primary-dark: #4f46e5;
@@ -317,7 +323,10 @@ footer a:hover {
     top: 0;
     left: 0;
     width: 100vw;
-    height: 100vh;
+    /* Use dynamic viewport height to account for mobile browser chrome */
+    height: 100vh; /* Fallback for older browsers */
+    height: 100svh; /* Small viewport height - excludes browser UI */
+    height: 100dvh; /* Dynamic viewport height - adjusts with browser UI */
     max-width: none;
     z-index: 100;
     background: #000;

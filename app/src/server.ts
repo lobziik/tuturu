@@ -16,10 +16,33 @@ import indexHtml from '../public/index.html' with { type: 'text' };
 import styles from '../public/styles.css' with { type: 'text' };
 import clientJs from '../public/index.js' with { type: 'text' };
 
+// Favicon assets - read as binary ArrayBuffer for proper serving
+import webmanifest from '../public/site.webmanifest' with { type: 'text' };
+
+// Read favicon files as ArrayBuffer at startup (works in both dev and bundled modes)
+const publicDir = new URL('../public/', import.meta.url).pathname;
+const faviconIco = await Bun.file(`${publicDir}favicon.ico`).arrayBuffer();
+const favicon16 = await Bun.file(`${publicDir}favicon-16x16.png`).arrayBuffer();
+const favicon32 = await Bun.file(`${publicDir}favicon-32x32.png`).arrayBuffer();
+const appleTouchIcon = await Bun.file(`${publicDir}apple-touch-icon.png`).arrayBuffer();
+const androidChrome192 = await Bun.file(`${publicDir}android-chrome-192x192.png`).arrayBuffer();
+const androidChrome512 = await Bun.file(`${publicDir}android-chrome-512x512.png`).arrayBuffer();
+
 // Type assertions to ensure TypeScript treats these as strings
 const indexHtmlStr = indexHtml as unknown as string;
 const stylesStr = styles as unknown as string;
 const clientJsStr = clientJs as unknown as string;
+const webmanifestStr = webmanifest as unknown as string;
+
+/**
+ * Generate ETags from content hashes (computed once at startup)
+ * Used for cache validation - browsers send If-None-Match header
+ * and server returns 304 Not Modified if content unchanged
+ */
+const htmlEtag = `"${Bun.hash(indexHtmlStr).toString(16)}"`;
+const cssEtag = `"${Bun.hash(stylesStr).toString(16)}"`;
+const jsEtag = `"${Bun.hash(clientJsStr).toString(16)}"`;
+const manifestEtag = `"${Bun.hash(webmanifestStr).toString(16)}"`;
 
 /**
  * Client connection information (server-side)
@@ -400,30 +423,111 @@ const server = serve<ClientData>({
       return undefined;
     }
 
-    // Serve embedded static assets
+    // Serve embedded static assets with ETag-based caching
     if (url.pathname === '/' || url.pathname === '/index.html') {
+      // Return 304 Not Modified if content unchanged
+      if (req.headers.get('If-None-Match') === htmlEtag) {
+        return new Response(null, { status: 304 });
+      }
       return new Response(indexHtmlStr, {
         headers: {
           'Content-Type': 'text/html',
-          'Cache-Control': 'public, max-age=3600',
+          'Cache-Control': 'no-cache', // Always revalidate
+          ETag: htmlEtag,
         },
       });
     }
 
     if (url.pathname === '/styles.css') {
+      if (req.headers.get('If-None-Match') === cssEtag) {
+        return new Response(null, { status: 304 });
+      }
       return new Response(stylesStr, {
         headers: {
           'Content-Type': 'text/css',
-          'Cache-Control': 'public, max-age=86400',
+          'Cache-Control': 'public, max-age=0, must-revalidate',
+          ETag: cssEtag,
         },
       });
     }
 
     if (url.pathname === '/index.js') {
+      if (req.headers.get('If-None-Match') === jsEtag) {
+        return new Response(null, { status: 304 });
+      }
       return new Response(clientJsStr, {
         headers: {
           'Content-Type': 'application/javascript',
-          'Cache-Control': 'public, max-age=3600',
+          'Cache-Control': 'public, max-age=0, must-revalidate',
+          ETag: jsEtag,
+        },
+      });
+    }
+
+    // Favicon routes
+    if (url.pathname === '/favicon.ico') {
+      return new Response(faviconIco, {
+        headers: {
+          'Content-Type': 'image/x-icon',
+          'Cache-Control': 'public, max-age=604800',
+        },
+      });
+    }
+
+    if (url.pathname === '/favicon-16x16.png') {
+      return new Response(favicon16, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=604800',
+        },
+      });
+    }
+
+    if (url.pathname === '/favicon-32x32.png') {
+      return new Response(favicon32, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=604800',
+        },
+      });
+    }
+
+    if (url.pathname === '/apple-touch-icon.png') {
+      return new Response(appleTouchIcon, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=604800',
+        },
+      });
+    }
+
+    if (url.pathname === '/android-chrome-192x192.png') {
+      return new Response(androidChrome192, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=604800',
+        },
+      });
+    }
+
+    if (url.pathname === '/android-chrome-512x512.png') {
+      return new Response(androidChrome512, {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=604800',
+        },
+      });
+    }
+
+    if (url.pathname === '/site.webmanifest') {
+      if (req.headers.get('If-None-Match') === manifestEtag) {
+        return new Response(null, { status: 304 });
+      }
+      return new Response(webmanifestStr, {
+        headers: {
+          'Content-Type': 'application/manifest+json',
+          'Cache-Control': 'public, max-age=0, must-revalidate',
+          ETag: manifestEtag,
         },
       });
     }

@@ -24,3 +24,22 @@ declare module '*.js' {
   const content: string;
   export default content;
 }
+
+/**
+ * Type declarations for favicon and image assets
+ * Bun imports binary files as Blob by default
+ */
+declare module '*.ico' {
+  const content: Blob;
+  export default content;
+}
+
+declare module '*.png' {
+  const content: Blob;
+  export default content;
+}
+
+declare module '*.webmanifest' {
+  const content: string;
+  export default content;
+}

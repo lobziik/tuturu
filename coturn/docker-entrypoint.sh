@@ -5,4 +5,4 @@ set -e
 envsubst < /etc/coturn/turnserver.conf.template > /tmp/turnserver.conf
 
 # Execute coturn with passed arguments
-exec turnserver -c /tmp/turnserver.conf "$@"
+exec turnserver "$@"

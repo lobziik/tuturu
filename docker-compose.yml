@@ -13,6 +13,7 @@ services:
       - TURN_PASSWORD=${TURN_PASSWORD}
       - TURN_REALM=${TURN_REALM}
       - DOMAIN=${DOMAIN}
+      - FORCE_RELAY=${FORCE_RELAY:-false}
     restart: unless-stopped
     networks:
       - tuturu-network

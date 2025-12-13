@@ -8,8 +8,8 @@ realm=${TURN_REALM}
 
 # Listening ports
 # Standard TURN ports (fallback option)
-# listening-port=3478
-# alt-listening-port=3479
+listening-port=0
+alt-listening-port=0
 
 # TLS ports for encrypted TURN traffic
 # NOTE: nginx stream module routes port 443 traffic here via SNI
@@ -30,8 +30,8 @@ max-port=49200
 # === TLS Configuration ===
 # SSL certificates (mounted from ./ssl volume)
 # Must match subdomain: t.yourdomain.com
-cert=/etc/ssl/t.${DOMAIN}/fullchain.pem
-pkey=/etc/ssl/t.${DOMAIN}/privkey.pem
+cert=/var/tmp/ssl/t.${DOMAIN}/fullchain.pem
+pkey=/var/tmp/ssl/t.${DOMAIN}/privkey.pem
 
 # Strong cipher suites only (TLS 1.2 and 1.3)
 cipher-list=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256

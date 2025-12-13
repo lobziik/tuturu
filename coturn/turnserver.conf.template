@@ -29,9 +29,9 @@ max-port=49200
 
 # === TLS Configuration ===
 # SSL certificates (mounted from ./ssl volume)
-# Must match subdomain: turn.yourdomain.com
-cert=/etc/ssl/turn/t.${DOMAIN}/fullchain.pem
-pkey=/etc/ssl/turn/t.${DOMAIN}/privkey.pem
+# Must match subdomain: t.yourdomain.com
+cert=/etc/ssl/t.${DOMAIN}/fullchain.pem
+pkey=/etc/ssl/t.${DOMAIN}/privkey.pem
 
 # Strong cipher suites only (TLS 1.2 and 1.3)
 cipher-list=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256

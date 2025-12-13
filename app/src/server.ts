@@ -597,7 +597,7 @@ console.log(`
 🏥 Health check: http://localhost:${config.port}/health
 🌍 Environment: ${config.nodeEnv}
 
-📡 STUN servers: ${config.stunServers.length} configured
+📡 STUN servers: ${config.stunServers} configured
 ${config.externalIp ? `🌐 External IP: ${config.externalIp}` : '⚠️  No EXTERNAL_IP configured'}
 ${isTurnConfigured() ? `✅ TURN server configured` : '⚠️  No TURN server configured (STUN only)'}
 Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}

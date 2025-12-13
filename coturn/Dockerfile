@@ -10,7 +10,7 @@ RUN apk add --no-cache gettext
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Switch back to non-root user
-USER nobody:nogroup
+## Switch back to non-root user
+#USER nobody:nogroup
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

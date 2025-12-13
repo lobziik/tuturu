@@ -29,7 +29,7 @@ services:
     network_mode: host
     volumes:
       - ./coturn/turnserver.conf.template:/etc/coturn/turnserver.conf.template:ro
-      - ./ssl:/var/tmp/ssl:ro
+      - ./ssl:/var/tmp/ssl:ro:Z
       - coturn-logs:/var/log/coturn
     environment:
       - EXTERNAL_IP=${EXTERNAL_IP}

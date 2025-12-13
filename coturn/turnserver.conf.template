@@ -8,8 +8,8 @@ realm=${TURN_REALM}
 
 # Listening ports
 # Standard TURN ports (fallback option)
-listening-port=0
-alt-listening-port=0
+listening-port=3478
+alt-listening-port=3479
 
 # TLS ports for encrypted TURN traffic
 # NOTE: nginx stream module routes port 443 traffic here via SNI

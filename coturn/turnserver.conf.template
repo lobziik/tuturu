@@ -70,14 +70,22 @@ fingerprint
 no-software-attribute
 
 # === Rate Limiting & Quotas ===
-# Maximum bandwidth per allocation (2 Mbps = supports HD video)
+# Max bytes-per-second per TURN session (input/output counted separately)
+# 2 MB/s (~16 Mbps) is plenty for HD video + audio
+# 0 = unlimited
 max-bps=2000000
 
-# Total allocation quota (max 100 concurrent allocations)
-total-quota=100
+# Total server bandwidth capacity in bytes-per-second (0 = unlimited)
+# For 6 users: 6 × 2 MB/s × 2 directions = 24 MB/s, with buffer
+bps-capacity=0
 
-# Per-user bandwidth capacity (50 allocations per user)
-bps-capacity=50
+# Total concurrent allocations on server (0 = unlimited)
+# 6 users × ~4 allocations each = 24, buffer to 50
+total-quota=50
+
+# Per-user allocation quota (0 = unlimited)
+# WebRTC typically needs ~4: audio, video, data channel, ICE
+user-quota=10
 
 # === Logging ===
 # Log file location

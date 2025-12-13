@@ -245,7 +245,7 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
 
         // Add TURN servers if configured (DPI-resistant priority order)
         if (isTurnConfigured()) {
-          const domain = `turn.${config.domain}`;
+          const domain = `t.${config.domain}`;
           const username = config.turnUsername!;
           const credential = config.turnPassword!;
 

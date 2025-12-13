@@ -47,6 +47,10 @@ const configSchema = z.object({
       'External IP must be a valid IPv4 address',
     )
     .optional(),
+
+  // Force relay mode (for TURN server validation)
+  // When true, clients will ONLY use TURN relay candidates (no direct P2P or STUN)
+  forceRelay: z.coerce.boolean().default(false),
 });
 
 /**
@@ -63,6 +67,7 @@ function loadConfig() {
     turnRealm: process.env.TURN_REALM,
     domain: process.env.DOMAIN,
     externalIp: process.env.EXTERNAL_IP,
+    forceRelay: process.env.FORCE_RELAY,
   });
 
   if (!parseResult.success) {

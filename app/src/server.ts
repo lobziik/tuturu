@@ -284,7 +284,10 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
 
         sendMessage(ws, {
           type: 'join-pin',
-          data: { iceServers },
+          data: {
+            iceServers,
+            iceTransportPolicy: config.forceRelay ? 'relay' : 'all',
+          },
         });
 
         // Notify peer if they're already in the room
@@ -597,6 +600,7 @@ console.log(`
 📡 STUN servers: ${config.stunServers.length} configured
 ${config.externalIp ? `🌐 External IP: ${config.externalIp}` : '⚠️  No EXTERNAL_IP configured'}
 ${isTurnConfigured() ? `✅ TURN server configured` : '⚠️  No TURN server configured (STUN only)'}
+Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
 
 Press Ctrl+C to stop
 `);

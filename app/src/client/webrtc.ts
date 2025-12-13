@@ -38,8 +38,12 @@ export function createPeerConnection(state: AppState, dispatch: Dispatch): RTCPe
   }
 
   console.log('[RTC] Creating peer connection');
+  console.log('[RTC] ICE transport policy:', state.iceTransportPolicy);
 
-  const pc = new RTCPeerConnection({ iceServers: state.iceServers });
+  const pc = new RTCPeerConnection({
+    iceServers: state.iceServers,
+    iceTransportPolicy: state.iceTransportPolicy,
+  });
 
   // Add local tracks to peer connection
   if (state.localStream) {

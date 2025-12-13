@@ -15,8 +15,18 @@ export interface IceServerConfig {
   credential?: string;
 }
 
+/**
+ * ICE transport policy for WebRTC connections
+ * - 'all': Use all available candidates (host, srflx, relay) - default behavior
+ * - 'relay': Force TURN relay only - useful for validating TURN server configuration
+ */
+export type IceTransportPolicy = 'all' | 'relay';
+
 export type ServerToClientMessage =
-  | { type: 'join-pin'; data: { iceServers: IceServerConfig[] } }
+  | {
+      type: 'join-pin';
+      data: { iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy };
+    }
   | { type: 'peer-joined' }
   | { type: 'offer'; data: RTCSessionDescriptionInit }
   | { type: 'answer'; data: RTCSessionDescriptionInit }

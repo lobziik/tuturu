@@ -26,7 +26,7 @@
  * @module state
  */
 
-import type { IceServerConfig } from '../types';
+import type { IceServerConfig, IceTransportPolicy } from '../types';
 
 /**
  * Screen types - discriminated union for type-safe state transitions
@@ -131,6 +131,13 @@ export interface AppState {
    * - Required for NAT traversal and firewall bypass
    */
   iceServers: IceServerConfig[] | null;
+
+  /**
+   * ICE transport policy for WebRTC connections
+   * - 'all': Use all available candidates (host, srflx, relay) - default
+   * - 'relay': Force TURN relay only - for validating TURN server configuration
+   */
+  iceTransportPolicy: IceTransportPolicy;
 }
 
 /**
@@ -178,7 +185,7 @@ export type Action =
   | { type: 'MEDIA_ERROR'; error: string }
 
   // Signaling messages
-  | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[] }
+  | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy }
   | { type: 'PEER_JOINED' }
   | { type: 'PEER_LEFT' }
   | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit }
@@ -213,6 +220,7 @@ export const initialState: AppState = {
   localStream: null,
   remoteStream: null,
   iceServers: null,
+  iceTransportPolicy: 'all',
 };
 
 /**
@@ -338,10 +346,11 @@ export function reducer(state: AppState, action: Action): AppState {
 
     // ===== SIGNALING =====
     case 'JOINED_ROOM': {
-      // Store ICE servers (needed for later PeerConnection creation)
+      // Store ICE servers and transport policy (needed for later PeerConnection creation)
       return {
         ...state,
         iceServers: action.iceServers,
+        iceTransportPolicy: action.iceTransportPolicy,
       };
     }
 

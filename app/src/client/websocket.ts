@@ -99,7 +99,11 @@ function handleServerMessage(message: ServerToClientMessage, dispatch: Dispatch)
 
   switch (message.type) {
     case 'join-pin':
-      dispatch({ type: 'JOINED_ROOM', iceServers: message.data.iceServers });
+      dispatch({
+        type: 'JOINED_ROOM',
+        iceServers: message.data.iceServers,
+        iceTransportPolicy: message.data.iceTransportPolicy,
+      });
       break;
 
     case 'peer-joined':

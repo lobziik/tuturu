@@ -289,15 +289,30 @@ describe('reducer', () => {
      *
      * Expected: Store for later RTCPeerConnection creation
      */
-    test('JOINED_ROOM stores ICE servers', () => {
+    test('JOINED_ROOM stores ICE servers and transport policy', () => {
       const mockIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
       const action: Action = {
         type: 'JOINED_ROOM',
         iceServers: mockIceServers,
+        iceTransportPolicy: 'all',
       };
       const newState = reducer(initialState, action);
 
       expect(newState.iceServers).toBe(mockIceServers);
+      expect(newState.iceTransportPolicy).toBe('all');
+    });
+
+    test('JOINED_ROOM stores relay transport policy', () => {
+      const mockIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+      const action: Action = {
+        type: 'JOINED_ROOM',
+        iceServers: mockIceServers,
+        iceTransportPolicy: 'relay',
+      };
+      const newState = reducer(initialState, action);
+
+      expect(newState.iceServers).toBe(mockIceServers);
+      expect(newState.iceTransportPolicy).toBe('relay');
     });
 
     /**

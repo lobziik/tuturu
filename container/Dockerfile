@@ -53,9 +53,6 @@ COPY container/templates/turnserver.conf.template /etc/coturn/
 # Copy systemd service files
 COPY container/systemd/*.service container/systemd/*.timer /etc/systemd/system/
 
-# Copy journald config for console output
-COPY container/systemd/journald.conf.d/ /etc/systemd/journald.conf.d/
-
 # Copy scripts
 COPY container/scripts/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/tuturu-*.sh /usr/local/bin/entrypoint.sh

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Container entrypoint - write environment to file before starting systemd
+# Container entrypoint - write environment to file, start systemd, tail journal
 set -euo pipefail
 
 log() { echo "[entrypoint] $*"; }
@@ -40,6 +40,36 @@ log "Environment variables written:"
 log "Setting permissions on ${ENV_FILE}"
 chmod 600 "${ENV_FILE}"
 
-# Start systemd
-log "Starting systemd (exec /sbin/init)"
-exec /sbin/init
+# Start systemd in background
+log "Starting systemd (/sbin/init)"
+/sbin/init &
+SYSTEMD_PID=$!
+
+# Handle signals - forward to systemd
+cleanup() {
+    log "Received signal, stopping systemd..."
+    kill -SIGRTMIN+3 "$SYSTEMD_PID" 2>/dev/null || true
+    wait "$SYSTEMD_PID" 2>/dev/null || true
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
+# Wait for journald to be ready
+log "Waiting for journald..."
+for i in {1..30}; do
+    if journalctl --no-pager -n 0 &>/dev/null; then
+        log "journald is ready"
+        break
+    fi
+    sleep 0.5
+done
+
+# Tail journal to stdout (keeps container running)
+log "Tailing journal to stdout..."
+journalctl -f --no-pager -o short-iso &
+JOURNAL_PID=$!
+
+# Wait for systemd or journal to exit
+wait -n "$SYSTEMD_PID" "$JOURNAL_PID" 2>/dev/null || true
+log "Process exited, cleaning up..."
+cleanup

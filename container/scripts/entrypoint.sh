@@ -41,8 +41,8 @@ log "Setting permissions on ${ENV_FILE}"
 chmod 600 "${ENV_FILE}"
 
 # Start systemd in background
-log "Starting systemd (/sbin/init)"
-/sbin/init &
+log "Starting systemd (/usr/lib/systemd/systemd --system)"
+/usr/lib/systemd/systemd --system &
 SYSTEMD_PID=$!
 
 # Handle signals - forward to systemd

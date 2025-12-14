@@ -33,6 +33,7 @@ RUN dnf install -y \
         https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm && \
     dnf install -y \
         nginx \
+        nginx-mod-stream \
         coturn \
         certbot \
         gettext \

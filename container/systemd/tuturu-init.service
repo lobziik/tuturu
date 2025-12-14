@@ -12,6 +12,8 @@ ExecStartPost=/usr/bin/touch /var/lib/tuturu/.initialized
 RemainAfterExit=yes
 StandardOutput=journal+console
 StandardError=journal+console
+SyslogIdentifier=tuturu-init
+SyslogLevel=info
 
 # Environment can be passed via docker run -e or mounted env file
 EnvironmentFile=-/etc/tuturu/env

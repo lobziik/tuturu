@@ -2,6 +2,9 @@
 # Single container deployment with SNI-based routing for DPI resistance
 # Template variables: ${DOMAIN}
 
+# Load stream module for SNI-based routing
+load_module /usr/lib64/nginx/modules/ngx_stream_module.so;
+
 user nginx;
 worker_processes auto;
 error_log /dev/stderr warn;

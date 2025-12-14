@@ -38,6 +38,7 @@ RUN dnf install -y \
         gettext \
         procps-ng \
         curl \
+        openssl \
         && \
     dnf clean all && \
     rm -rf /var/cache/dnf

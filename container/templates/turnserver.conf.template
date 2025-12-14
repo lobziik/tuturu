@@ -49,9 +49,7 @@ cipher-list=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-
 # Elliptic curve for ECDHE key exchange
 ec-curve-name=prime256v1
 
-# Disable legacy TLS versions (1.2+ only)
-no-tlsv1
-no-tlsv1_1
+# Note: TLS 1.0/1.1 disabled by default in coturn 4.7.0+
 
 # =============================================================================
 # Authentication
@@ -70,9 +68,6 @@ no-multicast-peers
 
 # Disable CLI interface
 no-cli
-
-# Disable loopback peers
-no-loopback-peers
 
 # Don't reveal software version in responses
 no-software-attribute

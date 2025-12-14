@@ -55,7 +55,7 @@ COPY container/systemd/ /etc/systemd/system/
 
 # Copy scripts
 COPY container/scripts/ /usr/local/bin/
-RUN chmod +x /usr/local/bin/tuturu-*.sh
+RUN chmod +x /usr/local/bin/tuturu-*.sh /usr/local/bin/entrypoint.sh
 
 # Copy static files (cover website)
 COPY container/html/ /var/www/html/
@@ -91,5 +91,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
 # Volume for certificates persistence
 VOLUME ["/etc/letsencrypt"]
 
-# systemd as PID 1
-CMD ["/sbin/init"]
+# Entrypoint writes env vars to file, then execs systemd
+CMD ["/usr/local/bin/entrypoint.sh"]

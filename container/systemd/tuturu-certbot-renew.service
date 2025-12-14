@@ -1,0 +1,14 @@
+[Unit]
+Description=Renew Let's Encrypt certificates for tuturu
+Documentation=https://github.com/user/tuturu
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Stop nginx to free port 80, renew certs, then restart services
+ExecStart=/usr/bin/certbot renew --quiet \
+    --pre-hook "systemctl stop tuturu-nginx" \
+    --post-hook "systemctl start tuturu-nginx && systemctl reload tuturu-coturn"
+StandardOutput=journal+console
+StandardError=journal+console

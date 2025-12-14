@@ -1,0 +1,20 @@
+[Unit]
+Description=Initialize tuturu configuration
+Documentation=https://github.com/user/tuturu
+After=network.target
+Before=tuturu-certbot.service tuturu-nginx.service tuturu-coturn.service tuturu-app.service
+ConditionPathExists=!/var/lib/tuturu/.initialized
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tuturu-init.sh
+ExecStartPost=/usr/bin/touch /var/lib/tuturu/.initialized
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+# Environment can be passed via docker run -e or mounted env file
+EnvironmentFile=-/etc/tuturu/env
+
+[Install]
+WantedBy=multi-user.target

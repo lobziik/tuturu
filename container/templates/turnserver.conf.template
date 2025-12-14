@@ -1,0 +1,111 @@
+# tuturu coturn TURN/STUN Server Configuration
+# Single container deployment - optimized for DPI resistance
+# Template variables: ${DOMAIN}, ${EXTERNAL_IP}, ${TURN_USERNAME}, ${TURN_PASSWORD},
+#                     ${TURN_MIN_PORT}, ${TURN_MAX_PORT}
+
+# =============================================================================
+# Server Identification
+# =============================================================================
+# Server name (must match SSL certificate CN/SAN)
+server-name=t.${DOMAIN}
+
+# Realm for authentication (uses DOMAIN directly)
+realm=${DOMAIN}
+
+# =============================================================================
+# Listening Ports
+# =============================================================================
+# Standard TURN port (fallback for less restrictive networks)
+listening-port=3478
+
+# TLS port for encrypted TURN (receives SNI-routed traffic from nginx:443)
+tls-listening-port=5349
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+# External IP for ICE candidate generation
+# This is the public IP that clients will use to reach the TURN server
+external-ip=${EXTERNAL_IP}
+
+# Listen on all container interfaces for relay connections
+relay-ip=0.0.0.0
+
+# Relay port range (UDP ports for media relay)
+min-port=${TURN_MIN_PORT}
+max-port=${TURN_MAX_PORT}
+
+# =============================================================================
+# TLS Configuration
+# =============================================================================
+# SSL certificates from Let's Encrypt
+# Note: Let's Encrypt creates certs under base domain directory
+cert=/etc/letsencrypt/live/${DOMAIN}/fullchain.pem
+pkey=/etc/letsencrypt/live/${DOMAIN}/privkey.pem
+
+# Strong cipher suites (TLS 1.2 and 1.3 only)
+cipher-list=ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256
+
+# Elliptic curve for ECDHE key exchange
+ec-curve-name=prime256v1
+
+# Disable legacy TLS versions (1.2+ only)
+no-tlsv1
+no-tlsv1_1
+
+# =============================================================================
+# Authentication
+# =============================================================================
+# Long-term credential mechanism (static username/password)
+lt-cred-mech
+
+# User credentials
+user=${TURN_USERNAME}:${TURN_PASSWORD}
+
+# =============================================================================
+# Security Hardening
+# =============================================================================
+# Disable multicast peer discovery
+no-multicast-peers
+
+# Disable CLI interface
+no-cli
+
+# Disable loopback peers
+no-loopback-peers
+
+# Don't reveal software version in responses
+no-software-attribute
+
+# Enable STUN FINGERPRINT attribute (required by WebRTC)
+fingerprint
+
+# =============================================================================
+# Rate Limiting & Quotas
+# =============================================================================
+# Max bytes-per-second per TURN session (~16 Mbps for HD video + audio)
+max-bps=2000000
+
+# Total server bandwidth capacity (0 = unlimited)
+bps-capacity=0
+
+# Total concurrent allocations on server
+total-quota=100
+
+# Per-user allocation quota
+user-quota=10
+
+# =============================================================================
+# Logging
+# =============================================================================
+# Log to stdout for container compatibility
+log-file=stdout
+
+# Simple log format
+simple-log
+
+# =============================================================================
+# Additional Features
+# =============================================================================
+# Mobile support (allows clients to change IP during session)
+mobility

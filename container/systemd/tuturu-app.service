@@ -1,0 +1,23 @@
+[Unit]
+Description=tuturu signaling server (Bun WebSocket)
+Documentation=https://github.com/user/tuturu
+After=tuturu-init.service network.target
+Requires=tuturu-init.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/tuturu/env
+ExecStart=/usr/local/bin/tuturu-server
+Restart=always
+RestartSec=5
+StandardOutput=journal+console
+StandardError=journal+console
+WorkingDirectory=/var/lib/tuturu
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tuturu
+
+[Install]
+WantedBy=multi-user.target

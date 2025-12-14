@@ -51,7 +51,10 @@ COPY container/templates/nginx.conf.template /etc/nginx/
 COPY container/templates/turnserver.conf.template /etc/coturn/
 
 # Copy systemd service files
-COPY container/systemd/ /etc/systemd/system/
+COPY container/systemd/*.service container/systemd/*.timer /etc/systemd/system/
+
+# Copy journald config for console output
+COPY container/systemd/journald.conf.d/ /etc/systemd/journald.conf.d/
 
 # Copy scripts
 COPY container/scripts/ /usr/local/bin/

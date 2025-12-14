@@ -15,8 +15,8 @@ StandardError=journal+console
 SyslogIdentifier=tuturu-init
 SyslogLevel=info
 
-# Environment can be passed via docker run -e or mounted env file
-EnvironmentFile=-/etc/tuturu/env
+# Pass environment variables from container to this service
+PassEnvironment=DOMAIN LETSENCRYPT_EMAIL EXTERNAL_IP TURN_USERNAME TURN_PASSWORD TURN_MIN_PORT TURN_MAX_PORT LETSENCRYPT_STAGING
 
 [Install]
 WantedBy=multi-user.target

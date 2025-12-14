@@ -1,6 +1,6 @@
 [Unit]
 Description=tuturu signaling server (Bun WebSocket)
-Documentation=https://github.com/user/tuturu
+Documentation=https://github.com/lobziik/tuturu
 After=tuturu-init.service network.target
 Requires=tuturu-init.service
 

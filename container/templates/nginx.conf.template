@@ -25,13 +25,12 @@ stream {
     access_log /dev/stdout stream_log;
 
     # SNI to upstream mapping
-    # Supports both short (a./t.) and long (app./turn.) subdomain prefixes
     map $ssl_preread_server_name $upstream {
         # App subdomain: a.domain.com or app.domain.com
-        ~^(app|a)\..*$     app_backend;
+        ~^a\..*$     app_backend;
 
-        # TURN subdomain: t.domain.com or turn.domain.com
-        ~^(turn|t)\..*$    turn_backend;
+        # TURN subdomain: t.domain.com
+        ~^t\..*$    turn_backend;
 
         # Default: cover website (base domain or no match)
         default            web_backend;
@@ -119,7 +118,7 @@ http {
     server {
         listen 8443 ssl http2;
         listen [::]:8443 ssl http2;
-        server_name a.${DOMAIN} app.${DOMAIN};
+        server_name a.${DOMAIN};
 
         ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;

@@ -25,7 +25,7 @@ RUN bun run build && \
 FROM redhat/ubi10-init:10.1-1763368398
 
 LABEL org.opencontainers.image.title="tuturu" \
-      org.opencontainers.image.description="WebRTC video calling with DPI evasion" \
+      org.opencontainers.image.description="WebRTC 1 to 1 video calling" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 # Install EPEL repository and required packages

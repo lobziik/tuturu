@@ -1,6 +1,6 @@
 [Unit]
 Description=Daily certificate renewal check for tuturu
-Documentation=https://github.com/user/tuturu
+Documentation=https://github.com/lobziik/tuturu
 
 [Timer]
 # Run daily at a random time within 1 hour window

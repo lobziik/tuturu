@@ -1,6 +1,6 @@
 [Unit]
 Description=nginx reverse proxy for tuturu
-Documentation=https://github.com/user/tuturu
+Documentation=https://github.com/lobziik/tuturu
 After=tuturu-certbot.service tuturu-init.service network.target
 Requires=tuturu-certbot.service tuturu-init.service
 

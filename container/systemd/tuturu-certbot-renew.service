@@ -1,6 +1,6 @@
 [Unit]
 Description=Renew Let's Encrypt certificates for tuturu
-Documentation=https://github.com/user/tuturu
+Documentation=https://github.com/lobziik/tuturu
 After=network-online.target
 Wants=network-online.target
 

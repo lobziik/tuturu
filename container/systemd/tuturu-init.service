@@ -1,6 +1,6 @@
 [Unit]
 Description=Initialize tuturu configuration
-Documentation=https://github.com/user/tuturu
+Documentation=https://github.com/lobziik/tuturu
 After=network.target
 Before=tuturu-certbot.service tuturu-nginx.service tuturu-coturn.service tuturu-app.service
 ConditionPathExists=!/var/lib/tuturu/.initialized

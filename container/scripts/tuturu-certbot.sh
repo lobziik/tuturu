@@ -67,24 +67,15 @@ certbot certonly \
     "${CERTBOT_FLAGS[@]}"
 
 # =============================================================================
-# Verify certificates were obtained
+# Verify certificate was obtained
 # =============================================================================
-log "Verifying certificates..."
+# certbot creates a single SAN certificate covering all domains
+# stored in the first domain's directory
+log "Verifying certificate..."
 
-for domain in "${DOMAIN}" "a.${DOMAIN}" "t.${DOMAIN}"; do
-    cert_file="/etc/letsencrypt/live/${domain}/fullchain.pem"
-    if [[ ! -f "${cert_file}" ]]; then
-        # Let's Encrypt may use the base domain's directory for all certs
-        # Check if cert exists in base domain directory
-        alt_cert_file="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
-        if [[ "${domain}" != "${DOMAIN}" ]] && [[ -f "${alt_cert_file}" ]]; then
-            log "Certificate for ${domain} found in ${DOMAIN} directory (SAN certificate)"
-        else
-            error "Failed to obtain certificate for ${domain}. Expected at ${cert_file}"
-        fi
-    else
-        log "Certificate verified: ${cert_file}"
-    fi
-done
+if [[ ! -f "${CERT_PATH}" ]]; then
+    error "Failed to obtain certificate. Expected at ${CERT_PATH}"
+fi
 
-log "All certificates obtained successfully"
+log "Certificate verified: ${CERT_PATH}"
+log "SAN certificate covers: ${DOMAIN}, a.${DOMAIN}, t.${DOMAIN}"

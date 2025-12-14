@@ -1,6 +1,6 @@
 [Unit]
 Description=Obtain Let's Encrypt certificates for tuturu
-Documentation=https://github.com/user/tuturu
+Documentation=https://github.com/lobziik/tuturu
 After=tuturu-init.service network-online.target
 Wants=network-online.target
 Before=tuturu-nginx.service tuturu-coturn.service

@@ -1,4 +1,4 @@
-``#!/bin/bash
+#!/bin/bash
 # tuturu-init.sh
 # Initialize tuturu configuration from environment variables
 # FAIL FAST: Exit immediately on any error or missing required variable

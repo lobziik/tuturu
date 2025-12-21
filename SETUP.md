@@ -180,8 +180,8 @@ The script will:
 2. Check DNS resolution for all subdomains
 3. Obtain certificates for:
    - `yourdomain.com` (cover website)
-   - `app.yourdomain.com` (WebRTC app)
-   - `turn.yourdomain.com` (TURN server)
+   - `a.yourdomain.com` (WebRTC app)
+   - `t.yourdomain.com` (TURN server)
 4. Store certificates in `./ssl/` directory
 
 **What to expect**:
@@ -195,8 +195,8 @@ Configuration:
 
 This script will obtain Let's Encrypt certificates for:
   1. yourdomain.com (cover website)
-  2. app.yourdomain.com (Bun signaling app)
-  3. turn.yourdomain.com (coturn TURN server)
+  2. a.yourdomain.com (Bun signaling app)
+  3. t.yourdomain.com (coturn TURN server)
 
 Continue? (y/n)
 ```
@@ -326,7 +326,7 @@ You should see the cover website ("Welcome" page).
 
 ```bash
 # Visit in browser
-https://app.yourdomain.com
+https://a.yourdomain.com
 ```
 
 You should see the tuturu PIN entry screen.
@@ -354,7 +354,7 @@ turnutils_uclient \
 
 **Full End-to-End Test**:
 
-1. Open `https://app.yourdomain.com` in **two different browsers** (or two devices)
+1. Open `https://a.yourdomain.com` in **two different browsers** (or two devices)
 2. Enter the same 6-digit PIN in both
 3. Allow camera/microphone access
 4. Video call should establish
@@ -362,7 +362,7 @@ turnutils_uclient \
 **Check ICE Candidates** (Chrome):
 
 1. Open `chrome://webrtc-internals` in new tab
-2. Start call in `app.yourdomain.com` tab
+2. Start call in `a.yourdomain.com` tab
 3. Look for "ICE candidate" entries
 4. Should see **relay** type candidates (indicates TURN is working)
 
@@ -400,8 +400,8 @@ sudo systemctl stop nginx  # If system nginx is running
 **Solutions**:
 ```bash
 # Verify DNS is correctly configured
-dig +short app.yourdomain.com
-dig +short turn.yourdomain.com
+dig +short a.yourdomain.com
+dig +short t.yourdomain.com
 
 # Ensure ports 80 and 443 are accessible
 curl http://yourdomain.com
@@ -446,10 +446,10 @@ docker-compose exec nginx cat /var/log/nginx/stream-access.log
 docker-compose exec nginx cat /var/log/nginx/stream-error.log
 
 # Test SNI routing with openssl
-openssl s_client -connect yourdomain.com:443 -servername app.yourdomain.com
+openssl s_client -connect yourdomain.com:443 -servername a.yourdomain.com
 # Should connect to app backend
 
-openssl s_client -connect yourdomain.com:443 -servername turn.yourdomain.com
+openssl s_client -connect yourdomain.com:443 -servername t.yourdomain.com
 # Should connect to coturn
 
 # Restart nginx
@@ -571,7 +571,7 @@ Client connects to port 443 with SNI
     ┌─────────────────────────────────┐
     │                                 │
     ↓                 ↓               ↓
-app.domain.com   turn.domain.com   domain.com
+   a.domain.com   t.domain.com   domain.com
     ↓                 ↓               ↓
 nginx:8443        coturn:5349     nginx:8443
     ↓                                 ↓

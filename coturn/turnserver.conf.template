@@ -118,7 +118,7 @@ mobility
 # 4. Standard ports and protocols (doesn't trigger heuristic detection)
 #
 # Client priority order (set in server.ts):
-#   1. turns:turn.domain.com:443 (nginx routes to this server on 5349)
-#   2. turns:turn.domain.com:5349 (direct TLS connection)
-#   3. turn:turn.domain.com:3478/tcp
-#   4. turn:turn.domain.com:3478/udp
+#   1. turns:t.domain.com:443 (nginx routes to this server on 5349)
+#   2. turns:t.domain.com:5349 (direct TLS connection)
+#   3. turn:t.domain.com:3478/tcp
+#   4. turn:t.domain.com:3478/udp

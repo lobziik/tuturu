@@ -21,8 +21,8 @@ server {
     server_name a.*;
 
     # SSL configuration
-    # Certificate paths use wildcard to match app.* pattern
-    # Actual cert location: /etc/ssl/turn/app.yourdomain.com/
+    # Certificate paths use wildcard to match a.* pattern
+    # Actual cert location: /etc/ssl/turn/a.yourdomain.com/
     ssl_certificate /etc/ssl/turn/a.${DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/ssl/turn/a.${DOMAIN}/privkey.pem;
 

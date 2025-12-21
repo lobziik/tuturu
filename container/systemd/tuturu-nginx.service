@@ -13,8 +13,11 @@ ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -QUIT $MAINPID
 Restart=on-failure
 RestartSec=5
-StandardOutput=journal+console
-StandardError=journal+console
+
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TTYVTDisallocate=yes
 
 [Install]
 WantedBy=multi-user.target

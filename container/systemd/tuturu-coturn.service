@@ -9,13 +9,16 @@ Type=simple
 ExecStart=/usr/bin/turnserver -c /etc/coturn/turnserver.conf
 Restart=always
 RestartSec=5
-StandardOutput=journal+console
-StandardError=journal+console
 
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/coturn /run
+
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TTYVTDisallocate=yes
 
 [Install]
 WantedBy=multi-user.target

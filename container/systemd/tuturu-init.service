@@ -10,10 +10,13 @@ Type=oneshot
 ExecStart=/usr/local/bin/tuturu-init.sh
 ExecStartPost=/usr/bin/touch /var/lib/tuturu/.initialized
 RemainAfterExit=yes
-StandardOutput=journal+console
-StandardError=journal+console
 SyslogIdentifier=tuturu-init
 SyslogLevel=info
+
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TTYVTDisallocate=yes
 
 # Pass environment variables from container to this service
 PassEnvironment=DOMAIN LETSENCRYPT_EMAIL EXTERNAL_IP TURN_USERNAME TURN_PASSWORD TURN_MIN_PORT TURN_MAX_PORT LETSENCRYPT_STAGING

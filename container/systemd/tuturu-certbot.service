@@ -10,8 +10,11 @@ Requires=tuturu-init.service
 Type=oneshot
 ExecStart=/usr/local/bin/tuturu-certbot.sh
 RemainAfterExit=yes
-StandardOutput=journal+console
-StandardError=journal+console
+
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TTYVTDisallocate=yes
 
 [Install]
 WantedBy=multi-user.target

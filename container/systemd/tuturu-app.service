@@ -10,9 +10,12 @@ EnvironmentFile=/etc/tuturu/env
 ExecStart=/usr/local/bin/tuturu-server
 Restart=always
 RestartSec=5
-StandardOutput=journal+console
-StandardError=journal+console
 WorkingDirectory=/var/lib/tuturu
+
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TTYVTDisallocate=yes
 
 # Security hardening
 NoNewPrivileges=true

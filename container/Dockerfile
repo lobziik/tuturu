@@ -80,6 +80,14 @@ RUN systemctl enable \
         tuturu-app.service \
         tuturu-certbot-renew.timer
 
+# Logs forwarding
+RUN mkdir -p /etc/systemd/journald.conf.d
+COPY <<EOF /etc/systemd/journald.conf.d/forward-to-console.conf
+[Journal]
+ForwardToConsole=yes
+MaxLevelConsole=info
+EOF
+
 # Expose ports
 # 80: HTTP (redirect + ACME challenge)
 # 443: HTTPS/WSS/TURNS via SNI routing

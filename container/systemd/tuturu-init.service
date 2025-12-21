@@ -10,8 +10,8 @@ Type=oneshot
 ExecStart=/usr/local/bin/tuturu-init.sh
 ExecStartPost=/usr/bin/touch /var/lib/tuturu/.initialized
 RemainAfterExit=yes
-StandardOutput=fd:stdout
-StandardError=fd:stderr
+StandardOutput=journal+console
+StandardError=journal+console
 SyslogIdentifier=tuturu-init
 SyslogLevel=info
 

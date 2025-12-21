@@ -1,7 +1,7 @@
 # =============================================================================
 # Stage 1: Build Bun application
 # =============================================================================
-FROM oven/bun:1-alpine AS app-builder
+FROM oven/bun:1.3.5-debian AS app-builder
 
 WORKDIR /build
 

@@ -10,8 +10,8 @@ EnvironmentFile=/etc/tuturu/env
 ExecStart=/usr/local/bin/tuturu-server
 Restart=always
 RestartSec=5
-StandardOutput=journal+console
-StandardError=journal+console
+StandardOutput=fd:stdout
+StandardError=fd:stderr
 WorkingDirectory=/var/lib/tuturu
 
 # Security hardening

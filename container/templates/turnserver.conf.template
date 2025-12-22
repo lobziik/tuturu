@@ -60,8 +60,26 @@ ec-curve-name=prime256v1
 # User credentials
 user=${TURN_USERNAME}:${TURN_PASSWORD}
 
-allowed-peer-ip=0.0.0.0/0
-allowed-peer-ip=::/0
+# =============================================================================
+# Server Relay Mode (REQUIRED for forced-relay WebRTC)
+# =============================================================================
+# When both WebRTC peers use iceTransportPolicy: 'relay' through the SAME TURN
+# server, Peer A's CREATE_PERMISSION request targets Peer B's relay address -
+# which is our own external-ip (94.103.90.164). Coturn blocks this by default
+# as "Forbidden IP" (403) to prevent relay-to-self attacks.
+#
+# server-relay disables this IP permission check, allowing peers to relay
+# media through the same server. This is 'presumably' safe for WebRTC peer-to-peer use.
+#
+# The "dangerous" warning in docs refers to server-side apps abusing relay
+# endpoints - hopefully not applicable to browser WebRTC clients.
+#
+# Symptoms without this: CREATE_PERMISSION returns 403 Forbidden IP
+# Docs: https://github.com/coturn/coturn/blob/master/examples/etc/turnserver.conf
+# =============================================================================
+# allowed-peer-ip=0.0.0.0/0
+# allowed-peer-ip=::/0
+server-relay
 
 # =============================================================================
 # Security Hardening

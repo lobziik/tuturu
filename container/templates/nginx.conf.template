@@ -46,7 +46,7 @@ stream {
 
     # coturn TURNS (TLS termination, coturn - plain)
     upstream turn_backend {
-        server 127.0.0.1:3478;
+        server 127.0.0.1:5349;
     }
 
     # Cover website via nginx HTTP

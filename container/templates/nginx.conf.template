@@ -1,0 +1,188 @@
+# tuturu nginx Configuration
+# Single container deployment with SNI-based routing for DPI resistance
+# Template variables: ${DOMAIN}
+
+# Load stream module for SNI-based routing
+load_module /usr/lib64/nginx/modules/ngx_stream_module.so;
+
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+}
+
+# =============================================================================
+# STREAM MODULE - SNI-based TLS routing on port 443
+# Routes encrypted traffic based on Server Name Indication (SNI)
+# All traffic on port 443 looks like standard HTTPS (DPI resistant)
+# =============================================================================
+stream {
+    log_format stream_log '$remote_addr [$time_local] '
+                          'SNI:$ssl_preread_server_name -> $upstream '
+                          'status:$status bytes:$bytes_sent/$bytes_received';
+
+    access_log /var/log/nginx/stream.log stream_log;
+
+    # SNI to upstream mapping
+    map $ssl_preread_server_name $upstream {
+        # App subdomain: a.domain.com or app.domain.com
+        ~^a\..*$     app_backend;
+
+        # TURN subdomain: t.domain.com
+        ~^t\..*$    turn_backend;
+
+        # Default: cover website (base domain or no match)
+        default            web_backend;
+    }
+
+    # Bun app via nginx HTTP (TLS termination + WebSocket support)
+    upstream app_backend {
+        server 127.0.0.1:8443;
+    }
+
+    # coturn TURNS (TLS termination, coturn - plain)
+    upstream turn_backend {
+        server 127.0.0.1:5349;
+    }
+
+    # Cover website via nginx HTTP
+    upstream web_backend {
+        server 127.0.0.1:8443;
+    }
+
+    # Main TLS listener on port 443
+    server {
+        listen 443;
+        listen [::]:443;
+
+        # Enable SNI preread (read SNI without decrypting)
+        ssl_preread on;
+
+        # Route to backend based on SNI
+        proxy_pass $upstream;
+
+        # Connection settings
+        proxy_protocol off;
+        proxy_connect_timeout 60s;
+        proxy_timeout 86400s;  # 24 hours for persistent connections
+    }
+}
+
+# =============================================================================
+# HTTP MODULE - Reverse proxy and static serving
+# Receives TLS-terminated traffic from stream module on port 8443
+# =============================================================================
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent"';
+
+    access_log /var/log/nginx/access.log main;
+    error_log /var/log/nginx/error.log warn;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript
+               text/xml application/xml application/xml+rss text/javascript;
+
+    # =========================================================================
+    # HTTP -> HTTPS redirect + ACME challenge (port 80)
+    # =========================================================================
+    server {
+        listen 80;
+        listen [::]:80;
+        server_name _;
+
+        # Let's Encrypt ACME challenge
+        location /.well-known/acme-challenge/ {
+            root /var/www/acme;
+        }
+
+        # Redirect everything else to HTTPS
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    # =========================================================================
+    # App server: a.${DOMAIN} (receives traffic from stream module)
+    # =========================================================================
+    server {
+        listen 8443 ssl;
+        listen [::]:8443 ssl;
+        server_name a.${DOMAIN};
+        http2 on;
+
+        ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+
+        # Security headers
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+
+        # Proxy to Bun signaling server
+        location / {
+            proxy_pass http://127.0.0.1:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 86400s;
+            proxy_read_timeout 86400s;
+            proxy_buffering off;
+        }
+
+        # Health check endpoint (no access logging)
+        location /health {
+            proxy_pass http://127.0.0.1:3000/health;
+            access_log off;
+        }
+    }
+
+    # =========================================================================
+    # Cover website: ${DOMAIN} (default server)
+    # =========================================================================
+    server {
+        listen 8443 ssl default_server;
+        listen [::]:8443 ssl default_server;
+        server_name ${DOMAIN};
+        http2 on;
+
+        ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+
+        # Security headers
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+
+        root /var/www/html;
+        index index.html;
+
+        location / {
+            try_files $uri $uri/ =404;
+        }
+    }
+}

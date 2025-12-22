@@ -28,9 +28,8 @@ const configSchema = z.object({
   // TURN server configuration (optional, but all fields required together)
   turnUsername: z.string().min(1).optional(),
   turnPassword: z.string().min(8, 'TURN password must be at least 8 characters').optional(),
-  turnRealm: z.string().min(1).optional(),
 
-  // Domain for TURN server URLs (used for client ICE configuration)
+  // Domain for TURN server URLs and realm (used for client ICE configuration)
   domain: z
     .string()
     .regex(
@@ -64,7 +63,6 @@ function loadConfig() {
     stunServers: process.env.STUN_SERVERS,
     turnUsername: process.env.TURN_USERNAME,
     turnPassword: process.env.TURN_PASSWORD,
-    turnRealm: process.env.TURN_REALM,
     domain: process.env.DOMAIN,
     externalIp: process.env.EXTERNAL_IP,
     forceRelay: process.env.FORCE_RELAY,
@@ -84,14 +82,13 @@ function loadConfig() {
   const config = parseResult.data;
 
   // Validate TURN configuration: all fields required together or all absent
-  const turnFields = [config.turnUsername, config.turnPassword, config.turnRealm, config.domain];
+  const turnFields = [config.turnUsername, config.turnPassword, config.domain];
   const definedCount = turnFields.filter((f) => f !== undefined).length;
 
-  if (definedCount > 0 && definedCount < 4) {
+  if (definedCount > 0 && definedCount < 3) {
     const missingFields: string[] = [];
     if (!config.turnUsername) missingFields.push('TURN_USERNAME');
     if (!config.turnPassword) missingFields.push('TURN_PASSWORD');
-    if (!config.turnRealm) missingFields.push('TURN_REALM');
     if (!config.domain) missingFields.push('DOMAIN');
 
     throw new Error(
@@ -117,7 +114,8 @@ export type Config = z.infer<typeof configSchema>;
 
 /**
  * Check if TURN server is configured
+ * Requires: turnUsername, turnPassword, domain
  */
 export function isTurnConfigured(): boolean {
-  return !!(config.turnUsername && config.turnPassword && config.turnRealm && config.domain);
+  return !!(config.turnUsername && config.turnPassword && config.domain);
 }

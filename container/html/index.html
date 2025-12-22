@@ -138,19 +138,30 @@
 
         <div class="content">
             <p>
-                it kinda works
+                Personal server. Nothing to see here.
             </p>
         </div>
 
         <div class="services">
             <h2>Available Services</h2>
-            <!-- Note: Replace yourdomain.com with actual domain via environment variable or manual edit -->
-            <a href="https://a.tuturu.pwtr.dev" class="service-link">Web Application</a>
+            <a href="#" class="service-link" id="app-link">Web Application</a>
         </div>
 
         <footer>
-            <p>&copy; 2025 pwtr.dev. All rights reserved.</p>
+            <p>&copy; 2025. All rights reserved.</p>
         </footer>
     </div>
+
+    <script>
+        // Dynamically set the app link based on current domain
+        (function() {
+            const currentHost = window.location.hostname;
+            const appLink = document.getElementById('app-link');
+            if (appLink) {
+                // Construct app URL: a.{domain} or app.{domain}
+                appLink.href = 'https://a.' + currentHost;
+            }
+        })();
+    </script>
 </body>
 </html>

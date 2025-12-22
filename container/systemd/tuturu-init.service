@@ -1,0 +1,23 @@
+[Unit]
+Description=Initialize tuturu configuration
+Documentation=https://github.com/lobziik/tuturu
+After=network.target
+Before=tuturu-certbot.service tuturu-nginx.service tuturu-coturn.service tuturu-app.service
+ConditionPathExists=!/var/lib/tuturu/.initialized
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tuturu-init.sh
+ExecStartPost=/usr/bin/touch /var/lib/tuturu/.initialized
+RemainAfterExit=yes
+SyslogIdentifier=tuturu-init
+SyslogLevel=info
+
+StandardOutput=journal+console
+StandardError=journal+console
+
+# Pass environment variables from container to this service
+PassEnvironment=DOMAIN LETSENCRYPT_EMAIL EXTERNAL_IP TURN_USERNAME TURN_PASSWORD TURN_MIN_PORT TURN_MAX_PORT LETSENCRYPT_STAGING FORCE_RELAY STUN_SERVERS
+
+[Install]
+WantedBy=multi-user.target

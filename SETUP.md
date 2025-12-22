@@ -446,6 +446,7 @@ nginx:8443       coturn:5349     nginx:8443
 | `TURN_PASSWORD` | No | auto-generated | TURN authentication password |
 | `TURN_MIN_PORT` | No | `49152` | TURN relay port range start |
 | `TURN_MAX_PORT` | No | `49200` | TURN relay port range end |
+| `STUN_SERVERS` | No | `stun:t.${DOMAIN}:3478` | STUN server URLs (comma-separated) |
 | `LETSENCRYPT_STAGING` | No | `false` | Use staging CA for testing |
 | `FORCE_RELAY` | No | `false` | Force TURN relay for all connections |
 

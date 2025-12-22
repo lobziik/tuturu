@@ -43,6 +43,8 @@ podman run -d \
     -e "EXTERNAL_IP=${EXTERNAL_IP}" \
     -e "TURN_USERNAME=${TURN_USERNAME}" \
     ${TURN_PASSWORD:+-e "TURN_PASSWORD=${TURN_PASSWORD}"} \
+    ${STUN_SERVERS:+-e "STUN_SERVERS=${STUN_SERVERS}"} \
+    ${FORCE_RELAY:+-e "FORCE_RELAY=${FORCE_RELAY}"} \
     -e "LETSENCRYPT_STAGING=${LETSENCRYPT_STAGING}" \
     -v "${CERT_VOLUME}" \
     --restart unless-stopped \

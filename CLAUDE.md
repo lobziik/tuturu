@@ -127,6 +127,7 @@ Pass via `docker run -e` or env file:
 - `TURN_USERNAME` (optional, default: `webrtc`)
 - `TURN_PASSWORD` (optional, auto-generated if not set)
 - `TURN_MIN_PORT` / `TURN_MAX_PORT` (optional, default: 49152-49200)
+- `STUN_SERVERS` (optional, default: `stun:t.${DOMAIN}:3478`) - STUN server URLs
 - `LETSENCRYPT_STAGING` (optional) - Use staging CA for testing
 - `FORCE_RELAY` (optional, default: `false`) - Force TURN relay for all connections
 

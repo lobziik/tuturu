@@ -46,6 +46,7 @@ fi
 export TURN_USERNAME="${TURN_USERNAME:-webrtc}"
 export TURN_MIN_PORT="${TURN_MIN_PORT:-49152}"
 export TURN_MAX_PORT="${TURN_MAX_PORT:-49200}"
+export STUN_SERVERS="${STUN_SERVERS:-stun:t.${DOMAIN}:3478}"
 
 # Generate TURN password if not provided
 if [[ -z "${TURN_PASSWORD:-}" ]]; then
@@ -63,7 +64,8 @@ log "  LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}"
 log "  EXTERNAL_IP: ${EXTERNAL_IP}"
 log "  TURN_USERNAME: ${TURN_USERNAME}"
 log "  TURN_PORT_RANGE: ${TURN_MIN_PORT}-${TURN_MAX_PORT}"
-log "  TURN_PASSWORD: [generated, ${#TURN_PASSWORD} chars]"
+log "  TURN_PASSWORD: [set, ${#TURN_PASSWORD} chars]"
+log "  STUN_SERVERS: ${STUN_SERVERS}"
 
 # =============================================================================
 # Generate nginx configuration
@@ -112,6 +114,7 @@ TURN_USERNAME=${TURN_USERNAME}
 TURN_PASSWORD=${TURN_PASSWORD}
 TURN_MIN_PORT=${TURN_MIN_PORT}
 TURN_MAX_PORT=${TURN_MAX_PORT}
+STUN_SERVERS=${STUN_SERVERS}
 FORCE_RELAY=${FORCE_RELAY:-false}
 EOF
 

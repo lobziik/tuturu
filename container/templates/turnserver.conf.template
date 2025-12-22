@@ -15,7 +15,7 @@ realm=${DOMAIN}
 # =============================================================================
 # Listening Ports
 # =============================================================================
-# Standard TURN port (fallback for less restrictive networks)
+# Standard TURN port, no tls
 listening-port=3478
 
 # TLS port for encrypted TURN (receives SNI-routed traffic from nginx:443)

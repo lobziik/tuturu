@@ -40,6 +40,9 @@ if ! [[ "${EXTERNAL_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     error "EXTERNAL_IP must be a valid IPv4 address. Got: ${EXTERNAL_IP}"
 fi
 
+export INTERNAL_IP=$(ip route get 1 | awk '{print $7; exit}')
+
+
 # =============================================================================
 # Set defaults for optional variables
 # =============================================================================
@@ -62,6 +65,7 @@ log "Configuration:"
 log "  DOMAIN: ${DOMAIN}"
 log "  LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}"
 log "  EXTERNAL_IP: ${EXTERNAL_IP}"
+log "  INTERNAL_IP: ${INTERNAL_IP}"
 log "  TURN_USERNAME: ${TURN_USERNAME}"
 log "  TURN_PORT_RANGE: ${TURN_MIN_PORT}-${TURN_MAX_PORT}"
 log "  TURN_PASSWORD: [set, ${#TURN_PASSWORD} chars]"
@@ -91,7 +95,7 @@ if [[ ! -f /etc/coturn/turnserver.conf.template ]]; then
     error "turnserver.conf.template not found at /etc/coturn/turnserver.conf.template"
 fi
 
-envsubst '${DOMAIN} ${EXTERNAL_IP} ${TURN_USERNAME} ${TURN_PASSWORD} ${TURN_MIN_PORT} ${TURN_MAX_PORT}' \
+envsubst '${DOMAIN} ${EXTERNAL_IP} ${INTERNAL_IP} ${TURN_USERNAME} ${TURN_PASSWORD} ${TURN_MIN_PORT} ${TURN_MAX_PORT}' \
     < /etc/coturn/turnserver.conf.template \
     > /etc/coturn/turnserver.conf
 
@@ -110,6 +114,7 @@ cat > /etc/tuturu/env << EOF
 DOMAIN=${DOMAIN}
 LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
 EXTERNAL_IP=${EXTERNAL_IP}
+INTERNAL_IP=${INTERNAL_IP}
 TURN_USERNAME=${TURN_USERNAME}
 TURN_PASSWORD=${TURN_PASSWORD}
 TURN_MIN_PORT=${TURN_MIN_PORT}

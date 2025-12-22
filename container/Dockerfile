@@ -36,6 +36,7 @@ RUN dnf install -y \
         nginx-mod-stream \
         coturn \
         certbot \
+        redis \
         gettext \
         procps-ng \
         curl \
@@ -74,6 +75,7 @@ RUN mkdir -p \
 # Enable systemd services
 RUN systemctl enable \
         tuturu-init.service \
+        tuturu-redis.service \
         tuturu-certbot.service \
         tuturu-nginx.service \
         tuturu-coturn.service \

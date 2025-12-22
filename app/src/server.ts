@@ -1,3 +1,10 @@
+/**
+ * tuturu WebRTC Signaling Server
+ *
+ * WebSocket-based signaling for PIN-based peer-to-peer video calls.
+ * Handles room management, ICE server configuration, and WebRTC offer/answer exchange.
+ */
+
 import { serve, type BunFile } from 'bun';
 import type { ServerWebSocket } from 'bun';
 import {
@@ -10,6 +17,21 @@ import {
   InvalidMessageError,
 } from './types';
 import { config, isTurnConfigured } from './config';
+import {
+  type Client,
+  getOrCreateRoom,
+  addClientToRoom,
+  removeClientFromRoom,
+  getPeer,
+  getRoomCount,
+  trackClientCredentials,
+} from './rooms';
+import {
+  initTurnRedis,
+  generateTurnCredentials,
+  isRevocationEnabled,
+  closeTurnRedis,
+} from './turn';
 
 // Embedded static assets (bundled at compile time)
 import indexHtml from '../public/index.html' with { type: 'text' };
@@ -63,31 +85,6 @@ const jsEtag = `"${Bun.hash(clientJsStr).toString(16)}"`;
 const manifestEtag = `"${Bun.hash(webmanifestStr).toString(16)}"`;
 
 /**
- * Client connection information (server-side)
- * Combines ClientData with Bun's ServerWebSocket reference
- */
-interface Client {
-  id: string;
-  pin: string;
-  ws: ServerWebSocket<ClientData>;
-}
-
-/**
- * Room for PIN-based matching
- * Maximum 2 clients per room for peer-to-peer calls
- */
-interface Room {
-  pin: string;
-  clients: Client[];
-  createdAt: number;
-}
-
-/**
- * Active rooms: Map<PIN, Room>
- */
-const rooms = new Map<string, Room>();
-
-/**
  * Client ID counter for unique identification
  */
 let clientIdCounter = 0;
@@ -109,73 +106,6 @@ function generateClientId(): string {
 }
 
 /**
- * Get or create room for PIN
- */
-function getOrCreateRoom(pin: string): Room {
-  let room = rooms.get(pin);
-  if (!room) {
-    room = {
-      pin,
-      clients: [],
-      createdAt: Date.now(),
-    };
-    rooms.set(pin, room);
-    console.log(`[ROOM] Created room for PIN ${pin}`);
-  }
-  return room;
-}
-
-/**
- * Add client to room
- * FAILS if room is full (>2 clients)
- */
-function addClientToRoom(room: Room, client: Client): void {
-  if (room.clients.length >= 2) {
-    throw new RoomFullError(room.pin);
-  }
-  room.clients.push(client);
-  console.log(`[ROOM] Client ${client.id} joined room ${room.pin} (${room.clients.length}/2)`);
-}
-
-/**
- * Remove client from room and cleanup if empty
- */
-function removeClientFromRoom(client: Client): void {
-  const room = rooms.get(client.pin);
-  if (!room) return;
-
-  const index = room.clients.findIndex((c) => c.id === client.id);
-  if (index !== -1) {
-    room.clients.splice(index, 1);
-    console.log(`[ROOM] Client ${client.id} left room ${room.pin} (${room.clients.length}/2)`);
-  }
-
-  // Notify other peer that this client left
-  if (room.clients.length === 1) {
-    const remaining = room.clients[0];
-    if (remaining) {
-      sendMessage(remaining.ws, { type: 'peer-left' });
-    }
-  }
-
-  // Cleanup empty room
-  if (room.clients.length === 0) {
-    rooms.delete(room.pin);
-    console.log(`[ROOM] Deleted empty room ${room.pin}`);
-  }
-}
-
-/**
- * Get peer in the same room
- */
-function getPeer(client: Client): Client | null {
-  const room = rooms.get(client.pin);
-  if (!room) return null;
-
-  return room.clients.find((c) => c.id !== client.id) || null;
-}
-
-/**
  * Send message to WebSocket client
  * FAILS LOUD on serialization or send errors
  * Note: Bun's ServerWebSocket doesn't expose readyState, so we rely on send() throwing if closed
@@ -194,6 +124,67 @@ function sendMessage(ws: ServerWebSocket<ClientData>, message: ServerToClientMes
       `Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+/**
+ * Build ICE server configuration for WebRTC
+ * Includes STUN servers and TURN servers with ephemeral credentials if configured
+ */
+function buildIceServers(
+  room: ReturnType<typeof getOrCreateRoom>,
+  clientId: string,
+): IceServerConfig[] {
+  // STUN servers from config (validated and parsed)
+  const iceServers: IceServerConfig[] = config.stunServers.map((url) => ({
+    urls: url,
+  }));
+
+  // Add TURN servers if configured (DPI-resistant priority order)
+  if (isTurnConfigured()) {
+    const domain = `t.${config.domain}`;
+
+    // Generate ephemeral credentials for this client
+    const { username, credential, expiresAt } = generateTurnCredentials(clientId);
+
+    // Track credentials for revocation when client disconnects
+    trackClientCredentials(room, clientId, { username, expiresAt });
+
+    console.log(`[ICE] Generated ephemeral credentials for ${clientId}, TTL: 4h`);
+
+    // Priority 1: TURNS on 443 (most likely to bypass DPI)
+    // Routes through nginx SNI router to coturn:5349
+    iceServers.push({
+      urls: `turns:${domain}:443?transport=tcp`,
+      username,
+      credential,
+    });
+
+    // Priority 2: TURNS on standard TLS port 5349
+    // Direct connection to coturn (fallback if nginx routing fails)
+    iceServers.push({
+      urls: `turns:${domain}:5349?transport=tcp`,
+      username,
+      credential,
+    });
+
+    // Priority 3: TURN TCP on 3478 (unencrypted but standard port)
+    iceServers.push({
+      urls: `turn:${domain}:3478?transport=tcp`,
+      username,
+      credential,
+    });
+
+    // Priority 4: TURN UDP on 3478 (likely blocked in restrictive networks)
+    iceServers.push({
+      urls: `turn:${domain}:3478?transport=udp`,
+      username,
+      credential,
+    });
+
+    console.log(`[ICE] Configured TURN server: ${domain} (4 transports)`);
+  }
+
+  return iceServers;
 }
 
 /**
@@ -234,53 +225,13 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
           ws,
         };
 
-        // Add client to room (fails if full)
-        addClientToRoom(room, client);
-
-        // Send ICE server configuration
-        // STUN servers from config (validated and parsed)
-        const iceServers: IceServerConfig[] = config.stunServers.map((url) => ({
-          urls: url,
-        }));
-
-        // Add TURN servers if configured (DPI-resistant priority order)
-        if (isTurnConfigured()) {
-          const domain = `t.${config.domain}`;
-          const username = config.turnUsername!;
-          const credential = config.turnPassword!;
-
-          // Priority 1: TURNS on 443 (most likely to bypass DPI)
-          // Routes through nginx SNI router to coturn:5349
-          iceServers.push({
-            urls: `turns:${domain}:443?transport=tcp`,
-            username,
-            credential,
-          });
-
-          // Priority 2: TURNS on standard TLS port 5349
-          // Direct connection to coturn (fallback if nginx routing fails)
-          iceServers.push({
-            urls: `turns:${domain}:5349?transport=tcp`,
-            username,
-            credential,
-          });
-
-          // Priority 3: TURN TCP on 3478 (unencrypted but standard port)
-          iceServers.push({
-            urls: `turn:${domain}:3478?transport=tcp`,
-            username,
-            credential,
-          });
-
-          // Priority 4: TURN UDP on 3478 (likely blocked in restrictive networks)
-          iceServers.push({
-            urls: `turn:${domain}:3478?transport=udp`,
-            username,
-            credential,
-          });
-
-          console.log(`[ICE] Configured TURN server: ${domain} (4 transports)`);
+        // Add client to room (returns false if full)
+        if (!addClientToRoom(room, client)) {
+          throw new RoomFullError(room.pin);
         }
+
+        // Build ICE server configuration with ephemeral credentials
+        const iceServers = buildIceServers(room, clientData.id);
 
         sendMessage(ws, {
           type: 'join-pin',
@@ -364,7 +315,7 @@ function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: string | Buf
           ...clientData,
           ws,
         };
-        removeClientFromRoom(client);
+        removeClientFromRoom(client, sendMessage);
         break;
       }
 
@@ -419,7 +370,8 @@ const server = serve<ClientData>({
       return new Response(
         JSON.stringify({
           status: 'ok',
-          rooms: rooms.size,
+          rooms: getRoomCount(),
+          redisRevocation: isRevocationEnabled(),
           timestamp: Date.now(),
         }),
         {
@@ -579,13 +531,16 @@ const server = serve<ClientData>({
         ...clientData,
         ws,
       };
-      removeClientFromRoom(client);
+      removeClientFromRoom(client, sendMessage);
     },
 
     // Note: Bun's WebSocket error handler removed from types in recent versions
     // Errors are handled in message/close handlers
   },
 });
+
+// Initialize Redis for TURN credential revocation
+await initTurnRedis();
 
 console.log(`
 ╔═══════════════════════════════════════╗
@@ -599,16 +554,17 @@ console.log(`
 
 📡 STUN servers: ${config.stunServers.join(', ')}
 ${config.externalIp ? `🌐 External IP: ${config.externalIp}` : '⚠️  No EXTERNAL_IP configured'}
-${isTurnConfigured() ? `✅ TURN server configured` : '⚠️  No TURN server configured (STUN only)'}
+${isTurnConfigured() ? `✅ TURN server configured (ephemeral credentials)` : '⚠️  No TURN server configured (STUN only)'}
+${isRevocationEnabled() ? `✅ Redis connected (credential revocation enabled)` : '⚠️  Redis not available (credentials expire naturally)'}
 Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
 
 Press Ctrl+C to stop
 `);
 
 // Cleanup on exit
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n\n👋 Shutting down server...');
-  // Intentionally ignore the Promise; we're exiting immediately
+  await closeTurnRedis();
   void server.stop();
   process.exit(0);
 });

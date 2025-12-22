@@ -75,6 +75,7 @@ docker exec tuturu journalctl -f
 docker exec tuturu journalctl -u tuturu-app -f
 docker exec tuturu journalctl -u tuturu-nginx -f
 docker exec tuturu journalctl -u tuturu-coturn -f
+docker exec tuturu journalctl -u tuturu-redis -f
 docker exec tuturu journalctl -u tuturu-init
 ```
 
@@ -95,25 +96,33 @@ All services run in a single UBI10-init container managed by systemd:
 
 1. **tuturu-app** (Bun WebSocket server)
    - WebSocket signaling server (PIN-based room matching)
+   - Ephemeral TURN credential generation (HMAC-SHA1)
    - Static file serving (frontend)
    - Port 3000 internally
 
-2. **tuturu-coturn** (TURN/STUN server)
+2. **tuturu-redis** (credential revocation)
+   - Blacklist for revoked TURN credentials
+   - Auto-expiring entries (TTL matches credential lifetime)
+   - 64MB max memory with LRU eviction
+
+3. **tuturu-coturn** (TURN/STUN server)
    - NAT traversal for restrictive networks
+   - Ephemeral credentials via REST API (use-auth-secret)
+   - Redis integration for credential revocation
    - Port 3478 (STUN), 5349 (TURNS via SNI routing)
    - Relay port range: 49152-49200
 
-3. **tuturu-nginx** (reverse proxy)
+4. **tuturu-nginx** (reverse proxy)
    - SNI-based TLS routing on port 443 (DPI resistant)
    - SSL termination for app traffic
    - TURNS passthrough to coturn
    - Port 80 (ACME challenge + redirect)
 
-4. **tuturu-certbot** (Let's Encrypt)
+5. **tuturu-certbot** (Let's Encrypt)
    - Automatic certificate provisioning
    - Renewal via systemd timer
 
-5. **tuturu-init** (one-shot initialization)
+6. **tuturu-init** (one-shot initialization)
    - Validates environment variables
    - Generates nginx and coturn configs from templates
    - Runs once on first container start
@@ -124,8 +133,7 @@ Pass via `docker run -e` or env file:
 - `DOMAIN` (required) - Base domain (e.g., `call.example.com`)
 - `LETSENCRYPT_EMAIL` (required) - Email for Let's Encrypt
 - `EXTERNAL_IP` (required) - Public IP of server
-- `TURN_USERNAME` (optional, default: `webrtc`)
-- `TURN_PASSWORD` (optional, auto-generated if not set)
+- `TURN_SECRET` (optional, auto-generated if not set) - Secret for ephemeral HMAC credentials (min 32 chars)
 - `TURN_MIN_PORT` / `TURN_MAX_PORT` (optional, default: 49152-49200)
 - `STUN_SERVERS` (optional, default: `stun:t.${DOMAIN}:3478`) - STUN server URLs
 - `LETSENCRYPT_STAGING` (optional) - Use staging CA for testing
@@ -145,9 +153,12 @@ tuturu-init.service (oneshot, runs first)
 tuturu-certbot.service (oneshot)
     └── Obtains certificates from Let's Encrypt
 
+tuturu-redis.service (before coturn and app)
+    └── Redis for TURN credential revocation blacklist
+
 tuturu-nginx.service (after certbot)
-tuturu-coturn.service (after certbot)
-tuturu-app.service (after init)
+tuturu-coturn.service (after certbot, redis)
+tuturu-app.service (after init, redis)
 ```
 
 ### SNI-Based Routing (DPI Resistance)
@@ -178,19 +189,25 @@ All traffic on port 443 looks like standard HTTPS:
 - `IceServerConfig` - STUN/TURN configuration
 - Custom error types (InvalidPinError, RoomFullError, InvalidMessageError)
 
-**app/src/server.ts**: Server-specific types (not exported):
+**app/src/rooms.ts**: Room management module:
 - `Client` - Full client with `ServerWebSocket<ClientData>` reference
-- `Room` - PIN-based room with array of `Client[]`
+- `Room` - PIN-based room with `Client[]` and `turnCredentials` map
+- `getOrCreateRoom()`, `addClientToRoom()`, `removeClientFromRoom()`
+- Automatic TURN credential revocation when clients leave
+
+**app/src/turn.ts**: Ephemeral TURN credentials module:
+- `generateTurnCredentials()` - HMAC-SHA1 credentials (coturn REST API format)
+- `revokeTurnCredentials()` - Add to Redis blacklist with auto-expiring TTL
+- `initRedis()` / `closeRedis()` - Redis connection lifecycle
+- 4-hour credential TTL, soft Redis dependency (works without Redis)
 
 **app/src/server.ts**: WebSocket signaling server (TypeScript):
-- `join-pin` - User joins with PIN, receives ICE server config
+- `join-pin` - User joins with PIN, receives ephemeral ICE credentials
 - `peer-joined` - Sent to FIRST peer only (triggers offer creation)
 - `offer` - WebRTC offer relayed from first peer to second peer
 - `answer` - WebRTC answer relayed from second peer to first peer
 - `ice-candidate` - ICE candidate exchange (relayed between peers)
 - `leave` - User disconnects
-- Room management (max 2 clients per PIN, enforced via RoomFullError)
-- ICE server configuration (STUN + TURN when configured)
 - **Glare prevention**: Only first peer receives `peer-joined`, avoiding simultaneous offers
 
 **app/src/client/**: WebRTC client (State Machine Architecture):
@@ -294,11 +311,17 @@ No database, no user accounts, no call records. All state is ephemeral:
 
 ### TURN Server Configuration
 
-coturn must be configured with:
-- Static credentials (TURN_USERNAME/TURN_PASSWORD from .env)
+coturn uses ephemeral HMAC-SHA1 credentials (REST API format):
+- `use-auth-secret` with `static-auth-secret` from TURN_SECRET
+- Redis integration for credential revocation blacklist
 - External IP address for ICE candidate generation
 - Port range for relay connections
 - Realm matching domain name
+
+**Credential format:**
+- Username: `expiryTimestamp:clientId`
+- Password: `base64(HMAC-SHA1(username, TURN_SECRET))`
+- TTL: 4 hours (credentials auto-expire)
 
 ## Network Requirements
 
@@ -334,6 +357,8 @@ app/
 │   │   ├── webrtc.ts    # RTCPeerConnection lifecycle
 │   │   └── events.ts    # DOM event listeners
 │   ├── server.ts        # WebSocket signaling server
+│   ├── rooms.ts         # Room management module
+│   ├── turn.ts          # Ephemeral TURN credentials + Redis revocation
 │   ├── config.ts        # Server configuration
 │   ├── types.ts         # Shared TypeScript types
 │   └── global.d.ts      # Type declarations for asset imports
@@ -354,6 +379,7 @@ container/
 ├── systemd/
 │   ├── tuturu-init.service      # One-shot initialization
 │   ├── tuturu-app.service       # Bun signaling server
+│   ├── tuturu-redis.service     # Redis for TURN credential revocation
 │   ├── tuturu-nginx.service     # nginx reverse proxy
 │   ├── tuturu-coturn.service    # TURN/STUN server
 │   ├── tuturu-certbot.service   # Certificate provisioning
@@ -380,13 +406,15 @@ See PROJECT_OUTLINE.md for detailed phases.
 - ✅ Phase 5: Production setup (SSL via Let's Encrypt, SNI routing)
 - ✅ **Frontend Refactor**: State machine architecture (8 modules, 25 unit tests)
 - ✅ **Production Bundling**: Single executable with embedded assets
+- ✅ **Ephemeral TURN Credentials**: HMAC-SHA1 credentials with Redis revocation
 
 **Remaining**:
 - ⏳ Phase 6: Optimization (reconnection, bandwidth adaptation)
 
 **Architecture Highlights**:
-- **Single Container**: All services (app, nginx, coturn, certbot) in one systemd container
+- **Single Container**: All services (app, nginx, coturn, redis, certbot) in one systemd container
 - **SNI Routing**: DPI-resistant design - all traffic looks like HTTPS on port 443
 - **PassEnvironment**: Container env vars flow to systemd services
 - **Auto-certificates**: Let's Encrypt with automatic renewal
 - **State Machine Pattern**: Predictable client state transitions, action logging
+- **Ephemeral Credentials**: Per-call TURN credentials with immediate revocation via Redis

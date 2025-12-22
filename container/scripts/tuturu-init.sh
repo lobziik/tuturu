@@ -40,22 +40,23 @@ if ! [[ "${EXTERNAL_IP}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     error "EXTERNAL_IP must be a valid IPv4 address. Got: ${EXTERNAL_IP}"
 fi
 
-export INTERNAL_IP=$(ip route get 1 | awk '{print $7; exit}')
+INTERNAL_IP=$(ip route get 1 | awk '{print $7; exit}')
+export INTERNAL_IP
 
 
 # =============================================================================
 # Set defaults for optional variables
 # =============================================================================
-export TURN_USERNAME="${TURN_USERNAME:-webrtc}"
 export TURN_MIN_PORT="${TURN_MIN_PORT:-49152}"
 export TURN_MAX_PORT="${TURN_MAX_PORT:-49200}"
 export STUN_SERVERS="${STUN_SERVERS:-stun:t.${DOMAIN}:3478}"
 
-# Generate TURN password if not provided
-if [[ -z "${TURN_PASSWORD:-}" ]]; then
-    log "Generating TURN password..."
-    TURN_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=')
-    export TURN_PASSWORD
+# Generate TURN secret if not provided (for ephemeral HMAC credentials)
+if [[ -z "${TURN_SECRET:-}" ]]; then
+    log "Generating TURN secret..."
+    # 48 bytes = ~64 chars base64, strong for HMAC-SHA1
+    TURN_SECRET=$(openssl rand -base64 48 | tr -d '/+=')
+    export TURN_SECRET
 fi
 
 # =============================================================================
@@ -66,9 +67,8 @@ log "  DOMAIN: ${DOMAIN}"
 log "  LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}"
 log "  EXTERNAL_IP: ${EXTERNAL_IP}"
 log "  INTERNAL_IP: ${INTERNAL_IP}"
-log "  TURN_USERNAME: ${TURN_USERNAME}"
+log "  TURN_SECRET: [set, ${#TURN_SECRET} chars]"
 log "  TURN_PORT_RANGE: ${TURN_MIN_PORT}-${TURN_MAX_PORT}"
-log "  TURN_PASSWORD: [set, ${#TURN_PASSWORD} chars]"
 log "  STUN_SERVERS: ${STUN_SERVERS}"
 
 # =============================================================================
@@ -95,11 +95,11 @@ if [[ ! -f /etc/coturn/turnserver.conf.template ]]; then
     error "turnserver.conf.template not found at /etc/coturn/turnserver.conf.template"
 fi
 
-envsubst '${DOMAIN} ${EXTERNAL_IP} ${INTERNAL_IP} ${TURN_USERNAME} ${TURN_PASSWORD} ${TURN_MIN_PORT} ${TURN_MAX_PORT}' \
+envsubst '${DOMAIN} ${EXTERNAL_IP} ${INTERNAL_IP} ${TURN_SECRET} ${TURN_MIN_PORT} ${TURN_MAX_PORT}' \
     < /etc/coturn/turnserver.conf.template \
     > /etc/coturn/turnserver.conf
 
-# Secure coturn config (contains password)
+# Secure coturn config (contains secret)
 chmod 600 /etc/coturn/turnserver.conf
 
 log "coturn configuration written to /etc/coturn/turnserver.conf"
@@ -115,8 +115,7 @@ DOMAIN=${DOMAIN}
 LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}
 EXTERNAL_IP=${EXTERNAL_IP}
 INTERNAL_IP=${INTERNAL_IP}
-TURN_USERNAME=${TURN_USERNAME}
-TURN_PASSWORD=${TURN_PASSWORD}
+TURN_SECRET=${TURN_SECRET}
 TURN_MIN_PORT=${TURN_MIN_PORT}
 TURN_MAX_PORT=${TURN_MAX_PORT}
 STUN_SERVERS=${STUN_SERVERS}

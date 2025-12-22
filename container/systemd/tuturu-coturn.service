@@ -1,8 +1,10 @@
 [Unit]
 Description=coturn TURN/STUN server for tuturu
 Documentation=https://github.com/lobziik/tuturu
-After=tuturu-certbot.service tuturu-init.service network.target
+After=tuturu-certbot.service tuturu-init.service tuturu-redis.service network.target
 Requires=tuturu-certbot.service tuturu-init.service
+# Soft dependency on Redis - works without it (credentials just expire naturally)
+Wants=tuturu-redis.service
 
 [Service]
 Type=simple

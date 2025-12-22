@@ -25,9 +25,12 @@ const configSchema = z.object({
     .transform((str) => str.split(',').map((s) => s.trim()))
     .pipe(z.array(z.string().min(1, 'STUN server URL cannot be empty'))),
 
-  // TURN server configuration (optional, but all fields required together)
-  turnUsername: z.string().min(1).optional(),
-  turnPassword: z.string().min(8, 'TURN password must be at least 8 characters').optional(),
+  // TURN server configuration (optional, but turnSecret + domain required together)
+  // Uses coturn REST API format with HMAC-SHA1 for ephemeral credentials
+  turnSecret: z
+    .string()
+    .min(32, 'TURN_SECRET must be at least 32 characters for security')
+    .optional(),
 
   // Domain for TURN server URLs and realm (used for client ICE configuration)
   domain: z
@@ -61,8 +64,7 @@ function loadConfig() {
     port: process.env.BUN_PORT,
     nodeEnv: process.env.NODE_ENV,
     stunServers: process.env.STUN_SERVERS,
-    turnUsername: process.env.TURN_USERNAME,
-    turnPassword: process.env.TURN_PASSWORD,
+    turnSecret: process.env.TURN_SECRET,
     domain: process.env.DOMAIN,
     externalIp: process.env.EXTERNAL_IP,
     forceRelay: process.env.FORCE_RELAY,
@@ -81,19 +83,18 @@ function loadConfig() {
 
   const config = parseResult.data;
 
-  // Validate TURN configuration: all fields required together or all absent
-  const turnFields = [config.turnUsername, config.turnPassword, config.domain];
+  // Validate TURN configuration: turnSecret + domain required together or all absent
+  const turnFields = [config.turnSecret, config.domain];
   const definedCount = turnFields.filter((f) => f !== undefined).length;
 
-  if (definedCount > 0 && definedCount < 3) {
+  if (definedCount > 0 && definedCount < 2) {
     const missingFields: string[] = [];
-    if (!config.turnUsername) missingFields.push('TURN_USERNAME');
-    if (!config.turnPassword) missingFields.push('TURN_PASSWORD');
+    if (!config.turnSecret) missingFields.push('TURN_SECRET');
     if (!config.domain) missingFields.push('DOMAIN');
 
     throw new Error(
       `TURN server configuration incomplete. Missing: ${missingFields.join(', ')}. ` +
-        `All TURN fields must be provided together or all omitted.`,
+        `Both TURN_SECRET and DOMAIN must be provided together or both omitted.`,
     );
   }
 
@@ -114,8 +115,8 @@ export type Config = z.infer<typeof configSchema>;
 
 /**
  * Check if TURN server is configured
- * Requires: turnUsername, turnPassword, domain
+ * Requires: turnSecret, domain
  */
 export function isTurnConfigured(): boolean {
-  return !!(config.turnUsername && config.turnPassword && config.domain);
+  return !!(config.turnSecret && config.domain);
 }

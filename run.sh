@@ -12,7 +12,6 @@ CONTAINER_NAME="${CONTAINER_NAME:-tuturu}"
 : "${EXTERNAL_IP:?EXTERNAL_IP is required}"
 
 # Optional environment variables
-TURN_USERNAME="${TURN_USERNAME:-webrtc}"
 LETSENCRYPT_STAGING="${LETSENCRYPT_STAGING:-false}"
 
 # Certificate volume: use CERTS_DIR if provided, otherwise named volume
@@ -41,8 +40,7 @@ podman run -d \
     -e "DOMAIN=${DOMAIN}" \
     -e "LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL}" \
     -e "EXTERNAL_IP=${EXTERNAL_IP}" \
-    -e "TURN_USERNAME=${TURN_USERNAME}" \
-    ${TURN_PASSWORD:+-e "TURN_PASSWORD=${TURN_PASSWORD}"} \
+    ${TURN_SECRET:+-e "TURN_SECRET=${TURN_SECRET}"} \
     ${STUN_SERVERS:+-e "STUN_SERVERS=${STUN_SERVERS}"} \
     ${FORCE_RELAY:+-e "FORCE_RELAY=${FORCE_RELAY}"} \
     -e "LETSENCRYPT_STAGING=${LETSENCRYPT_STAGING}" \

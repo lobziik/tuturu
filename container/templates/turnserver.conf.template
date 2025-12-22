@@ -1,6 +1,6 @@
 # tuturu coturn TURN/STUN Server Configuration
 # Single container deployment - optimized for DPI resistance
-# Template variables: ${DOMAIN}, ${EXTERNAL_IP}, ${TURN_USERNAME}, ${TURN_PASSWORD},
+# Template variables: ${DOMAIN}, ${EXTERNAL_IP}, ${TURN_SECRET},
 #                     ${TURN_MIN_PORT}, ${TURN_MAX_PORT}
 
 # =============================================================================
@@ -52,13 +52,19 @@ ec-curve-name=prime256v1
 # Note: TLS 1.0/1.1 disabled by default in coturn 4.7.0+
 
 # =============================================================================
-# Authentication
+# Authentication (Ephemeral Credentials)
 # =============================================================================
-# Long-term credential mechanism (static username/password)
-# lt-cred-mech
+# Uses coturn REST API format with HMAC-SHA1 for ephemeral credentials
+# Server generates time-limited credentials, coturn validates via HMAC
+# Format: username = "expiryTimestamp:clientId"
+#         password = base64(HMAC-SHA1(username, TURN_SECRET))
+use-auth-secret
+static-auth-secret=${TURN_SECRET}
 
-# User credentials
-user=${TURN_USERNAME}:${TURN_PASSWORD}
+# Redis for credential revocation blacklist
+# When a call ends, credentials are added here so coturn rejects them
+# Entries auto-expire (TTL = remaining credential lifetime)
+redis-userdb="ip=127.0.0.1 dbname=0 connect_timeout=3"
 
 # =============================================================================
 # Security Hardening

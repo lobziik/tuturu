@@ -1,8 +1,10 @@
 [Unit]
 Description=tuturu signaling server (Bun WebSocket)
 Documentation=https://github.com/lobziik/tuturu
-After=tuturu-init.service network.target
+After=tuturu-init.service tuturu-redis.service network.target
 Requires=tuturu-init.service
+# Soft dependency on Redis - works without it (credentials just expire naturally)
+Wants=tuturu-redis.service
 
 [Service]
 Type=simple

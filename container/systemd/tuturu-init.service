@@ -13,10 +13,8 @@ RemainAfterExit=yes
 SyslogIdentifier=tuturu-init
 SyslogLevel=info
 
-StandardOutput=tty
-StandardError=tty
-TTYPath=/dev/console
-TTYVTDisallocate=yes
+StandardOutput=journal+console
+StandardError=journal+console
 
 # Pass environment variables from container to this service
 PassEnvironment=DOMAIN LETSENCRYPT_EMAIL EXTERNAL_IP TURN_USERNAME TURN_PASSWORD TURN_MIN_PORT TURN_MAX_PORT LETSENCRYPT_STAGING

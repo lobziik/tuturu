@@ -12,15 +12,13 @@ Restart=always
 RestartSec=5
 WorkingDirectory=/var/lib/tuturu
 
-StandardOutput=tty
-StandardError=tty
-TTYPath=/dev/console
-TTYVTDisallocate=yes
-
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/var/lib/tuturu
+
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target

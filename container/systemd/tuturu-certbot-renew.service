@@ -11,7 +11,5 @@ ExecStart=/usr/bin/certbot renew --quiet \
     --pre-hook "systemctl stop tuturu-nginx" \
     --post-hook "systemctl start tuturu-nginx && systemctl reload tuturu-coturn"
 
-StandardOutput=tty
-StandardError=tty
-TTYPath=/dev/console
-TTYVTDisallocate=yes
+StandardOutput=journal+console
+StandardError=journal+console

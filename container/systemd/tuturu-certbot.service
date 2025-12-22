@@ -11,10 +11,8 @@ Type=oneshot
 ExecStart=/usr/local/bin/tuturu-certbot.sh
 RemainAfterExit=yes
 
-StandardOutput=tty
-StandardError=tty
-TTYPath=/dev/console
-TTYVTDisallocate=yes
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target

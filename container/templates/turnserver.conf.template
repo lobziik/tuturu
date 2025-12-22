@@ -55,10 +55,12 @@ ec-curve-name=prime256v1
 # Authentication
 # =============================================================================
 # Long-term credential mechanism (static username/password)
-lt-cred-mech
+# lt-cred-mech
 
 # User credentials
 user=${TURN_USERNAME}:${TURN_PASSWORD}
+
+allowed-peer-ip=0.0.0.0-255.255.255.255
 
 # =============================================================================
 # Security Hardening
@@ -106,6 +108,3 @@ simple-log
 mobility
 
 verbose
-log-file=/var/log/coturn/turnserver.log
-
-allowed-peer-ip=0.0.0.0-255.255.255.255

@@ -77,8 +77,9 @@ user=${TURN_USERNAME}:${TURN_PASSWORD}
 # Symptoms without this: CREATE_PERMISSION returns 403 Forbidden IP
 # Docs: https://github.com/coturn/coturn/blob/master/examples/etc/turnserver.conf
 # =============================================================================
-# allowed-peer-ip=0.0.0.0/0
-# allowed-peer-ip=::/0
+
+allowed-peer-ip=0.0.0.0/0
+allowed-peer-ip=::/0
 server-relay
 
 # =============================================================================

@@ -60,7 +60,8 @@ ec-curve-name=prime256v1
 # User credentials
 user=${TURN_USERNAME}:${TURN_PASSWORD}
 
-allowed-peer-ip=0.0.0.0-255.255.255.255
+allowed-peer-ip=0.0.0.0/0
+allowed-peer-ip=::/0
 
 # =============================================================================
 # Security Hardening
@@ -108,3 +109,4 @@ simple-log
 mobility
 
 verbose
+Verbose

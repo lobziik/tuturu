@@ -104,3 +104,6 @@ simple-log
 # =============================================================================
 # Mobile support (allows clients to change IP during session)
 mobility
+
+verbose
+log-file=/var/log/coturn/turnserver.log

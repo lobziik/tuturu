@@ -6,16 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 tuturu is a PIN-based peer-to-peer WebRTC video calling application for self-hosting. It's designed to work in restrictive network environments (firewalls, symmetric NAT, restricted ISPs) by using TURN relay fallback.
 
-**Current Status**: Phase 1 Complete - Basic signaling server and client implemented
+**Current Status**: Production-ready single container with signaling, TURN, nginx, and auto-SSL
 
 ## Tech Stack
 
 - **Runtime**: Bun (TypeScript)
 - **Signaling**: Bun native WebSockets
-- **TURN/STUN**: coturn (not yet implemented - Phase 3)
+- **TURN/STUN**: coturn (in single container)
 - **Frontend**: TypeScript (bundled with Bun, WebRTC native APIs)
 - **Build**: Bun bundler
-- **Deployment**: Docker Compose
+- **Deployment**: Single systemd container (UBI10-init)
+- **Reverse Proxy**: nginx with SNI routing
+- **Certificates**: Let's Encrypt (certbot)
 
 ## Development Commands
 
@@ -47,13 +49,33 @@ bun run build:prod       # Build everything
 ./dist/server            # Run single executable (no dependencies!)
 ```
 
-### Docker Deployment
+### Single Container Deployment
 
 ```bash
-docker-compose up --build    # Build and start all services
-docker-compose up -d         # Start in detached mode
-docker-compose logs -f app   # View app logs
-docker-compose down          # Stop all services
+# Build container
+./build.sh                   # Builds tuturu:latest image
+
+# Run container
+./run.sh                     # Runs with required env vars (edit for your domain)
+
+# Or manually:
+docker run -d --name tuturu \
+  -e DOMAIN=call.example.com \
+  -e LETSENCRYPT_EMAIL=you@example.com \
+  -e EXTERNAL_IP=1.2.3.4 \
+  -p 80:80 -p 443:443 -p 49152-49200:49152-49200/udp \
+  -v tuturu-certs:/etc/letsencrypt \
+  --privileged \
+  tuturu:latest
+
+# View logs (systemd journal)
+docker exec tuturu journalctl -f
+
+# View specific service logs
+docker exec tuturu journalctl -u tuturu-app -f
+docker exec tuturu journalctl -u tuturu-nginx -f
+docker exec tuturu journalctl -u tuturu-coturn -f
+docker exec tuturu journalctl -u tuturu-init
 ```
 
 ### Testing
@@ -67,22 +89,72 @@ bun run build && bun run dev
 
 ## Architecture Overview
 
-### Three-Container System
+### Single Container System (systemd-based)
 
-1. **Bun App Container** (app/)
+All services run in a single UBI10-init container managed by systemd:
+
+1. **tuturu-app** (Bun WebSocket server)
    - WebSocket signaling server (PIN-based room matching)
    - Static file serving (frontend)
    - Port 3000 internally
 
-2. **coturn Container** (coturn/)
-   - STUN/TURN server for NAT traversal
-   - Port 3478 (UDP/TCP), TLS 5349
+2. **tuturu-coturn** (TURN/STUN server)
+   - NAT traversal for restrictive networks
+   - Port 3478 (STUN), 5349 (TURNS via SNI routing)
    - Relay port range: 49152-49200
 
-3. **nginx Container** (nginx/)
-   - SSL termination (HTTPS/WSS required for WebRTC)
-   - Reverse proxy to Bun app
-   - Ports 80, 443
+3. **tuturu-nginx** (reverse proxy)
+   - SNI-based TLS routing on port 443 (DPI resistant)
+   - SSL termination for app traffic
+   - TURNS passthrough to coturn
+   - Port 80 (ACME challenge + redirect)
+
+4. **tuturu-certbot** (Let's Encrypt)
+   - Automatic certificate provisioning
+   - Renewal via systemd timer
+
+5. **tuturu-init** (one-shot initialization)
+   - Validates environment variables
+   - Generates nginx and coturn configs from templates
+   - Runs once on first container start
+
+### Container Environment Variables
+
+Pass via `docker run -e` or env file:
+- `DOMAIN` (required) - Base domain (e.g., `call.example.com`)
+- `LETSENCRYPT_EMAIL` (required) - Email for Let's Encrypt
+- `EXTERNAL_IP` (required) - Public IP of server
+- `TURN_USERNAME` (optional, default: `webrtc`)
+- `TURN_PASSWORD` (optional, auto-generated if not set)
+- `TURN_MIN_PORT` / `TURN_MAX_PORT` (optional, default: 49152-49200)
+- `LETSENCRYPT_STAGING` (optional) - Use staging CA for testing
+- `FORCE_RELAY` (optional, default: `false`) - Force TURN relay for all connections
+
+### systemd Service Architecture
+
+Environment variables flow: `docker -e` → systemd → `PassEnvironment=` → services
+
+```
+tuturu-init.service (oneshot, runs first)
+    ├── Receives env vars via PassEnvironment
+    ├── Generates /etc/nginx/nginx.conf from template
+    ├── Generates /etc/coturn/turnserver.conf from template
+    └── Saves env to /etc/tuturu/env for other services
+
+tuturu-certbot.service (oneshot)
+    └── Obtains certificates from Let's Encrypt
+
+tuturu-nginx.service (after certbot)
+tuturu-coturn.service (after certbot)
+tuturu-app.service (after init)
+```
+
+### SNI-Based Routing (DPI Resistance)
+
+All traffic on port 443 looks like standard HTTPS:
+- `a.domain.com` → nginx → Bun app (WebSocket/HTTPS)
+- `t.domain.com` → coturn (TURNS passthrough)
+- `domain.com` → nginx → cover website
 
 ### Connection Flow
 
@@ -267,12 +339,32 @@ app/
 ├── public/
 │   ├── index.html       # Static HTML (embedded in production)
 │   ├── styles.css       # Styling (embedded in production)
-│   └── index.js         # Built client code (git-ignored, embedded in production)
+│   └── index.js         # Built client code (git-ignored)
 ├── dist/
 │   └── server           # Compiled executable (58 MB, git-ignored)
 ├── package.json         # Scripts: build, build:prod, dev, start:prod, test
-├── bunfig.toml          # Bun configuration
-└── Dockerfile           # Multi-stage build with bundled executable
+└── bunfig.toml          # Bun configuration
+
+container/
+├── Dockerfile           # Multi-stage build (Debian builder → UBI10-init)
+├── scripts/
+│   ├── tuturu-init.sh   # Initialization script (env validation, config generation)
+│   └── tuturu-certbot.sh # Let's Encrypt certificate provisioning
+├── systemd/
+│   ├── tuturu-init.service      # One-shot initialization
+│   ├── tuturu-app.service       # Bun signaling server
+│   ├── tuturu-nginx.service     # nginx reverse proxy
+│   ├── tuturu-coturn.service    # TURN/STUN server
+│   ├── tuturu-certbot.service   # Certificate provisioning
+│   └── tuturu-certbot-renew.timer # Certificate renewal timer
+├── templates/
+│   ├── nginx.conf.template      # nginx config with ${DOMAIN} substitution
+│   └── turnserver.conf.template # coturn config with env substitution
+└── html/
+    └── index.html       # Cover website (served on base domain)
+
+build.sh                 # Build container image
+run.sh                   # Run container with env vars
 ```
 
 ## Implementation Phases
@@ -282,19 +374,18 @@ See PROJECT_OUTLINE.md for detailed phases.
 **Completed**:
 - ✅ Phase 1: Basic signaling (WebSocket + PIN matching)
 - ✅ Phase 2: WebRTC integration (PeerConnection, getUserMedia)
+- ✅ Phase 3: TURN server setup (coturn in single container)
+- ✅ Phase 4: Single container deployment (systemd, nginx, certbot)
+- ✅ Phase 5: Production setup (SSL via Let's Encrypt, SNI routing)
 - ✅ **Frontend Refactor**: State machine architecture (8 modules, 25 unit tests)
-- ✅ **Production Bundling**: Single executable with embedded assets (58 MB)
-- ✅ Phase 4 (partial): Docker setup with bundled executable
+- ✅ **Production Bundling**: Single executable with embedded assets
 
 **Remaining**:
-- ⏳ Phase 3: TURN server setup (coturn configuration)
-- ⏳ Phase 4 (complete): Full Docker Compose with coturn
-- ⏳ Phase 5: Production setup (SSL, nginx, Let's Encrypt)
 - ⏳ Phase 6: Optimization (reconnection, bandwidth adaptation)
 
-**Recent Enhancements**:
-- **State Machine Pattern**: Predictable state transitions, action logging, pure reducer
-- **Modular Client**: 8 focused modules with single responsibility
-- **Unit Tests**: 25 tests covering all state transitions
-- **Embedded Assets**: Static files baked into executable (no file I/O)
-- **Single Executable**: 58 MB binary with no external dependencies
+**Architecture Highlights**:
+- **Single Container**: All services (app, nginx, coturn, certbot) in one systemd container
+- **SNI Routing**: DPI-resistant design - all traffic looks like HTTPS on port 443
+- **PassEnvironment**: Container env vars flow to systemd services
+- **Auto-certificates**: Let's Encrypt with automatic renewal
+- **State Machine Pattern**: Predictable client state transitions, action logging

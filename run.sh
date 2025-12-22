@@ -34,6 +34,7 @@ podman rm -f "${CONTAINER_NAME}" 2>/dev/null || true
 podman run -d \
     --name "${CONTAINER_NAME}" \
     --hostname "${CONTAINER_NAME}" \
+    --systemd always \
     -p 80:80 \
     -p 443:443 \
     -p 49152-49200:49152-49200/udp \

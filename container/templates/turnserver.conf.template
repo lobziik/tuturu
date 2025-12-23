@@ -58,7 +58,7 @@ ec-curve-name=prime256v1
 # Server generates time-limited credentials, coturn validates via HMAC
 # Format: username = "expiryTimestamp:clientId"
 #         password = base64(HMAC-SHA1(username, TURN_SECRET))
-# Credentials expire after 4 hours (timestamp embedded in username)
+# see: https://github.com/coturn/coturn/blob/b31bb041191f10d2ef6488caad6a4ef03a51f1fc/examples/etc/turnserver.conf#L201
 use-auth-secret
 static-auth-secret=${TURN_SECRET}
 

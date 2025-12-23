@@ -2,12 +2,10 @@
  * Room management for PIN-based peer matching
  *
  * Manages rooms with maximum 2 clients per PIN for peer-to-peer video calls.
- * Tracks TURN credentials per client for revocation on disconnect.
  */
 
 import type { ServerWebSocket } from 'bun';
 import type { ClientData, ServerToClientMessage } from '../types';
-import { revokeTurnCredentials, revokeTurnCredentialsBatch } from './turn';
 
 /**
  * Client connection information (server-side)
@@ -20,14 +18,6 @@ export interface Client {
 }
 
 /**
- * Tracked TURN credentials for a client
- */
-export interface TrackedCredentials {
-  username: string;
-  expiresAt: number;
-}
-
-/**
  * Room for PIN-based matching
  * Maximum 2 clients per room for peer-to-peer calls
  */
@@ -35,8 +25,6 @@ export interface Room {
   pin: string;
   clients: Client[];
   createdAt: number;
-  /** TURN credentials by client ID for revocation on disconnect */
-  turnCredentials: Map<string, TrackedCredentials>;
 }
 
 /**
@@ -57,7 +45,6 @@ export function getOrCreateRoom(pin: string): Room {
       pin,
       clients: [],
       createdAt: Date.now(),
-      turnCredentials: new Map(),
     };
     rooms.set(pin, room);
     console.log(`[ROOM] Created room for PIN ${pin}`);
@@ -82,22 +69,7 @@ export function addClientToRoom(room: Room, client: Client): boolean {
 }
 
 /**
- * Track TURN credentials for a client in a room.
- *
- * @param room - Room containing the client
- * @param clientId - Client ID
- * @param credentials - TURN credentials to track
- */
-export function trackClientCredentials(
-  room: Room,
-  clientId: string,
-  credentials: TrackedCredentials,
-): void {
-  room.turnCredentials.set(clientId, credentials);
-}
-
-/**
- * Remove client from room, revoke their TURN credentials, and cleanup if empty.
+ * Remove client from room and cleanup if empty.
  *
  * @param client - Client to remove
  * @param sendMessage - Function to send messages to WebSocket clients
@@ -115,13 +87,6 @@ export function removeClientFromRoom(
     console.log(`[ROOM] Client ${client.id} left room ${room.pin} (${room.clients.length}/2)`);
   }
 
-  // Revoke this client's TURN credentials
-  const creds = room.turnCredentials.get(client.id);
-  if (creds) {
-    void revokeTurnCredentials(creds.username, creds.expiresAt);
-    room.turnCredentials.delete(client.id);
-  }
-
   // Notify remaining peer that this client left
   if (room.clients.length === 1) {
     const remaining = room.clients[0];
@@ -130,13 +95,8 @@ export function removeClientFromRoom(
     }
   }
 
-  // Cleanup empty room and revoke all remaining credentials
+  // Cleanup empty room
   if (room.clients.length === 0) {
-    // Revoke any remaining tracked credentials (shouldn't happen normally)
-    if (room.turnCredentials.size > 0) {
-      const remainingCreds = Array.from(room.turnCredentials.values());
-      void revokeTurnCredentialsBatch(remainingCreds);
-    }
     rooms.delete(room.pin);
     console.log(`[ROOM] Deleted empty room ${room.pin}`);
   }

@@ -110,7 +110,7 @@ export function handleMessage(ws: ServerWebSocket<ClientData>, rawMessage: strin
         }
 
         // Build ICE server configuration with ephemeral credentials
-        const iceServers = buildIceServers(room, clientData.id);
+        const iceServers = buildIceServers(clientData.id);
 
         sendMessage(ws, {
           type: 'join-pin',

@@ -11,7 +11,6 @@ import { config, isTurnConfigured } from '../config';
 import { loadAssets } from './assets';
 import { createFetchHandler } from './http';
 import { handleOpen, handleMessage, handleClose } from './websocket';
-import { initTurnRedis, isRevocationEnabled, closeTurnRedis } from './turn';
 
 /**
  * Initialize and start the server.
@@ -36,9 +35,6 @@ async function main(): Promise<void> {
     },
   });
 
-  // Initialize Redis for TURN credential revocation
-  await initTurnRedis();
-
   console.log(`
 ╔═══════════════════════════════════════╗
 ║         tuturu WebRTC Server          ║
@@ -51,17 +47,15 @@ async function main(): Promise<void> {
 
 📡 STUN servers: ${config.stunServers.join(', ')}
 ${config.externalIp ? `🌐 External IP: ${config.externalIp}` : '⚠️  No EXTERNAL_IP configured'}
-${isTurnConfigured() ? `✅ TURN server configured (ephemeral credentials)` : '⚠️  No TURN server configured (STUN only)'}
-${isRevocationEnabled() ? `✅ Redis connected (credential revocation enabled)` : '⚠️  Redis not available (credentials expire naturally)'}
+${isTurnConfigured() ? `✅ TURN server configured (ephemeral credentials, 4h TTL)` : '⚠️  No TURN server configured (STUN only)'}
 Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
 
 Press Ctrl+C to stop
 `);
 
   // Cleanup on exit
-  process.on('SIGINT', async () => {
+  process.on('SIGINT', () => {
     console.log('\n\n👋 Shutting down server...');
-    await closeTurnRedis();
     void server.stop();
     process.exit(0);
   });

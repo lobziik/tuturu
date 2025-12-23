@@ -8,7 +8,6 @@
 import type { IceServerConfig } from '../types';
 import { config, isTurnConfigured } from '../config';
 import { generateTurnCredentials } from './turn';
-import { trackClientCredentials, type Room } from './rooms';
 
 /**
  * Build ICE server configuration for WebRTC.
@@ -20,11 +19,10 @@ import { trackClientCredentials, type Room } from './rooms';
  * 3. TURN TCP on 3478 (unencrypted but standard)
  * 4. TURN UDP on 3478 (often blocked)
  *
- * @param room - Room for tracking credentials
  * @param clientId - Client ID for credential generation
  * @returns Array of ICE server configurations
  */
-export function buildIceServers(room: Room, clientId: string): IceServerConfig[] {
+export function buildIceServers(clientId: string): IceServerConfig[] {
   // STUN servers from config (validated and parsed)
   const iceServers: IceServerConfig[] = config.stunServers.map((url) => ({
     urls: url,
@@ -35,10 +33,7 @@ export function buildIceServers(room: Room, clientId: string): IceServerConfig[]
     const domain = `t.${config.domain}`;
 
     // Generate ephemeral credentials for this client
-    const { username, credential, expiresAt } = generateTurnCredentials(clientId);
-
-    // Track credentials for revocation when client disconnects
-    trackClientCredentials(room, clientId, { username, expiresAt });
+    const { username, credential } = generateTurnCredentials(clientId);
 
     console.log(`[ICE] Generated ephemeral credentials for ${clientId}, TTL: 4h`);
 

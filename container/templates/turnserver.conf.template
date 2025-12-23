@@ -58,13 +58,9 @@ ec-curve-name=prime256v1
 # Server generates time-limited credentials, coturn validates via HMAC
 # Format: username = "expiryTimestamp:clientId"
 #         password = base64(HMAC-SHA1(username, TURN_SECRET))
+# Credentials expire after 4 hours (timestamp embedded in username)
 use-auth-secret
 static-auth-secret=${TURN_SECRET}
-
-# Redis for credential revocation blacklist
-# When a call ends, credentials are added here so coturn rejects them
-# Entries auto-expire (TTL = remaining credential lifetime)
-redis-userdb="ip=127.0.0.1 dbname=0 connect_timeout=3"
 
 # =============================================================================
 # Security Hardening

@@ -8,7 +8,6 @@ import type { Server } from 'bun';
 import type { ClientData } from '../types';
 import type { LoadedAssets } from './assets';
 import { getRoomCount } from './rooms';
-import { isRevocationEnabled } from './turn';
 import { generateClientId } from './websocket';
 
 /**
@@ -29,7 +28,6 @@ export function createFetchHandler(assets: LoadedAssets) {
         JSON.stringify({
           status: 'ok',
           rooms: getRoomCount(),
-          redisRevocation: isRevocationEnabled(),
           timestamp: Date.now(),
         }),
         {

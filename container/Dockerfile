@@ -17,7 +17,7 @@ COPY app/bunfig.toml ./
 # Build client and compile server to standalone executable
 RUN bun run build && \
     bun build --compile --minify --target=bun-linux-x64 \
-    ./src/server.ts --outfile tuturu-server
+    ./src/server/index.ts --outfile tuturu-server
 
 # =============================================================================
 # Stage 2: Final UBI10-init image with systemd

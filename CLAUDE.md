@@ -95,11 +95,13 @@ All services run in a single UBI10-init container managed by systemd:
 
 1. **tuturu-app** (Bun WebSocket server)
    - WebSocket signaling server (PIN-based room matching)
+   - Ephemeral TURN credential generation (HMAC-SHA1)
    - Static file serving (frontend)
    - Port 3000 internally
 
 2. **tuturu-coturn** (TURN/STUN server)
    - NAT traversal for restrictive networks
+   - Ephemeral credentials via REST API (use-auth-secret)
    - Port 3478 (STUN), 5349 (TURNS via SNI routing)
    - Relay port range: 49152-49200
 
@@ -109,11 +111,11 @@ All services run in a single UBI10-init container managed by systemd:
    - TURNS passthrough to coturn
    - Port 80 (ACME challenge + redirect)
 
-4. **tuturu-certbot** (Let's Encrypt)
+5. **tuturu-certbot** (Let's Encrypt)
    - Automatic certificate provisioning
    - Renewal via systemd timer
 
-5. **tuturu-init** (one-shot initialization)
+6. **tuturu-init** (one-shot initialization)
    - Validates environment variables
    - Generates nginx and coturn configs from templates
    - Runs once on first container start
@@ -124,8 +126,7 @@ Pass via `docker run -e` or env file:
 - `DOMAIN` (required) - Base domain (e.g., `call.example.com`)
 - `LETSENCRYPT_EMAIL` (required) - Email for Let's Encrypt
 - `EXTERNAL_IP` (required) - Public IP of server
-- `TURN_USERNAME` (optional, default: `webrtc`)
-- `TURN_PASSWORD` (optional, auto-generated if not set)
+- `TURN_SECRET` (optional, auto-generated if not set) - Secret for ephemeral HMAC credentials (min 32 chars)
 - `TURN_MIN_PORT` / `TURN_MAX_PORT` (optional, default: 49152-49200)
 - `STUN_SERVERS` (optional, default: `stun:t.${DOMAIN}:3478`) - STUN server URLs
 - `LETSENCRYPT_STAGING` (optional) - Use staging CA for testing
@@ -178,20 +179,23 @@ All traffic on port 443 looks like standard HTTPS:
 - `IceServerConfig` - STUN/TURN configuration
 - Custom error types (InvalidPinError, RoomFullError, InvalidMessageError)
 
-**app/src/server.ts**: Server-specific types (not exported):
-- `Client` - Full client with `ServerWebSocket<ClientData>` reference
-- `Room` - PIN-based room with array of `Client[]`
+**app/src/server/**: WebSocket signaling server (Modular Architecture):
 
-**app/src/server.ts**: WebSocket signaling server (TypeScript):
-- `join-pin` - User joins with PIN, receives ICE server config
+Modular architecture matching client structure:
+- `index.ts` - Entry point, server startup/shutdown, lifecycle management
+- `assets.ts` - Static asset loading, ETag computation, dev/prod mode handling
+- `http.ts` - HTTP request routing, static file serving, health endpoint
+- `websocket.ts` - WebSocket message handling, client ID generation
+- `ice.ts` - ICE server configuration builder (STUN + TURN with DPI bypass priority)
+- `rooms.ts` - Room management, peer matching
+- `turn.ts` - Ephemeral TURN credentials (HMAC-SHA1)
+
+**WebSocket Messages**:
+- `join-pin` - User joins with PIN, receives ephemeral ICE credentials
 - `peer-joined` - Sent to FIRST peer only (triggers offer creation)
-- `offer` - WebRTC offer relayed from first peer to second peer
-- `answer` - WebRTC answer relayed from second peer to first peer
-- `ice-candidate` - ICE candidate exchange (relayed between peers)
+- `offer` / `answer` / `ice-candidate` - WebRTC signaling relay
 - `leave` - User disconnects
-- Room management (max 2 clients per PIN, enforced via RoomFullError)
-- ICE server configuration (STUN + TURN when configured)
-- **Glare prevention**: Only first peer receives `peer-joined`, avoiding simultaneous offers
+- **Glare prevention**: Only first peer receives `peer-joined`
 
 **app/src/client/**: WebRTC client (State Machine Architecture):
 
@@ -215,8 +219,8 @@ Modular architecture with unidirectional data flow:
 
 **Build Process**:
 - **Client**: `src/client/index.ts` bundled by Bun → `public/index.js` (106 KB with inline sourcemaps)
-- **Server (Development)**: `src/server.ts` runs directly with Bun (hot reload)
-- **Server (Production)**: `src/server.ts` bundled with embedded assets → `dist/server` (58 MB executable)
+- **Server (Development)**: `src/server/index.ts` runs directly with Bun (hot reload)
+- **Server (Production)**: `src/server/index.ts` bundled with embedded assets → `dist/server` (58 MB executable)
 - **Static Assets**: HTML, CSS, and client JS embedded in server executable at compile time
 - **Types**: `src/types.ts` shared between client and server
 - **No external dependencies**: Production executable contains Bun runtime + all assets
@@ -227,13 +231,13 @@ Modular architecture with unidirectional data flow:
 
 The codebase follows strict error handling principles:
 
-**Server (server.ts)**:
+**Server (server/)**:
 - Custom error classes: `InvalidPinError`, `RoomFullError`, `InvalidMessageError`
 - Validation happens immediately (fail fast on invalid PIN format)
 - Errors sent to client with clear messages before closing connection
 - No silent failures or empty catch blocks
 
-**Client (client.ts)**:
+**Client (client/)**:
 - Distinguishes intentional vs unexpected disconnections (`isIntentionalClose` flag)
 - Human-readable WebSocket close codes via `getCloseCodeDescription()`
 - Actionable error messages (e.g., "Please allow access and try again", not "Unknown reason")
@@ -251,9 +255,9 @@ The codebase follows strict error handling principles:
    - `bun build src/client/index.ts` bundles to `public/index.js` (106 KB)
    - Inline source maps for debugging (Chrome DevTools compatible)
    - Minified for production
-4. **Server Development**: Bun runs `src/server.ts` directly with hot reload
+4. **Server Development**: Bun runs `src/server/index.ts` directly with hot reload
 5. **Server Production**:
-   - `bun build --compile src/server.ts` creates standalone executable
+   - `bun build --compile src/server/index.ts` creates standalone executable
    - Static assets (HTML, CSS, JS) embedded using Bun's import attributes
    - Single 58 MB file containing Bun runtime + all code + all assets
    - No external file dependencies at runtime
@@ -294,11 +298,16 @@ No database, no user accounts, no call records. All state is ephemeral:
 
 ### TURN Server Configuration
 
-coturn must be configured with:
-- Static credentials (TURN_USERNAME/TURN_PASSWORD from .env)
+coturn uses ephemeral HMAC-SHA1 credentials (REST API format):
+- `use-auth-secret` with `static-auth-secret` from TURN_SECRET
 - External IP address for ICE candidate generation
 - Port range for relay connections
 - Realm matching domain name
+
+**Credential format:**
+- Username: `expiryTimestamp:clientId`
+- Password: `base64(HMAC-SHA1(username, TURN_SECRET))`
+- TTL: 4 hours (credentials auto-expire)
 
 ## Network Requirements
 
@@ -333,7 +342,14 @@ app/
 │   │   ├── media.ts     # getUserMedia handling
 │   │   ├── webrtc.ts    # RTCPeerConnection lifecycle
 │   │   └── events.ts    # DOM event listeners
-│   ├── server.ts        # WebSocket signaling server
+│   ├── server/          # Server modular architecture
+│   │   ├── index.ts     # Entry point, lifecycle management
+│   │   ├── assets.ts    # Static asset loading, ETags
+│   │   ├── http.ts      # HTTP routing, static serving
+│   │   ├── websocket.ts # WebSocket message handling
+│   │   ├── ice.ts       # ICE server configuration
+│   │   ├── rooms.ts     # Room management, peer matching
+│   │   └── turn.ts      # Ephemeral TURN credentials
 │   ├── config.ts        # Server configuration
 │   ├── types.ts         # Shared TypeScript types
 │   └── global.d.ts      # Type declarations for asset imports
@@ -380,6 +396,7 @@ See PROJECT_OUTLINE.md for detailed phases.
 - ✅ Phase 5: Production setup (SSL via Let's Encrypt, SNI routing)
 - ✅ **Frontend Refactor**: State machine architecture (8 modules, 25 unit tests)
 - ✅ **Production Bundling**: Single executable with embedded assets
+- ✅ **Ephemeral TURN Credentials**: HMAC-SHA1 credentials (4h TTL)
 
 **Remaining**:
 - ⏳ Phase 6: Optimization (reconnection, bandwidth adaptation)
@@ -390,3 +407,4 @@ See PROJECT_OUTLINE.md for detailed phases.
 - **PassEnvironment**: Container env vars flow to systemd services
 - **Auto-certificates**: Let's Encrypt with automatic renewal
 - **State Machine Pattern**: Predictable client state transitions, action logging
+- **Ephemeral Credentials**: Per-call TURN credentials with 4h TTL

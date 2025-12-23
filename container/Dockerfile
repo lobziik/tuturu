@@ -17,10 +17,39 @@ COPY app/bunfig.toml ./
 # Build client and compile server to standalone executable
 RUN bun run build && \
     bun build --compile --minify --target=bun-linux-x64 \
-    ./src/server.ts --outfile tuturu-server
+    ./src/server/index.ts --outfile tuturu-server
 
 # =============================================================================
-# Stage 2: Final UBI10-init image with systemd
+# Stage 2: Build Valkey from source
+# =============================================================================
+FROM debian:bookworm-slim AS valkey-builder
+
+ARG VALKEY_VERSION=9.0.1
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        libssl-dev \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and extract Valkey source
+RUN curl -fsSL "https://github.com/valkey-io/valkey/archive/refs/tags/${VALKEY_VERSION}.tar.gz" \
+        -o valkey.tar.gz && \
+    tar -xzf valkey.tar.gz && \
+    mv "valkey-${VALKEY_VERSION}" valkey
+
+# Build Valkey (server only, with TLS support)
+RUN cd valkey && \
+    make BUILD_TLS=yes MALLOC=libc -j$(nproc) valkey-server && \
+    strip src/valkey-server
+
+# =============================================================================
+# Stage 3: Final UBI10-init image with systemd
 # =============================================================================
 FROM redhat/ubi10-init:10.1-1763368398
 
@@ -36,7 +65,6 @@ RUN dnf install -y \
         nginx-mod-stream \
         coturn \
         certbot \
-        redis \
         gettext \
         procps-ng \
         curl \
@@ -48,6 +76,10 @@ RUN dnf install -y \
 # Copy compiled Bun application
 COPY --from=app-builder /build/tuturu-server /usr/local/bin/
 RUN chmod +x /usr/local/bin/tuturu-server
+
+# Copy Valkey binary from builder
+COPY --from=valkey-builder /build/valkey/src/valkey-server /usr/local/bin/
+RUN chmod +x /usr/local/bin/valkey-server
 
 # Copy configuration templates
 COPY container/templates/nginx.conf.template /etc/nginx/

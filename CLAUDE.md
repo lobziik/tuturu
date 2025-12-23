@@ -189,26 +189,23 @@ All traffic on port 443 looks like standard HTTPS:
 - `IceServerConfig` - STUN/TURN configuration
 - Custom error types (InvalidPinError, RoomFullError, InvalidMessageError)
 
-**app/src/rooms.ts**: Room management module:
-- `Client` - Full client with `ServerWebSocket<ClientData>` reference
-- `Room` - PIN-based room with `Client[]` and `turnCredentials` map
-- `getOrCreateRoom()`, `addClientToRoom()`, `removeClientFromRoom()`
-- Automatic TURN credential revocation when clients leave
+**app/src/server/**: WebSocket signaling server (Modular Architecture):
 
-**app/src/turn.ts**: Ephemeral TURN credentials module:
-- `generateTurnCredentials()` - HMAC-SHA1 credentials (coturn REST API format)
-- `revokeTurnCredentials()` - Add to Redis blacklist with auto-expiring TTL
-- `initRedis()` / `closeRedis()` - Redis connection lifecycle
-- 4-hour credential TTL, soft Redis dependency (works without Redis)
+Modular architecture matching client structure:
+- `index.ts` - Entry point, server startup/shutdown, lifecycle management
+- `assets.ts` - Static asset loading, ETag computation, dev/prod mode handling
+- `http.ts` - HTTP request routing, static file serving, health endpoint
+- `websocket.ts` - WebSocket message handling, client ID generation
+- `ice.ts` - ICE server configuration builder (STUN + TURN with DPI bypass priority)
+- `rooms.ts` - Room management, peer matching, credential tracking
+- `turn.ts` - Ephemeral TURN credentials (HMAC-SHA1), Redis revocation
 
-**app/src/server.ts**: WebSocket signaling server (TypeScript):
+**WebSocket Messages**:
 - `join-pin` - User joins with PIN, receives ephemeral ICE credentials
 - `peer-joined` - Sent to FIRST peer only (triggers offer creation)
-- `offer` - WebRTC offer relayed from first peer to second peer
-- `answer` - WebRTC answer relayed from second peer to first peer
-- `ice-candidate` - ICE candidate exchange (relayed between peers)
+- `offer` / `answer` / `ice-candidate` - WebRTC signaling relay
 - `leave` - User disconnects
-- **Glare prevention**: Only first peer receives `peer-joined`, avoiding simultaneous offers
+- **Glare prevention**: Only first peer receives `peer-joined`
 
 **app/src/client/**: WebRTC client (State Machine Architecture):
 
@@ -232,8 +229,8 @@ Modular architecture with unidirectional data flow:
 
 **Build Process**:
 - **Client**: `src/client/index.ts` bundled by Bun → `public/index.js` (106 KB with inline sourcemaps)
-- **Server (Development)**: `src/server.ts` runs directly with Bun (hot reload)
-- **Server (Production)**: `src/server.ts` bundled with embedded assets → `dist/server` (58 MB executable)
+- **Server (Development)**: `src/server/index.ts` runs directly with Bun (hot reload)
+- **Server (Production)**: `src/server/index.ts` bundled with embedded assets → `dist/server` (58 MB executable)
 - **Static Assets**: HTML, CSS, and client JS embedded in server executable at compile time
 - **Types**: `src/types.ts` shared between client and server
 - **No external dependencies**: Production executable contains Bun runtime + all assets
@@ -244,13 +241,13 @@ Modular architecture with unidirectional data flow:
 
 The codebase follows strict error handling principles:
 
-**Server (server.ts)**:
+**Server (server/)**:
 - Custom error classes: `InvalidPinError`, `RoomFullError`, `InvalidMessageError`
 - Validation happens immediately (fail fast on invalid PIN format)
 - Errors sent to client with clear messages before closing connection
 - No silent failures or empty catch blocks
 
-**Client (client.ts)**:
+**Client (client/)**:
 - Distinguishes intentional vs unexpected disconnections (`isIntentionalClose` flag)
 - Human-readable WebSocket close codes via `getCloseCodeDescription()`
 - Actionable error messages (e.g., "Please allow access and try again", not "Unknown reason")
@@ -268,9 +265,9 @@ The codebase follows strict error handling principles:
    - `bun build src/client/index.ts` bundles to `public/index.js` (106 KB)
    - Inline source maps for debugging (Chrome DevTools compatible)
    - Minified for production
-4. **Server Development**: Bun runs `src/server.ts` directly with hot reload
+4. **Server Development**: Bun runs `src/server/index.ts` directly with hot reload
 5. **Server Production**:
-   - `bun build --compile src/server.ts` creates standalone executable
+   - `bun build --compile src/server/index.ts` creates standalone executable
    - Static assets (HTML, CSS, JS) embedded using Bun's import attributes
    - Single 58 MB file containing Bun runtime + all code + all assets
    - No external file dependencies at runtime
@@ -356,9 +353,14 @@ app/
 │   │   ├── media.ts     # getUserMedia handling
 │   │   ├── webrtc.ts    # RTCPeerConnection lifecycle
 │   │   └── events.ts    # DOM event listeners
-│   ├── server.ts        # WebSocket signaling server
-│   ├── rooms.ts         # Room management module
-│   ├── turn.ts          # Ephemeral TURN credentials + Redis revocation
+│   ├── server/          # Server modular architecture
+│   │   ├── index.ts     # Entry point, lifecycle management
+│   │   ├── assets.ts    # Static asset loading, ETags
+│   │   ├── http.ts      # HTTP routing, static serving
+│   │   ├── websocket.ts # WebSocket message handling
+│   │   ├── ice.ts       # ICE server configuration
+│   │   ├── rooms.ts     # Room management, peer matching
+│   │   └── turn.ts      # Ephemeral TURN credentials, Redis
 │   ├── config.ts        # Server configuration
 │   ├── types.ts         # Shared TypeScript types
 │   └── global.d.ts      # Type declarations for asset imports

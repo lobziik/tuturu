@@ -6,7 +6,7 @@
  */
 
 import type { ServerWebSocket } from 'bun';
-import type { ClientData, ServerToClientMessage } from './types';
+import type { ClientData, ServerToClientMessage } from '../types';
 import { revokeTurnCredentials, revokeTurnCredentialsBatch } from './turn';
 
 /**
@@ -22,7 +22,7 @@ export interface Client {
 /**
  * Tracked TURN credentials for a client
  */
-interface TrackedCredentials {
+export interface TrackedCredentials {
   username: string;
   expiresAt: number;
 }
@@ -31,7 +31,7 @@ interface TrackedCredentials {
  * Room for PIN-based matching
  * Maximum 2 clients per room for peer-to-peer calls
  */
-interface Room {
+export interface Room {
   pin: string;
   clients: Client[];
   createdAt: number;

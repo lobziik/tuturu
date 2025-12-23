@@ -1,14 +1,14 @@
 [Unit]
-Description=Redis for tuturu TURN credential revocation
+Description=Valkey for tuturu TURN credential revocation
 After=network.target
 Before=tuturu-coturn.service tuturu-app.service
 
 [Service]
 Type=simple
-# Redis in-memory only, no persistence needed (blacklist entries have TTL)
+# Valkey in-memory only, no persistence needed (blacklist entries have TTL)
 # Bind to localhost only (container-internal communication)
 # 64MB max memory with LRU eviction for safety
-ExecStart=/usr/bin/redis-server --bind 127.0.0.1 --port 6379 --daemonize no --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
+ExecStart=/usr/local/bin/valkey-server --bind 127.0.0.1 --port 6379 --daemonize no --maxmemory 64mb --maxmemory-policy allkeys-lru --save ""
 Restart=always
 RestartSec=5
 

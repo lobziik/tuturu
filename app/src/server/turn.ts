@@ -7,7 +7,7 @@
  */
 
 import { createClient, type RedisClientType } from 'redis';
-import { config, isTurnConfigured } from './config';
+import { config, isTurnConfigured } from '../config';
 
 /** Credential TTL in seconds (4 hours) */
 const TURN_CREDENTIAL_TTL_SECONDS = 4 * 60 * 60;

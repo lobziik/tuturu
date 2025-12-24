@@ -1,108 +1,154 @@
-# tuturu 📞
+# tuturu
 
-> *"Tuturu~"* - Mayuri Shiina
+*"Tuturu~! ♪" — Mayuri Shiina*
 
-A simple, self-hosted WebRTC video calling app for connecting across any network barrier.
+Self-hosted WebRTC video calling. PIN-based room matching. Single container.
 
-## What is tuturu?
+## What is This
 
-tuturu is a PIN-based peer-to-peer video calling application designed to work in restrictive network environments. No
-accounts, no tracking, no third-party services - just enter a shared PIN and connect.
+A one-to-one video calling application you run on your own server. Two people enter the same PIN and get connected via
+WebRTC.
 
-Named after Mayuri's iconic phone greeting from Steins;Gate, because sometimes the simplest communication methods are
-the most reliable across worldlines (or firewalls).
+**What's inside:**
 
-## Features
+- Bun signaling server (WebSocket)
+- coturn for STUN/TURN relay
+- nginx for TLS termination and routing
+- Let's Encrypt for automatic certificates
+- systemd orchestration (single container, multiple services)
 
-- 🔢 **PIN-based connection** - Share a 6-digit code, start calling
-- 📹 **Video + Audio** - Full duplex streaming
-- 🔒 **Self-hosted** - Your server, your rules
-- 🌐 **Works everywhere** - TURN relay for restrictive networks
-- 🐳 **Docker deployment** - `docker-compose up` and you're live
-- 🚫 **No registration** - Stateless and privacy-focused
+**What it relies on:**
 
-## Quick Start
+- Browser WebRTC APIs (`RTCPeerConnection`, `getUserMedia`)
+- Modern browser (Chrome, Firefox, Safari, Edge)
+- A domain name (required for TLS)
+- A VPS with ports 80, 443, 49152-49200/udp available
 
-```bash
-# Clone the repo
-git clone https://github.com/yourusername/tuturu.git
-cd tuturu
+## Quickstart
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your domain and credentials
+### 1. Get a Domain
 
-# Deploy
-docker-compose up -d
+Purchase or use an existing domain. You'll need to create a couple DNS records.
 
-# Access at https://yourdomain.com
+### 2. Get a VPS
+
+Any Linux VPS with:
+
+- 1 CPU, 512MB RAM minimum
+- Ubuntu 22.04+ or similar
+
+### 3. Configure DNS
+
+Point to your VPS IP:
+
+```
+yourdomain.com → A → YOUR_VPS_IP
+a.yourdomain.com  → A → YOUR_VPS_IP
+t.yourdomain.com → A → YOUR_VPS_IP
 ```
 
-## How it works
+Wait for DNS propagation (check with `dig yourdomain.com`).
 
-1. Both users open the app
-2. Enter the same 6-digit PIN
-3. WebRTC connects you directly (or via TURN relay if needed)
-4. Video call established
+Subdomains are also possible
 
-## Tech Stack
+```
+tuturu.yourdomain.com → A → YOUR_VPS_IP
+a.tuturu.yourdomain.com  → A → YOUR_VPS_IP
+t.tuturu.yourdomain.com → A → YOUR_VPS_IP
+```
 
-- **Runtime**: Bun
-- **Signaling**: Native WebSockets
-- **TURN/STUN**: coturn
-- **Frontend**: TypeScript with state machine architecture (8 modular files)
-- **Build**: Single executable with embedded assets (58 MB)
-- **Deployment**: Docker Compose
-
-## Architecture Highlights
-
-- **State Machine Pattern**: Unidirectional data flow with pure reducer (Action → State → Render)
-- **Production Bundling**: Single executable contains Bun runtime + all code + all static assets
-- **No External Dependencies**: Production deployment requires only the compiled binary
-- **Unit Tested**: 25 tests covering all state transitions
-- **Mobile-Friendly**: iOS Safari and Chrome Android compatible
-
-## Use Case
-
-Built for connecting with family and friends in regions with messenger restrictions. Works through:
-
-- Corporate firewalls
-- Symmetric NAT
-- Restrictive ISPs
-- VPN-unfriendly networks
-
-## Local Development
+### 4. Run
 
 ```bash
-cd app
-bun install
+# Download
+curl -fsSL https://raw.githubusercontent.com/lobziik/tuturu/main/tuturu -o tuturu
+chmod +x tuturu
 
-# Development (2 terminals)
-bun run build:watch    # Terminal 1: Watch client changes
-bun run dev            # Terminal 2: Run server with hot reload
+# Install (interactive)
+sudo ./tuturu install
 
-# Production build
-bun run build:prod     # Build client + bundle server
-./dist/server          # Run standalone executable
+# Follow prompts for domain and email
+```
 
-# Testing
-bun test               # Run unit tests (25 tests)
-bun run lint           # Run linter
-bun run typecheck      # Type check
+First run takes 1-2 minutes while Let's Encrypt issues certificates.
+
+### 5. Use
+
+Open `https://a.yourdomain.com` on both devices, enter the same PIN, call.
+
+## Commands
+
+```
+./tuturu install     # First-time setup
+./tuturu start       # Start container
+./tuturu stop        # Stop container
+./tuturu restart     # Restart
+./tuturu logs        # View all logs
+./tuturu logs app    # Signaling server logs
+./tuturu logs nginx  # nginx logs
+./tuturu logs coturn # TURN server logs
+./tuturu status      # Service status
+./tuturu upgrade     # Pull latest, restart
+./tuturu help        # Show commands
+```
+
+## Requirements
+
+| Component | Requirement                      |
+|-----------|----------------------------------|
+| Domain    | Required (TLS certificates)      |
+| Ports     | 80, 443 (TCP), 49152-49200 (UDP) |
+| Runtime   | Podman 4.0+ or Docker            |
+| Resources | 512MB RAM, 1 CPU                 |
+
+## How It Works
+
+```
+Browser A                    Your VPS                    Browser B
+    │                           │                            │
+    ├───WebSocket───►┌──────────┴──────────┐◄───WebSocket───┤
+    │                │  tuturu-server:3000 │                │
+    │                │   (Bun signaling)   │                │
+    │                └──────────┬──────────┘                │
+    │                           │                            │
+    ├───TURN/STUN───►┌──────────┴──────────┐◄───TURN/STUN───┤
+    │                │   coturn:3478/5349  │                │
+    │                │   (media relay)     │                │
+    │                └──────────┬──────────┘                │
+    │                           │                            │
+    ├───────────────────────────┼────────────────────────────┤
+    │                      WebRTC P2P                        │
+    │               (or relayed via TURN)                    │
+    └────────────────────────────────────────────────────────┘
+```
+
+1. Both browsers connect to signaling server via WebSocket
+2. PIN matching pairs them into a room
+3. WebRTC negotiation (SDP offer/answer)
+4. ICE candidate exchange via signaling
+5. Media streams established (direct P2P or via TURN relay)
+
+## Project Structure
+
+```
+tuturu/
+├── app/                    # Bun application
+│   ├── src/
+│   │   ├── client/         # Browser app (8 TypeScript modules)
+│   │   └── server/         # Signaling server
+│   └── public/             # Static assets
+├── container/              # Container build
+│   ├── Dockerfile
+│   ├── systemd/            # Service units
+│   └── templates/          # nginx, coturn configs
+├── docs/                   # Documentation
+└── tuturu                  # CLI script
 ```
 
 ## Documentation
 
-See [CLAUDE.md](CLAUDE.md) for development guidelines and architecture details.
+TBD
 
-See [PROJECT_OUTLINE.md](ai/PROJECT_OUTLINE.md) for complete implementation phases.
+---
 
-## Requirements
-
-- VPS with Docker and Docker Compose
-- Domain name (for SSL)
-- Ports: 80, 443, 3478, 49152-49200
-
-## License
-
-MIT
+El Psy Kongroo.

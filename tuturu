@@ -1,0 +1,607 @@
+#!/bin/bash
+set -euo pipefail
+
+# =============================================================================
+# tuturu - WebRTC video calling CLI
+# =============================================================================
+
+VERSION="1.0.0"
+REPO="ghcr.io/lobziik/tuturu"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tuturu"
+CONTAINER_NAME="tuturu"
+RUNTIME=""
+
+# =============================================================================
+# Output Helpers
+# =============================================================================
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log()     { echo -e "[tuturu] $*"; }
+success() { echo -e "${GREEN}[✓]${NC} $*"; }
+warn()    { echo -e "${YELLOW}[!]${NC} $*"; }
+error()   { echo -e "${RED}[✗]${NC} $*" >&2; }
+
+# =============================================================================
+# Preflight Checks
+# =============================================================================
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        error "Root required to bind ports 80/443"
+        echo ""
+        echo "Either run with sudo:"
+        echo "  sudo ./tuturu install"
+        echo ""
+        echo "Or enable unprivileged ports (one-time, requires root):"
+        echo "  sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80"
+        echo "  echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/50-unprivileged-ports.conf"
+        echo ""
+        echo "Then re-run: ./tuturu install"
+        exit 1
+    fi
+}
+
+check_runtime() {
+    if command -v podman &>/dev/null; then
+        RUNTIME="podman"
+    elif command -v docker &>/dev/null; then
+        RUNTIME="docker"
+        warn "Docker detected. Podman is recommended."
+    else
+        echo "No container runtime found."
+        echo ""
+        echo "Podman is recommended (rootless, daemonless, Docker-compatible)."
+        echo ""
+        read -p "Install Podman now? [Y/n] " -r
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            error "Container runtime required. Install podman or docker manually."
+            exit 1
+        fi
+        install_podman
+        RUNTIME="podman"
+    fi
+}
+
+install_podman() {
+    if [[ ! -f /etc/os-release ]]; then
+        error "Cannot detect distribution. Install podman manually."
+        echo "See: https://podman.io/getting-started/installation"
+        exit 1
+    fi
+
+    # shellcheck source=/dev/null
+    . /etc/os-release
+
+    echo "Installing Podman for $ID..."
+
+    case "$ID" in
+        ubuntu|debian)
+            apt-get update
+            apt-get install -y podman
+            ;;
+        fedora)
+            dnf install -y podman
+            ;;
+        rhel|rocky|centos|almalinux)
+            dnf install -y podman
+            ;;
+        arch|manjaro)
+            pacman -Sy --noconfirm podman
+            ;;
+        alpine)
+            apk add podman
+            ;;
+        opensuse*|sles)
+            zypper install -y podman
+            ;;
+        *)
+            error "Unsupported distribution: $ID"
+            echo "Install podman manually: https://podman.io/getting-started/installation"
+            exit 1
+            ;;
+    esac
+
+    if ! command -v podman &>/dev/null; then
+        error "Podman installation failed"
+        exit 1
+    fi
+
+    success "Podman installed successfully"
+}
+
+check_podman_version() {
+    if [[ "$RUNTIME" != "podman" ]]; then
+        return 0
+    fi
+
+    local version
+    version=$(podman --version | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    local major
+    major=$(echo "$version" | cut -d. -f1)
+
+    if [[ "$major" -lt 4 ]]; then
+        error "Podman version 4.0+ required (found: $version)"
+        echo "Upgrade podman and try again."
+        exit 1
+    fi
+}
+
+check_port_available() {
+    local port=$1
+
+    if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+        error "Port $port is already in use"
+        echo ""
+        echo "Process using port $port:"
+        ss -tlnp | grep ":${port} " | head -5
+        echo ""
+        echo "Stop the conflicting service and try again."
+        exit 1
+    fi
+}
+
+check_udp_ports() {
+    if ss -ulnp 2>/dev/null | grep -qE ":(49152|49200) "; then
+        warn "Some UDP ports in range 49152-49200 may be in use"
+        echo "TURN relay requires these ports for WebRTC media."
+    fi
+}
+
+check_firewall() {
+    local firewall_active=false
+    local firewall_name=""
+
+    if command -v ufw &>/dev/null; then
+        if ufw status 2>/dev/null | grep -q "Status: active"; then
+            firewall_active=true
+            firewall_name="ufw"
+        fi
+    fi
+
+    if command -v firewall-cmd &>/dev/null; then
+        if firewall-cmd --state &>/dev/null 2>&1; then
+            firewall_active=true
+            firewall_name="firewalld"
+        fi
+    fi
+
+    if [[ "$firewall_active" == "true" ]]; then
+        warn "Firewall ($firewall_name) is active"
+        echo ""
+        echo "Ensure these ports are open:"
+        echo "  - TCP 80    (Let's Encrypt verification)"
+        echo "  - TCP 443   (HTTPS + WebSocket + TURNS)"
+        echo "  - UDP 49152-49200 (TURN relay)"
+        echo ""
+        if [[ "$firewall_name" == "ufw" ]]; then
+            echo "Commands:"
+            echo "  sudo ufw allow 80/tcp"
+            echo "  sudo ufw allow 443/tcp"
+            echo "  sudo ufw allow 49152:49200/udp"
+        elif [[ "$firewall_name" == "firewalld" ]]; then
+            echo "Commands:"
+            echo "  sudo firewall-cmd --permanent --add-port=80/tcp"
+            echo "  sudo firewall-cmd --permanent --add-port=443/tcp"
+            echo "  sudo firewall-cmd --permanent --add-port=49152-49200/udp"
+            echo "  sudo firewall-cmd --reload"
+        fi
+        echo ""
+        read -p "Continue anyway? [y/N] " -r
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+}
+
+# =============================================================================
+# Input Collection
+# =============================================================================
+
+detect_external_ip() {
+    local ip=""
+
+    ip=$(curl -sf --max-time 5 ifconfig.me 2>/dev/null) ||
+    ip=$(curl -sf --max-time 5 icanhazip.com 2>/dev/null) ||
+    ip=$(curl -sf --max-time 5 ipinfo.io/ip 2>/dev/null) ||
+    ip=""
+
+    echo "$ip"
+}
+
+collect_input() {
+    echo ""
+    echo "=== tuturu Configuration ==="
+    echo ""
+
+    # Domain
+    while true; do
+        read -p "Domain (e.g., call.example.com): " DOMAIN
+        if [[ "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+            break
+        fi
+        echo "Invalid domain format. Try again."
+    done
+
+    # Email
+    while true; do
+        read -p "Email for Let's Encrypt: " EMAIL
+        if [[ "$EMAIL" =~ ^[^@]+@[^@]+\.[^@]+$ ]]; then
+            break
+        fi
+        echo "Invalid email format. Try again."
+    done
+
+    # External IP
+    local detected_ip
+    detected_ip=$(detect_external_ip)
+
+    while true; do
+        if [[ -n "$detected_ip" ]]; then
+            read -p "External IP [$detected_ip]: " EXTERNAL_IP
+            EXTERNAL_IP="${EXTERNAL_IP:-$detected_ip}"
+        else
+            read -p "External IP: " EXTERNAL_IP
+        fi
+
+        if [[ "$EXTERNAL_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            break
+        fi
+        echo "Invalid IP format. Try again."
+    done
+}
+
+# =============================================================================
+# DNS Validation
+# =============================================================================
+
+validate_dns() {
+    echo ""
+    echo "Verifying DNS records..."
+
+    local domains=("$DOMAIN" "a.$DOMAIN" "t.$DOMAIN")
+    local failed=false
+
+    # Check if dig is available, fall back to host
+    local dns_cmd=""
+    if command -v dig &>/dev/null; then
+        dns_cmd="dig"
+    elif command -v host &>/dev/null; then
+        dns_cmd="host"
+    else
+        warn "Neither 'dig' nor 'host' found. Skipping DNS verification."
+        echo "Ensure these DNS records exist:"
+        echo "  $DOMAIN      →  $EXTERNAL_IP"
+        echo "  a.$DOMAIN    →  $EXTERNAL_IP"
+        echo "  t.$DOMAIN    →  $EXTERNAL_IP"
+        return 0
+    fi
+
+    for domain in "${domains[@]}"; do
+        local resolved=""
+
+        if [[ "$dns_cmd" == "dig" ]]; then
+            resolved=$(dig +short "$domain" @8.8.8.8 2>/dev/null | tail -1)
+        else
+            resolved=$(host "$domain" 8.8.8.8 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | tail -1)
+        fi
+
+        if [[ -z "$resolved" ]]; then
+            error "DNS: $domain does not resolve"
+            failed=true
+        elif [[ "$resolved" != "$EXTERNAL_IP" ]]; then
+            error "DNS: $domain resolves to $resolved (expected $EXTERNAL_IP)"
+            failed=true
+        else
+            success "DNS: $domain → $resolved"
+        fi
+    done
+
+    if [[ "$failed" == "true" ]]; then
+        echo ""
+        echo "DNS records must be configured before installation."
+        echo ""
+        echo "Required A records (at your domain registrar):"
+        echo "  $DOMAIN      →  $EXTERNAL_IP"
+        echo "  a.$DOMAIN    →  $EXTERNAL_IP"
+        echo "  t.$DOMAIN    →  $EXTERNAL_IP"
+        echo ""
+        echo "After adding records, wait for propagation (usually 5-15 minutes)."
+        exit 1
+    fi
+}
+
+# =============================================================================
+# Configuration Management
+# =============================================================================
+
+write_config() {
+    mkdir -p "$CONFIG_DIR"
+
+    cat > "$CONFIG_DIR/env" << EOF
+DOMAIN=${DOMAIN}
+LETSENCRYPT_EMAIL=${EMAIL}
+EXTERNAL_IP=${EXTERNAL_IP}
+EOF
+
+    chmod 600 "$CONFIG_DIR/env"
+    success "Configuration saved to $CONFIG_DIR/env"
+}
+
+load_config() {
+    if [[ ! -f "$CONFIG_DIR/env" ]]; then
+        error "Configuration not found. Run './tuturu install' first."
+        exit 1
+    fi
+
+    set -a
+    source "$CONFIG_DIR/env"
+    set +a
+}
+
+# =============================================================================
+# Container Image
+# =============================================================================
+
+pull_image() {
+    echo ""
+    echo "Pulling container image..."
+    $RUNTIME pull "$REPO:latest"
+    success "Image pulled"
+}
+
+# =============================================================================
+# Container Lifecycle
+# =============================================================================
+
+cmd_start() {
+    load_config
+
+    # Remove existing container if present
+    $RUNTIME rm -f "$CONTAINER_NAME" 2>/dev/null || true
+
+    echo "Starting tuturu..."
+
+    $RUNTIME run -d \
+        --name "$CONTAINER_NAME" \
+        --hostname "$CONTAINER_NAME" \
+        --systemd always \
+        -p 80:80 \
+        -p 443:443 \
+        -p 49152-49200:49152-49200/udp \
+        --env-file "$CONFIG_DIR/env" \
+        -v tuturu-certs:/etc/letsencrypt \
+        --restart unless-stopped \
+        "$REPO:latest"
+
+    success "Container started"
+}
+
+cmd_stop() {
+    echo "Stopping tuturu..."
+    $RUNTIME stop "$CONTAINER_NAME" 2>/dev/null || true
+    $RUNTIME rm "$CONTAINER_NAME" 2>/dev/null || true
+    success "Container stopped"
+}
+
+cmd_restart() {
+    cmd_stop
+    cmd_start
+}
+
+cmd_logs() {
+    local service="${1:-}"
+
+    case "$service" in
+        "")
+            $RUNTIME exec -it "$CONTAINER_NAME" journalctl -f
+            ;;
+        app|nginx|coturn)
+            $RUNTIME exec -it "$CONTAINER_NAME" journalctl -u "tuturu-$service" -f
+            ;;
+        *)
+            error "Unknown service: $service"
+            echo "Available: app, nginx, coturn"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_status() {
+    echo "Container status:"
+    $RUNTIME ps -a --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    echo ""
+    echo "Service status:"
+    $RUNTIME exec "$CONTAINER_NAME" systemctl status tuturu-app tuturu-nginx tuturu-coturn --no-pager || true
+}
+
+cmd_upgrade() {
+    echo "Pulling latest image..."
+    $RUNTIME pull "$REPO:latest"
+
+    echo "Restarting container..."
+    cmd_stop
+    cmd_start
+
+    success "Upgrade complete"
+}
+
+# =============================================================================
+# Health Check
+# =============================================================================
+
+wait_for_health() {
+    local url="https://a.$DOMAIN/health"
+    local max_attempts=36  # 3 minutes (36 * 5 seconds)
+    local attempt=1
+
+    echo ""
+    echo "Waiting for services to start..."
+    echo "(Certificate acquisition may take 1-2 minutes)"
+    echo ""
+
+    while [[ $attempt -le $max_attempts ]]; do
+        if curl -sf "$url" &>/dev/null; then
+            echo ""
+            return 0
+        fi
+
+        printf "."
+        sleep 5
+        ((attempt++))
+    done
+
+    echo ""
+    warn "Health check timed out"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  1. Check logs: ./tuturu logs"
+    echo "  2. Check certbot: ./tuturu logs nginx"
+    echo "  3. Verify DNS: dig a.$DOMAIN"
+    echo ""
+    return 1
+}
+
+# =============================================================================
+# Install Command
+# =============================================================================
+
+cmd_install() {
+    echo ""
+    echo "tuturu installer v$VERSION"
+    echo ""
+
+    # Preflight checks
+    check_root
+    check_runtime
+    check_podman_version
+    check_port_available 80
+    check_port_available 443
+    check_udp_ports
+    check_firewall
+
+    # Collect configuration
+    collect_input
+    validate_dns
+    write_config
+
+    # Pull and start
+    pull_image
+    cmd_start
+
+    # Wait for health
+    if wait_for_health; then
+        print_success
+    else
+        echo "Installation completed but health check failed."
+        echo "Check logs with: ./tuturu logs"
+    fi
+}
+
+# =============================================================================
+# Help & Success Output
+# =============================================================================
+
+cmd_help() {
+    cat << 'EOF'
+tuturu - WebRTC video calling for restrictive networks
+
+Usage: ./tuturu <command>
+
+Commands:
+  install     Interactive setup, pull image, start container
+  start       Start container
+  stop        Stop and remove container
+  restart     Stop + start
+  logs        View all logs (journalctl)
+  logs app    View app service logs
+  logs nginx  View nginx service logs
+  logs coturn View coturn service logs
+  status      Show service status
+  upgrade     Pull latest image, restart
+  help        Show this message
+
+Configuration: ~/.config/tuturu/env
+
+Documentation: https://github.com/lobziik/tuturu
+EOF
+}
+
+print_success() {
+    cat << EOF
+
+╔═══════════════════════════════════════════╗
+║      tuturu installed successfully        ║
+╚═══════════════════════════════════════════╝
+
+Access: https://a.$DOMAIN
+
+Usage: ./tuturu <command>
+
+  start     Start container
+  stop      Stop container
+  logs      View logs (add: app, nginx, coturn)
+  status    Service status
+  upgrade   Upgrade to latest
+  help      Show all commands
+
+EOF
+}
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+
+main() {
+    # Detect runtime early (needed for most commands)
+    if command -v podman &>/dev/null; then
+        RUNTIME="podman"
+    elif command -v docker &>/dev/null; then
+        RUNTIME="docker"
+    else
+        RUNTIME=""
+    fi
+
+    case "${1:-help}" in
+        install)
+            cmd_install
+            ;;
+        start)
+            [[ -z "$RUNTIME" ]] && { error "No container runtime found"; exit 1; }
+            cmd_start
+            ;;
+        stop)
+            [[ -z "$RUNTIME" ]] && { error "No container runtime found"; exit 1; }
+            cmd_stop
+            ;;
+        restart)
+            [[ -z "$RUNTIME" ]] && { error "No container runtime found"; exit 1; }
+            cmd_restart
+            ;;
+        logs)
+            [[ -z "$RUNTIME" ]] && { error "No container runtime found"; exit 1; }
+            cmd_logs "${2:-}"
+            ;;
+        status)
+            [[ -z "$RUNTIME" ]] && { error "No container runtime found"; exit 1; }
+            cmd_status
+            ;;
+        upgrade)
+            [[ -z "$RUNTIME" ]] && { error "No container runtime found"; exit 1; }
+            cmd_upgrade
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        *)
+            error "Unknown command: $1"
+            cmd_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

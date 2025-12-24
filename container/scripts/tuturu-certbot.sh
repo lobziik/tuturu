@@ -33,7 +33,7 @@ fi
 # =============================================================================
 # Define domains to obtain certificates for
 # =============================================================================
-# Using short subdomain prefixes (a. and t.) for DPI evasion
+# Using short subdomain prefixes (a. and t.)
 DOMAINS="${DOMAIN},a.${DOMAIN},t.${DOMAIN}"
 
 log "Obtaining certificates for: ${DOMAINS}"

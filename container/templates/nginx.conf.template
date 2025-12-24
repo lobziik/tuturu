@@ -1,5 +1,5 @@
 # tuturu nginx Configuration
-# Single container deployment with SNI-based routing for DPI resistance
+# Single container deployment with SNI-based routing
 # Template variables: ${DOMAIN}
 
 # Load stream module for SNI-based routing
@@ -18,7 +18,7 @@ events {
 # =============================================================================
 # STREAM MODULE - SNI-based TLS routing on port 443
 # Routes encrypted traffic based on Server Name Indication (SNI)
-# All traffic on port 443 looks like standard HTTPS (DPI resistant)
+# All traffic on port 443 looks like standard HTTPS
 # =============================================================================
 stream {
     log_format stream_log '$remote_addr [$time_local] '

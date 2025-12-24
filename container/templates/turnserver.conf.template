@@ -1,5 +1,5 @@
 # tuturu coturn TURN/STUN Server Configuration
-# Single container deployment - optimized for DPI resistance
+# Single container deployment
 # Template variables: ${DOMAIN}, ${EXTERNAL_IP}, ${TURN_SECRET},
 #                     ${TURN_MIN_PORT}, ${TURN_MAX_PORT}
 

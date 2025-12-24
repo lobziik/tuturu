@@ -2,7 +2,7 @@
  * ICE server configuration builder
  *
  * Builds WebRTC ICE server configuration with STUN and TURN servers.
- * TURN servers are configured with ephemeral credentials and ordered by DPI bypass likelihood.
+ * TURN servers are configured with ephemeral credentials and ordered by networking passing likelihood.
  */
 
 import type { IceServerConfig } from '../types';
@@ -13,11 +13,6 @@ import { generateTurnCredentials } from './turn';
  * Build ICE server configuration for WebRTC.
  *
  * Includes STUN servers and TURN servers with ephemeral credentials if configured.
- * TURN servers are ordered by likelihood of bypassing DPI:
- * 1. TURNS on 443 (looks like HTTPS)
- * 2. TURNS on 5349 (standard TLS port)
- * 3. TURN TCP on 3478 (unencrypted but standard)
- * 4. TURN UDP on 3478 (often blocked)
  *
  * @param clientId - Client ID for credential generation
  * @returns Array of ICE server configurations
@@ -28,7 +23,7 @@ export function buildIceServers(clientId: string): IceServerConfig[] {
     urls: url,
   }));
 
-  // Add TURN servers if configured (DPI-resistant priority order)
+  // Add TURN servers if configured
   if (isTurnConfigured()) {
     const domain = `t.${config.domain}`;
 
@@ -37,7 +32,7 @@ export function buildIceServers(clientId: string): IceServerConfig[] {
 
     console.log(`[ICE] Generated ephemeral credentials for ${clientId}, TTL: 4h`);
 
-    // Priority 1: TURNS on 443 (most likely to bypass DPI)
+    // Priority 1: TURNS on 443
     // Routes through nginx SNI router to coturn:5349
     iceServers.push({
       urls: `turns:${domain}:443?transport=tcp`,

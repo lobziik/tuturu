@@ -21,7 +21,7 @@ WebRTC.
 
 - Browser WebRTC APIs (`RTCPeerConnection`, `getUserMedia`)
 - Modern browser (Chrome, Firefox, Safari, Edge)
-- A domain name (required for TLS)
+- A domain name (required for TLS, mobile browsers requires HTTPS)
 - A VPS with ports 80, 443, 49152-49200/udp available
 
 ## Quickstart

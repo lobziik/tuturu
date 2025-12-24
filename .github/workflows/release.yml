@@ -65,6 +65,13 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare CLI script with version
+        run: |
+          sed -i 's/VERSION="dev"/VERSION="${{ steps.version.outputs.version }}"/' tuturu
+
       - name: Log in to GHCR
         run: buildah login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ${{ env.REGISTRY }}
 
@@ -82,5 +89,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: v${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
           generate_release_notes: true
+          files: tuturu

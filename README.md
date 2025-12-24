@@ -32,14 +32,11 @@ Purchase or use an existing domain. You'll need to create a couple DNS records.
 
 ### 2. Get a VPS
 
-Any Linux VPS with:
-
-- 1 CPU, 512MB RAM minimum
-- Ubuntu 22.04+ or similar
+Any Linux VPS with ~256RAM should work.
 
 ### 3. Configure DNS
 
-Point to your VPS IP:
+Point domains to your VPS IP:
 
 ```
 yourdomain.com → A → YOUR_VPS_IP
@@ -60,14 +57,9 @@ t.tuturu.yourdomain.com → A → YOUR_VPS_IP
 ### 4. Run
 
 ```bash
-# Download
-curl -fsSL https://raw.githubusercontent.com/lobziik/tuturu/main/tuturu -o tuturu
+curl -fsSL https://github.com/lobziik/tuturu/releases/latest/download/tuturu -o tuturu
 chmod +x tuturu
-
-# Install (interactive)
-sudo ./tuturu install
-
-# Follow prompts for domain and email
+./tuturu install
 ```
 
 First run takes 1-2 minutes while Let's Encrypt issues certificates.

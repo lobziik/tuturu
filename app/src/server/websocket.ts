@@ -14,7 +14,7 @@ import {
   RoomFullError,
   InvalidMessageError,
 } from '../types';
-import { config } from '../config';
+import { config } from './config';
 import {
   type Client,
   getOrCreateRoom,

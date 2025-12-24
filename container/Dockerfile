@@ -14,9 +14,15 @@ COPY app/src ./src
 COPY app/public ./public
 COPY app/bunfig.toml ./
 
+# Docker provides TARGETARCH automatically (amd64, arm64)
+ARG TARGETARCH
+
 # Build client and compile server to standalone executable
-RUN bun run build && \
-    bun build --compile --minify --target=bun-linux-x64 \
+# Map TARGETARCH to Bun compile target: amd64 -> bun-linux-x64, arm64 -> bun-linux-arm64
+RUN BUN_TARGET="bun-linux-x64" && \
+    if [ "$TARGETARCH" = "arm64" ]; then BUN_TARGET="bun-linux-arm64"; fi && \
+    bun run build && \
+    bun build --compile --minify --target=$BUN_TARGET \
     ./src/server/index.ts --outfile tuturu-server
 
 # =============================================================================

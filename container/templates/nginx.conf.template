@@ -18,7 +18,6 @@ events {
 # =============================================================================
 # STREAM MODULE - SNI-based TLS routing on port 443
 # Routes encrypted traffic based on Server Name Indication (SNI)
-# All traffic on port 443 looks like standard HTTPS
 # =============================================================================
 stream {
     log_format stream_log '$remote_addr [$time_local] '

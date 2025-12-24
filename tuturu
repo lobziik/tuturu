@@ -7,6 +7,7 @@ set -euo pipefail
 
 VERSION="dev"
 REPO="ghcr.io/lobziik/tuturu"
+RELEASES_URL="https://github.com/lobziik/tuturu/releases/latest/download"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tuturu"
 CONTAINER_NAME="tuturu"
 RUNTIME=""
@@ -360,7 +361,7 @@ load_config() {
 pull_image() {
     echo ""
     echo "Pulling container image..."
-    $RUNTIME pull "$REPO:latest"
+    $RUNTIME pull "$REPO:$VERSION"
     success "Image pulled"
 }
 
@@ -386,7 +387,7 @@ cmd_start() {
         --env-file "$CONFIG_DIR/env" \
         -v tuturu-certs:/etc/letsencrypt \
         --restart unless-stopped \
-        "$REPO:latest"
+        "$REPO:$VERSION"
 
     success "Container started"
 }
@@ -430,14 +431,19 @@ cmd_status() {
 }
 
 cmd_upgrade() {
-    echo "Pulling latest image..."
-    $RUNTIME pull "$REPO:latest"
+    local script_path
+    script_path=$(realpath "$0")
+    local tmp_script="/tmp/tuturu.new"
 
-    echo "Restarting container..."
-    cmd_stop
-    cmd_start
+    echo "Downloading latest tuturu..."
+    curl -fsSL "$RELEASES_URL/tuturu" -o "$tmp_script"
+    chmod +x "$tmp_script"
 
-    success "Upgrade complete"
+    echo "Updating script..."
+    mv "$tmp_script" "$script_path"
+
+    echo "Restarting with new version..."
+    exec "$script_path" restart
 }
 
 # =============================================================================

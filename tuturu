@@ -252,6 +252,16 @@ collect_input() {
         fi
         echo "Invalid IP format. Try again."
     done
+
+    # Force TURN relay
+    echo ""
+    echo "Force TURN relay mode bypasses direct P2P connections and forces relay mode."
+    read -p "Force TURN relay? [y/N] " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        FORCE_RELAY="true"
+    else
+        FORCE_RELAY="false"
+    fi
 }
 
 # =============================================================================
@@ -325,6 +335,7 @@ write_config() {
 DOMAIN=${DOMAIN}
 LETSENCRYPT_EMAIL=${EMAIL}
 EXTERNAL_IP=${EXTERNAL_IP}
+FORCE_RELAY=${FORCE_RELAY}
 EOF
 
     chmod 600 "$CONFIG_DIR/env"

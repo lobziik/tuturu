@@ -410,12 +410,12 @@ cmd_logs() {
         "")
             $RUNTIME exec -it "$CONTAINER_NAME" journalctl -f
             ;;
-        app|nginx|coturn)
+        app|nginx|coturn|certbot)
             $RUNTIME exec -it "$CONTAINER_NAME" journalctl -u "tuturu-$service" -f
             ;;
         *)
             error "Unknown service: $service"
-            echo "Available: app, nginx, coturn"
+            echo "Available: app, nginx, coturn, certbot"
             exit 1
             ;;
     esac
@@ -531,6 +531,7 @@ Commands:
   logs app    View app service logs
   logs nginx  View nginx service logs
   logs coturn View coturn service logs
+  logs certbot View Let's Encrypt certificate logs
   status      Show service status
   upgrade     Pull latest image, restart
   help        Show this message

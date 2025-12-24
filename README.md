@@ -1,6 +1,6 @@
 # tuturu
 
-*"Tuturu~! ♪" — Mayuri Shiina*
+*"Tuturu~! ♪" — Mayushii*
 
 Self-hosted WebRTC video calling. PIN-based room matching. Single container.
 
@@ -106,15 +106,15 @@ Open `https://a.yourdomain.com` on both devices, enter the same PIN, call.
 ```
 Browser A                    Your VPS                    Browser B
     │                           │                            │
-    ├───WebSocket───►┌──────────┴──────────┐◄───WebSocket───┤
-    │                │  tuturu-server:3000 │                │
-    │                │   (Bun signaling)   │                │
-    │                └──────────┬──────────┘                │
+    ├───WebSocket───►┌──────────┴──────────┐◄────WebSocket───┤
+    │                │  tuturu-server:3000 │                 │
+    │                │   (Bun signaling)   │                 │
+    │                └──────────┬──────────┘                 │
     │                           │                            │
-    ├───TURN/STUN───►┌──────────┴──────────┐◄───TURN/STUN───┤
-    │                │   coturn:3478/5349  │                │
-    │                │   (media relay)     │                │
-    │                └──────────┬──────────┘                │
+    ├───TURN/STUN───►┌──────────┴──────────┐◄────TURN/STUN───┤
+    │                │   coturn:3478/5349  │                 │
+    │                │   (media relay)     │                 │
+    │                └──────────┬──────────┘                 │
     │                           │                            │
     ├───────────────────────────┼────────────────────────────┤
     │                      WebRTC P2P                        │
@@ -134,7 +134,7 @@ Browser A                    Your VPS                    Browser B
 tuturu/
 ├── app/                    # Bun application
 │   ├── src/
-│   │   ├── client/         # Browser app (8 TypeScript modules)
+│   │   ├── client/         # Browser app
 │   │   └── server/         # Signaling server
 │   └── public/             # Static assets
 ├── container/              # Container build
@@ -151,4 +151,6 @@ TBD
 
 ---
 
-El Psy Kongroo.
+```
+Lab Note: AI wrote code. Gadget works. Cats were present. Cats have not contacted The Organization. To my knowledge.
+```

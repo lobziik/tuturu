@@ -6,7 +6,7 @@
  * Credentials expire naturally after TTL (4 hours) - no revocation mechanism.
  */
 
-import { config } from '../config';
+import { config } from './config';
 
 /** Credential TTL in seconds (4 hours) */
 const TURN_CREDENTIAL_TTL_SECONDS = 4 * 60 * 60;

@@ -6,7 +6,7 @@
  */
 
 import type { IceServerConfig } from '../types';
-import { config, isTurnConfigured } from '../config';
+import { config, isTurnConfigured } from './config';
 import { generateTurnCredentials } from './turn';
 
 /**

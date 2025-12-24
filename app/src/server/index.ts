@@ -7,7 +7,7 @@
 
 import { serve } from 'bun';
 import type { ClientData } from '../types';
-import { config, isTurnConfigured } from '../config';
+import { config, isTurnConfigured } from './config';
 import { loadAssets } from './assets';
 import { createFetchHandler } from './http';
 import { handleOpen, handleMessage, handleClose } from './websocket';

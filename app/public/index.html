@@ -51,6 +51,11 @@
 
           <!-- Local video (self) -->
           <video id="local-video" autoplay playsinline muted></video>
+
+          <!-- Waiting overlay -->
+          <div id="waiting-overlay" class="waiting-overlay hidden">
+            <span class="waiting-overlay-text">WAITING FOR PEER</span>
+          </div>
         </div>
 
         <div class="controls">
@@ -62,6 +67,11 @@
           <button id="video-btn" class="control-btn" title="Video On/Off">
             <span class="icon">📹</span>
             <span class="label">Video</span>
+          </button>
+
+          <button id="pip-toggle-btn" class="control-btn" title="Toggle Preview">
+            <span class="icon">👁</span>
+            <span class="label">Preview</span>
           </button>
 
           <button id="flip-btn" class="control-btn" title="Flip Camera">

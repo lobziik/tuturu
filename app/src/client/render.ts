@@ -27,6 +27,8 @@ const elements = {
   errorMessage: document.getElementById('error-message') as HTMLSpanElement,
   connectBtn: document.getElementById('connect-btn') as HTMLButtonElement,
   pinInput: document.getElementById('pin-input') as HTMLInputElement,
+  pipToggleBtn: document.getElementById('pip-toggle-btn') as HTMLButtonElement,
+  waitingOverlay: document.getElementById('waiting-overlay') as HTMLDivElement,
 };
 
 /**
@@ -86,14 +88,16 @@ async function updateFlipButtonVisibility(state: AppState): Promise<void> {
  * Updates mobile/desktop layout accordingly
  */
 function handleResize(): void {
-  // Only matters during call
+  // Only matters during call or waiting-for-peer
   const callInterface = elements.callInterface;
   if (callInterface.classList.contains('hidden')) return;
 
   if (isMobileViewport()) {
     callInterface.classList.add('mobile-call');
+    callInterface.classList.remove('desktop-call');
   } else {
     callInterface.classList.remove('mobile-call');
+    callInterface.classList.add('desktop-call');
     elements.statusBar.classList.remove('hidden-overlay');
   }
 }
@@ -119,7 +123,11 @@ window.addEventListener('orientationchange', handleResize);
  */
 export function render(state: AppState): void {
   // Clean up when leaving call screen
-  if (state.screen.type !== 'call') {
+  if (
+    state.screen.type !== 'call' &&
+    state.screen.type !== 'waiting-for-peer' &&
+    state.screen.type !== 'negotiating'
+  ) {
     // Clear status bar timeout
     if (statusHideTimeoutId !== null) {
       clearTimeout(statusHideTimeoutId);
@@ -127,6 +135,10 @@ export function render(state: AppState): void {
     }
     elements.statusBar.classList.remove('hidden-overlay');
     elements.callInterface.classList.remove('mobile-call');
+    elements.callInterface.classList.remove('desktop-call');
+    elements.waitingOverlay.classList.add('hidden');
+    elements.pipToggleBtn.classList.remove('visible');
+    elements.localVideo.classList.remove('pip-hidden');
     // Clean up PiP drag handlers
     cleanupPipDrag();
   }
@@ -151,11 +163,22 @@ export function render(state: AppState): void {
       break;
 
     case 'waiting-for-peer':
-      renderWaitingForPeer(state.screen.pin);
+      renderWaitingForPeer(
+        state.screen.pin,
+        state.screen.muted,
+        state.screen.videoOff,
+        state.screen.pipHidden,
+      );
       break;
 
     case 'negotiating':
-      renderNegotiating(state.screen.pin, state.screen.role);
+      renderNegotiating(
+        state.screen.pin,
+        state.screen.role,
+        state.screen.muted,
+        state.screen.videoOff,
+        state.screen.pipHidden,
+      );
       break;
 
     case 'call':
@@ -213,11 +236,40 @@ function renderAcquiringMedia(_pin: string): void {
  * Shows call interface with status "Waiting for peer..."
  *
  * @param pin - PIN to display (user shares this with peer)
+ * @param muted - Whether audio is muted
+ * @param videoOff - Whether video is off
+ * @param pipHidden - Whether PiP preview is hidden
  */
-function renderWaitingForPeer(pin: string): void {
+function renderWaitingForPeer(
+  pin: string,
+  muted: boolean,
+  videoOff: boolean,
+  pipHidden: boolean,
+): void {
   elements.callInterface.classList.remove('hidden');
   elements.pinDisplay.textContent = `PIN: ${pin}`;
   updateStatus('Waiting for peer...');
+
+  // Apply full-screen layout for both mobile and desktop
+  if (isMobileViewport()) {
+    elements.callInterface.classList.add('mobile-call');
+    elements.callInterface.classList.remove('desktop-call');
+  } else {
+    elements.callInterface.classList.add('desktop-call');
+    elements.callInterface.classList.remove('mobile-call');
+  }
+
+  // Show waiting overlay
+  elements.waitingOverlay.classList.remove('hidden');
+
+  // Update mute/video button states
+  updateMuteVideoButtons(muted, videoOff);
+
+  // Handle PiP visibility toggle
+  updatePipToggleButton(pipHidden);
+
+  // Initialize PiP drag behavior for waiting screen (idempotent)
+  setupPipDrag(elements.localVideo);
 }
 
 /**
@@ -226,16 +278,46 @@ function renderWaitingForPeer(pin: string): void {
  *
  * @param pin - PIN for this call
  * @param role - 'caller' (we created offer) or 'callee' (we received offer)
+ * @param muted - Whether audio is muted
+ * @param videoOff - Whether video is off
+ * @param pipHidden - Whether PiP preview is hidden
  *
  * @remarks
  * Role affects status text:
  * - Caller: "Calling peer..." (we're initiating)
  * - Callee: "Answering call..." (we're responding)
  */
-function renderNegotiating(pin: string, role: 'caller' | 'callee'): void {
+function renderNegotiating(
+  pin: string,
+  role: 'caller' | 'callee',
+  muted: boolean,
+  videoOff: boolean,
+  pipHidden: boolean,
+): void {
   elements.callInterface.classList.remove('hidden');
   elements.pinDisplay.textContent = `PIN: ${pin}`;
   updateStatus(role === 'caller' ? 'Calling peer...' : 'Answering call...');
+
+  // Maintain full-screen layout during negotiation
+  if (isMobileViewport()) {
+    elements.callInterface.classList.add('mobile-call');
+    elements.callInterface.classList.remove('desktop-call');
+  } else {
+    elements.callInterface.classList.add('desktop-call');
+    elements.callInterface.classList.remove('mobile-call');
+  }
+
+  // Keep waiting overlay visible during negotiation
+  elements.waitingOverlay.classList.remove('hidden');
+
+  // Update mute/video button states
+  updateMuteVideoButtons(muted, videoOff);
+
+  // Handle PiP visibility toggle
+  updatePipToggleButton(pipHidden);
+
+  // Maintain PiP drag during negotiation (idempotent)
+  setupPipDrag(elements.localVideo);
 }
 
 /**
@@ -262,28 +344,25 @@ function renderCall(state: AppState): void {
   elements.pinDisplay.textContent = `PIN: ${state.screen.pin}`;
   updateStatus('Connected');
 
-  // Toggle mobile full-screen mode
+  // Hide waiting overlay when call is connected
+  elements.waitingOverlay.classList.add('hidden');
+
+  // Toggle mobile/desktop full-screen mode
   if (isMobileViewport()) {
     elements.callInterface.classList.add('mobile-call');
+    elements.callInterface.classList.remove('desktop-call');
     startStatusAutoHide();
   } else {
     elements.callInterface.classList.remove('mobile-call');
+    elements.callInterface.classList.add('desktop-call');
     elements.statusBar.classList.remove('hidden-overlay');
   }
 
-  // Update mute button state
-  elements.muteBtn.classList.toggle('active', state.screen.muted);
-  const muteLabel = elements.muteBtn.querySelector('.label');
-  const muteIcon = elements.muteBtn.querySelector('.icon');
-  if (muteLabel) muteLabel.textContent = state.screen.muted ? 'Unmute' : 'Mute';
-  if (muteIcon) muteIcon.textContent = state.screen.muted ? '🔇' : '🎤';
+  // Update mute/video button states
+  updateMuteVideoButtons(state.screen.muted, state.screen.videoOff);
 
-  // Update video button state
-  elements.videoBtn.classList.toggle('active', state.screen.videoOff);
-  const videoLabel = elements.videoBtn.querySelector('.label');
-  const videoIcon = elements.videoBtn.querySelector('.icon');
-  if (videoLabel) videoLabel.textContent = state.screen.videoOff ? 'Video On' : 'Video Off';
-  if (videoIcon) videoIcon.textContent = state.screen.videoOff ? '🚫' : '📹';
+  // Handle PiP visibility toggle
+  updatePipToggleButton(state.screen.pipHidden);
 
   // Handle audio-only mode
   const isAudioOnly = state.localStream && state.localStream.getVideoTracks().length === 0;
@@ -347,6 +426,51 @@ function renderError(message: string, canRetry: boolean): void {
 function updateStatus(status: string): void {
   console.log('[STATUS]', status);
   elements.statusText.textContent = status;
+}
+
+/**
+ * Update mute and video button states
+ * Used on waiting-for-peer, negotiating, and call screens
+ *
+ * @param muted - Whether audio is muted
+ * @param videoOff - Whether video is off
+ */
+function updateMuteVideoButtons(muted: boolean, videoOff: boolean): void {
+  // Update mute button state
+  elements.muteBtn.classList.toggle('active', muted);
+  const muteLabel = elements.muteBtn.querySelector('.label');
+  const muteIcon = elements.muteBtn.querySelector('.icon');
+  if (muteLabel) muteLabel.textContent = muted ? 'Unmute' : 'Mute';
+  if (muteIcon) muteIcon.textContent = muted ? '🔇' : '🎤';
+
+  // Update video button state
+  elements.videoBtn.classList.toggle('active', videoOff);
+  const videoLabel = elements.videoBtn.querySelector('.label');
+  const videoIcon = elements.videoBtn.querySelector('.icon');
+  if (videoLabel) videoLabel.textContent = videoOff ? 'Video On' : 'Video Off';
+  if (videoIcon) videoIcon.textContent = videoOff ? '🚫' : '📹';
+}
+
+/**
+ * Update PiP toggle button state
+ * Shows/hides local video and updates button icon/label
+ *
+ * @param pipHidden - Whether PiP preview is currently hidden
+ */
+function updatePipToggleButton(pipHidden: boolean): void {
+  const pipIcon = elements.pipToggleBtn.querySelector('.icon');
+  const pipLabel = elements.pipToggleBtn.querySelector('.label');
+
+  if (pipHidden) {
+    elements.localVideo.classList.add('pip-hidden');
+    if (pipIcon) pipIcon.textContent = '👁';
+    if (pipLabel) pipLabel.textContent = 'Show';
+  } else {
+    elements.localVideo.classList.remove('pip-hidden');
+    if (pipIcon) pipIcon.textContent = '👤';
+    if (pipLabel) pipLabel.textContent = 'Hide';
+  }
+  elements.pipToggleBtn.classList.add('visible');
 }
 
 /**

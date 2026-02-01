@@ -79,7 +79,7 @@ describe('reducer', () => {
     test('SUBMIT_PIN is ignored in non-pin-entry states', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '111111', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '111111', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = { type: 'SUBMIT_PIN', pin: '999999' };
@@ -130,7 +130,7 @@ describe('reducer', () => {
     test('WS_CLOSED with intentional flag returns to pin-entry', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = {
@@ -152,7 +152,7 @@ describe('reducer', () => {
     test('WS_CLOSED without intentional flag shows error', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = {
@@ -200,7 +200,7 @@ describe('reducer', () => {
     /**
      * Camera and microphone acquired successfully
      *
-     * Expected: Store stream, transition to waiting-for-peer
+     * Expected: Store stream, transition to waiting-for-peer with default muted/videoOff
      */
     test('MEDIA_ACQUIRED transitions to waiting-for-peer', () => {
       const state: AppState = {
@@ -220,6 +220,9 @@ describe('reducer', () => {
       expect(newState.localStream).toBe(mockStream);
       if (newState.screen.type === 'waiting-for-peer') {
         expect(newState.screen.pin).toBe('123456');
+        expect(newState.screen.muted).toBe(false);
+        expect(newState.screen.videoOff).toBe(false);
+        expect(newState.screen.pipHidden).toBe(false);
       }
     });
 
@@ -323,7 +326,13 @@ describe('reducer', () => {
     test('PEER_JOINED transitions to negotiating as caller', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'waiting-for-peer', pin: '123456' },
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
       };
 
       const action: Action = { type: 'PEER_JOINED' };
@@ -333,6 +342,31 @@ describe('reducer', () => {
       if (newState.screen.type === 'negotiating') {
         expect(newState.screen.role).toBe('caller');
         expect(newState.screen.pin).toBe('123456');
+        expect(newState.screen.muted).toBe(false);
+        expect(newState.screen.videoOff).toBe(false);
+        expect(newState.screen.pipHidden).toBe(false);
+      }
+    });
+
+    test('PEER_JOINED preserves muted/videoOff state from waiting-for-peer', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: true,
+          videoOff: true,
+          pipHidden: false,
+        },
+      };
+
+      const action: Action = { type: 'PEER_JOINED' };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('negotiating');
+      if (newState.screen.type === 'negotiating') {
+        expect(newState.screen.muted).toBe(true);
+        expect(newState.screen.videoOff).toBe(true);
       }
     });
 
@@ -344,7 +378,13 @@ describe('reducer', () => {
     test('RECEIVED_OFFER transitions to negotiating as callee', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'waiting-for-peer', pin: '123456' },
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
       };
 
       const mockOffer: RTCSessionDescriptionInit = {
@@ -361,13 +401,45 @@ describe('reducer', () => {
       if (newState.screen.type === 'negotiating') {
         expect(newState.screen.role).toBe('callee');
         expect(newState.screen.pin).toBe('123456');
+        expect(newState.screen.muted).toBe(false);
+        expect(newState.screen.videoOff).toBe(false);
+        expect(newState.screen.pipHidden).toBe(false);
+      }
+    });
+
+    test('RECEIVED_OFFER preserves muted/videoOff state from waiting-for-peer', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: true,
+          videoOff: true,
+          pipHidden: false,
+        },
+      };
+
+      const mockOffer: RTCSessionDescriptionInit = {
+        type: 'offer',
+        sdp: 'mock sdp',
+      };
+      const action: Action = {
+        type: 'RECEIVED_OFFER',
+        offer: mockOffer,
+      };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('negotiating');
+      if (newState.screen.type === 'negotiating') {
+        expect(newState.screen.muted).toBe(true);
+        expect(newState.screen.videoOff).toBe(true);
       }
     });
 
     test('PEER_LEFT shows non-retryable error', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = { type: 'PEER_LEFT' };
@@ -427,12 +499,19 @@ describe('reducer', () => {
     /**
      * ICE connection established, media flowing
      *
-     * Expected: negotiating → call, initialize mute/video flags
+     * Expected: negotiating → call, preserve mute/video flags
      */
     test('RTC_CONNECTED transitions negotiating to call', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'negotiating', pin: '123456', role: 'caller' },
+        screen: {
+          type: 'negotiating',
+          pin: '123456',
+          role: 'caller',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
       };
 
       const action: Action = { type: 'RTC_CONNECTED' };
@@ -443,6 +522,31 @@ describe('reducer', () => {
         expect(newState.screen.pin).toBe('123456');
         expect(newState.screen.muted).toBe(false);
         expect(newState.screen.videoOff).toBe(false);
+        expect(newState.screen.pipHidden).toBe(false);
+      }
+    });
+
+    test('RTC_CONNECTED preserves muted/videoOff/pipHidden state from negotiating', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: {
+          type: 'negotiating',
+          pin: '123456',
+          role: 'caller',
+          muted: true,
+          videoOff: true,
+          pipHidden: true,
+        },
+      };
+
+      const action: Action = { type: 'RTC_CONNECTED' };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('call');
+      if (newState.screen.type === 'call') {
+        expect(newState.screen.muted).toBe(true);
+        expect(newState.screen.videoOff).toBe(true);
+        expect(newState.screen.pipHidden).toBe(true);
       }
     });
 
@@ -463,7 +567,7 @@ describe('reducer', () => {
     test('RTC_DISCONNECTED keeps current state', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = { type: 'RTC_DISCONNECTED' };
@@ -494,7 +598,7 @@ describe('reducer', () => {
     test('TOGGLE_MUTE flips muted flag in call state', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = { type: 'TOGGLE_MUTE' };
@@ -520,7 +624,7 @@ describe('reducer', () => {
     test('TOGGLE_VIDEO flips videoOff flag in call state', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = { type: 'TOGGLE_VIDEO' };
@@ -539,32 +643,189 @@ describe('reducer', () => {
     });
 
     /**
-     * Guard test: Mute toggle should not work while waiting for peer
+     * Mute toggle should work in waiting-for-peer state
      *
-     * Expected: State unchanged (no mute flag to toggle)
+     * Expected: Toggle muted flag
      */
-    test('TOGGLE_MUTE is ignored in non-call states', () => {
+    test('TOGGLE_MUTE works in waiting-for-peer state', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'waiting-for-peer', pin: '123456' },
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
       };
 
       const action: Action = { type: 'TOGGLE_MUTE' };
       const newState = reducer(state, action);
 
-      expect(newState).toBe(state);
+      expect(newState.screen.type).toBe('waiting-for-peer');
+      if (newState.screen.type === 'waiting-for-peer') {
+        expect(newState.screen.muted).toBe(true);
+      }
     });
 
-    test('TOGGLE_VIDEO is ignored in non-call states', () => {
+    test('TOGGLE_VIDEO works in waiting-for-peer state', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'waiting-for-peer', pin: '123456' },
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
       };
 
       const action: Action = { type: 'TOGGLE_VIDEO' };
       const newState = reducer(state, action);
 
-      expect(newState).toBe(state);
+      expect(newState.screen.type).toBe('waiting-for-peer');
+      if (newState.screen.type === 'waiting-for-peer') {
+        expect(newState.screen.videoOff).toBe(true);
+      }
+    });
+
+    test('TOGGLE_MUTE works in negotiating state', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: {
+          type: 'negotiating',
+          pin: '123456',
+          role: 'caller',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
+      };
+
+      const action: Action = { type: 'TOGGLE_MUTE' };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('negotiating');
+      if (newState.screen.type === 'negotiating') {
+        expect(newState.screen.muted).toBe(true);
+      }
+    });
+
+    test('TOGGLE_VIDEO works in negotiating state', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: {
+          type: 'negotiating',
+          pin: '123456',
+          role: 'caller',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
+      };
+
+      const action: Action = { type: 'TOGGLE_VIDEO' };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('negotiating');
+      if (newState.screen.type === 'negotiating') {
+        expect(newState.screen.videoOff).toBe(true);
+      }
+    });
+
+    /**
+     * Guard test: Mute toggle should not work in pin-entry state
+     *
+     * Expected: State unchanged
+     */
+    test('TOGGLE_MUTE is ignored in pin-entry state', () => {
+      const action: Action = { type: 'TOGGLE_MUTE' };
+      const newState = reducer(initialState, action);
+
+      expect(newState).toBe(initialState);
+    });
+
+    test('TOGGLE_VIDEO is ignored in pin-entry state', () => {
+      const action: Action = { type: 'TOGGLE_VIDEO' };
+      const newState = reducer(initialState, action);
+
+      expect(newState).toBe(initialState);
+    });
+
+    /**
+     * User clicks PiP toggle button during call
+     *
+     * Expected: Toggle pipHidden flag, render handles hiding/showing local video
+     */
+    test('TOGGLE_PIP_VISIBILITY flips pipHidden flag in call state', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
+      };
+
+      const action: Action = { type: 'TOGGLE_PIP_VISIBILITY' };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('call');
+      if (newState.screen.type === 'call') {
+        expect(newState.screen.pipHidden).toBe(true);
+      }
+
+      // Toggle again
+      const newState2 = reducer(newState, action);
+      if (newState2.screen.type === 'call') {
+        expect(newState2.screen.pipHidden).toBe(false);
+      }
+    });
+
+    test('TOGGLE_PIP_VISIBILITY works in waiting-for-peer state', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
+      };
+
+      const action: Action = { type: 'TOGGLE_PIP_VISIBILITY' };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('waiting-for-peer');
+      if (newState.screen.type === 'waiting-for-peer') {
+        expect(newState.screen.pipHidden).toBe(true);
+      }
+    });
+
+    test('TOGGLE_PIP_VISIBILITY works in negotiating state', () => {
+      const state: AppState = {
+        ...initialState,
+        screen: {
+          type: 'negotiating',
+          pin: '123456',
+          role: 'caller',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
+      };
+
+      const action: Action = { type: 'TOGGLE_PIP_VISIBILITY' };
+      const newState = reducer(state, action);
+
+      expect(newState.screen.type).toBe('negotiating');
+      if (newState.screen.type === 'negotiating') {
+        expect(newState.screen.pipHidden).toBe(true);
+      }
+    });
+
+    test('TOGGLE_PIP_VISIBILITY is ignored in pin-entry state', () => {
+      const action: Action = { type: 'TOGGLE_PIP_VISIBILITY' };
+      const newState = reducer(initialState, action);
+
+      expect(newState).toBe(initialState);
     });
 
     /**
@@ -576,7 +837,7 @@ describe('reducer', () => {
     test('FLIP_CAMERA returns same state in call screen', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
         localStream: {} as MediaStream,
       };
 
@@ -589,7 +850,13 @@ describe('reducer', () => {
     test('FLIP_CAMERA is ignored in non-call states', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'waiting-for-peer', pin: '123456' },
+        screen: {
+          type: 'waiting-for-peer',
+          pin: '123456',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
       };
 
       const action: Action = { type: 'FLIP_CAMERA' };
@@ -601,7 +868,7 @@ describe('reducer', () => {
     test('HANGUP returns to pin-entry', () => {
       const state: AppState = {
         ...initialState,
-        screen: { type: 'call', pin: '123456', muted: false, videoOff: false },
+        screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
       };
 
       const action: Action = { type: 'HANGUP' };
@@ -655,6 +922,7 @@ describe('reducer', () => {
         pin: '123456',
         muted: false,
         videoOff: false,
+        pipHidden: false,
       };
       const state: AppState = {
         ...initialState,

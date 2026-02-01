@@ -195,8 +195,9 @@ video {
   /* Using top/left for drag positioning - initial position set by JS */
   top: 0;
   left: 0;
-  width: 240px;
-  aspect-ratio: 16 / 9;
+  /* Base PiP size - non-fullscreen fallback, overridden by .mobile-call/.desktop-call */
+  width: 100px;
+  aspect-ratio: 3 / 4;
   border: 2px solid var(--border);
   border-radius: 0.5rem;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
@@ -315,6 +316,112 @@ footer a:hover {
   cursor: not-allowed;
 }
 
+/* Desktop Full-Screen Call Mode */
+#call-interface.desktop-call {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  z-index: 100;
+  background: #000;
+  padding: 0;
+  margin: 0;
+}
+
+.desktop-call .video-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: unset;
+  border-radius: 0;
+  margin: 0;
+}
+
+.desktop-call .status-bar {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  left: auto;
+  padding: 0.75rem 1rem;
+  background: rgba(30, 41, 59, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  margin: 0;
+  z-index: 10;
+}
+
+.desktop-call .controls {
+  position: absolute;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 41, 59, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  padding: 1rem;
+  z-index: 10;
+}
+
+/* Desktop PiP - unified full-screen styling */
+.desktop-call #local-video {
+  width: 160px;
+  max-height: 120px;
+  aspect-ratio: 4 / 3;
+  border-radius: 0.75rem;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  object-fit: cover;
+}
+
+/* PiP Toggle Button - hidden by default, shown via JS */
+#pip-toggle-btn {
+  display: none;
+}
+
+#pip-toggle-btn.visible {
+  display: flex;
+}
+
+#local-video.pip-hidden {
+  display: none !important;
+}
+
+/* Waiting Overlay */
+.waiting-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.waiting-overlay-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+  padding: 1rem 2rem;
+  border-radius: 0.5rem;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
 /* Mobile Responsive - Non-call screens */
 @media (max-width: 767px) {
   header h1 {
@@ -364,24 +471,16 @@ footer a:hover {
     object-fit: cover;
   }
 
-  /* Local video (PiP) - position controlled by JS, portrait orientation */
+  /* Mobile PiP - portrait orientation, unified full-screen styling */
   .mobile-call #local-video {
-    position: absolute;
-    /* top/left set by JS for drag positioning */
     width: 100px;
-    height: 133px; /* 3:4 portrait ratio */
+    height: 133px; /* 3:4 portrait ratio - explicit for iOS Safari */
+    max-height: 133px;
     aspect-ratio: 3 / 4;
     border-radius: 0.75rem;
     border: 2px solid rgba(255, 255, 255, 0.3);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     object-fit: cover;
-    cursor: grab;
-    touch-action: none;
-    user-select: none;
-  }
-
-  .mobile-call #local-video.pip-dragging {
-    cursor: grabbing;
   }
 
   /* Status bar overlay at top-right */

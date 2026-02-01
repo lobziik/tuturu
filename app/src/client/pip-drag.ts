@@ -6,6 +6,17 @@
  */
 
 /**
+ * Error thrown when PiP drag encounters an invalid state or configuration.
+ * Follows project's fail-fast error handling pattern.
+ */
+export class PipDragError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PipDragError';
+  }
+}
+
+/**
  * Corner positions for snap behavior
  */
 type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
@@ -53,14 +64,19 @@ let initialTop = 0;
 let videoElement: HTMLVideoElement | null = null;
 
 /**
- * Check if viewport is mobile size
+ * Check if viewport is mobile size.
+ *
+ * @returns True if viewport width is less than 768px (mobile breakpoint)
  */
 function isMobileViewport(): boolean {
   return window.innerWidth < 768;
 }
 
 /**
- * Get safe area insets for mobile devices
+ * Get safe area insets for mobile devices.
+ * Reads CSS custom properties set for notch/home indicator spacing.
+ *
+ * @returns Object with top, right, bottom, left inset values in pixels
  */
 function getSafeAreaInsets(): { top: number; right: number; bottom: number; left: number } {
   const style = getComputedStyle(document.documentElement);
@@ -73,8 +89,12 @@ function getSafeAreaInsets(): { top: number; right: number; bottom: number; left
 }
 
 /**
- * Get the bounds for the video element
- * Returns viewport-relative bounds accounting for margins and safe areas
+ * Get the bounds for the video element within its container.
+ * Returns viewport-relative bounds accounting for margins and safe areas.
+ *
+ * @param element - The video element to calculate bounds for
+ * @returns Object with minX, maxX, minY, maxY bounds in pixels
+ * @throws {PipDragError} If element is not inside a .video-container
  */
 function getBounds(element: HTMLVideoElement): {
   minX: number;
@@ -84,7 +104,7 @@ function getBounds(element: HTMLVideoElement): {
 } {
   const container = element.closest('.video-container') as HTMLElement | null;
   if (!container) {
-    throw new Error('PiP drag: video element must be inside .video-container');
+    throw new PipDragError('Video element must be inside .video-container');
   }
 
   const containerRect = container.getBoundingClientRect();
@@ -103,12 +123,18 @@ function getBounds(element: HTMLVideoElement): {
 }
 
 /**
- * Calculate which corner is closest to the element's center point
+ * Calculate which corner is closest to the element's center point.
+ *
+ * @param element - The video element to calculate corner for
+ * @param x - Current left position of the element in pixels
+ * @param y - Current top position of the element in pixels
+ * @returns The closest corner position identifier
+ * @throws {PipDragError} If element is not inside a .video-container
  */
 function getClosestCorner(element: HTMLVideoElement, x: number, y: number): Corner {
   const container = element.closest('.video-container') as HTMLElement | null;
   if (!container) {
-    return 'bottom-right';
+    throw new PipDragError('Video element must be inside .video-container');
   }
 
   const containerRect = container.getBoundingClientRect();
@@ -130,7 +156,12 @@ function getClosestCorner(element: HTMLVideoElement, x: number, y: number): Corn
 }
 
 /**
- * Get the position for a given corner
+ * Get the position for a given corner.
+ *
+ * @param element - The video element to calculate position for
+ * @param corner - The target corner position
+ * @returns Object with x and y coordinates in pixels
+ * @throws {PipDragError} If element is not inside a .video-container (propagated from getBounds)
  */
 function getCornerPosition(element: HTMLVideoElement, corner: Corner): { x: number; y: number } {
   const bounds = getBounds(element);
@@ -148,7 +179,11 @@ function getCornerPosition(element: HTMLVideoElement, corner: Corner): { x: numb
 }
 
 /**
- * Apply position to element using left/top
+ * Apply position to element using left/top CSS properties.
+ *
+ * @param element - The video element to position
+ * @param x - Left position in pixels
+ * @param y - Top position in pixels
  */
 function applyPosition(element: HTMLVideoElement, x: number, y: number): void {
   element.style.left = `${x}px`;
@@ -156,10 +191,15 @@ function applyPosition(element: HTMLVideoElement, x: number, y: number): void {
 }
 
 /**
- * Handle pointer down - start drag
+ * Handle pointer down event - start drag operation.
+ *
+ * @param event - The pointer down event
+ * @throws {PipDragError} If called without initialized video element (programming error)
  */
 function handlePointerDown(event: PointerEvent): void {
-  if (!videoElement) return;
+  if (!videoElement) {
+    throw new PipDragError('Pointer handler called without initialized video element');
+  }
 
   // Only handle primary pointer (left mouse button or first touch)
   if (!event.isPrimary) return;
@@ -183,10 +223,16 @@ function handlePointerDown(event: PointerEvent): void {
 }
 
 /**
- * Handle pointer move - update position during drag
+ * Handle pointer move event - update position during drag.
+ *
+ * @param event - The pointer move event
+ * @throws {PipDragError} If called without initialized video element (programming error)
  */
 function handlePointerMove(event: PointerEvent): void {
-  if (!isDragging || !videoElement) return;
+  if (!videoElement) {
+    throw new PipDragError('Pointer handler called without initialized video element');
+  }
+  if (!isDragging) return;
   if (!event.isPrimary) return;
 
   const deltaX = event.clientX - startX;
@@ -206,10 +252,16 @@ function handlePointerMove(event: PointerEvent): void {
 }
 
 /**
- * Handle pointer up - end drag and snap to corner
+ * Handle pointer up event - end drag and snap to corner.
+ *
+ * @param event - The pointer up event
+ * @throws {PipDragError} If called without initialized video element (programming error)
  */
 function handlePointerUp(event: PointerEvent): void {
-  if (!isDragging || !videoElement) return;
+  if (!videoElement) {
+    throw new PipDragError('Pointer handler called without initialized video element');
+  }
+  if (!isDragging) return;
   if (!event.isPrimary) return;
 
   isDragging = false;
@@ -235,10 +287,16 @@ function handlePointerUp(event: PointerEvent): void {
 }
 
 /**
- * Handle pointer cancel - abort drag cleanly
+ * Handle pointer cancel event - abort drag cleanly.
+ *
+ * @param event - The pointer cancel event
+ * @throws {PipDragError} If called without initialized video element (programming error)
  */
 function handlePointerCancel(event: PointerEvent): void {
-  if (!isDragging || !videoElement) return;
+  if (!videoElement) {
+    throw new PipDragError('Pointer handler called without initialized video element');
+  }
+  if (!isDragging) return;
   if (!event.isPrimary) return;
 
   isDragging = false;
@@ -256,10 +314,14 @@ function handlePointerCancel(event: PointerEvent): void {
 }
 
 /**
- * Reset video position to default corner (bottom-right)
+ * Reset video position to default corner (bottom-right).
+ *
+ * @throws {PipDragError} If called before setupPipDrag initialization
  */
 export function resetPipPosition(): void {
-  if (!videoElement) return;
+  if (!videoElement) {
+    throw new PipDragError('resetPipPosition called before setupPipDrag initialization');
+  }
 
   // Disable transition for instant reset
   videoElement.style.transition = 'none';
@@ -269,10 +331,12 @@ export function resetPipPosition(): void {
 }
 
 /**
- * Update video position on resize/orientation change
- * Snaps to nearest valid corner position within new bounds
+ * Update video position on resize/orientation change.
+ * Snaps to nearest valid corner position within new bounds.
+ * Silently returns if not initialized or currently dragging.
  */
 function handleResize(): void {
+  // Silent return is intentional: resize events fire regardless of initialization state
   if (!videoElement || isDragging) return;
 
   // Get current position
@@ -289,14 +353,15 @@ function handleResize(): void {
 }
 
 /**
- * Initialize PiP drag behavior on the local video element
+ * Initialize PiP drag behavior on the local video element.
  *
  * @param element - The local video element to make draggable
+ * @throws {PipDragError} If element is not inside a .video-container
  *
  * @remarks
  * This function should be called once when entering call state.
  * Subsequent calls with the same element will be ignored.
- * Call `resetPipPosition()` when call ends to restore default position.
+ * Call `cleanupPipDrag()` when call ends to clean up event listeners.
  */
 export function setupPipDrag(element: HTMLVideoElement): void {
   // Skip if already initialized with same element
@@ -327,8 +392,9 @@ export function setupPipDrag(element: HTMLVideoElement): void {
 }
 
 /**
- * Clean up PiP drag behavior
- * Removes event listeners and resets state
+ * Clean up PiP drag behavior.
+ * Removes event listeners and resets state.
+ * Safe to call multiple times or when not initialized (no-op).
  */
 export function cleanupPipDrag(): void {
   if (!videoElement) return;

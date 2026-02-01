@@ -55,9 +55,16 @@ export type Screen =
   | { type: 'pin-entry' }
   | { type: 'connecting'; pin: string }
   | { type: 'acquiring-media'; pin: string }
-  | { type: 'waiting-for-peer'; pin: string }
-  | { type: 'negotiating'; pin: string; role: 'caller' | 'callee' }
-  | { type: 'call'; pin: string; muted: boolean; videoOff: boolean }
+  | { type: 'waiting-for-peer'; pin: string; muted: boolean; videoOff: boolean; pipHidden: boolean }
+  | {
+      type: 'negotiating';
+      pin: string;
+      role: 'caller' | 'callee';
+      muted: boolean;
+      videoOff: boolean;
+      pipHidden: boolean;
+    }
+  | { type: 'call'; pin: string; muted: boolean; videoOff: boolean; pipHidden: boolean }
   | { type: 'error'; message: string; canRetry: boolean; previousScreen?: Screen };
 
 /**
@@ -171,6 +178,7 @@ export type Action =
   | { type: 'SUBMIT_PIN'; pin: string }
   | { type: 'TOGGLE_MUTE' }
   | { type: 'TOGGLE_VIDEO' }
+  | { type: 'TOGGLE_PIP_VISIBILITY' }
   | { type: 'FLIP_CAMERA' }
   | { type: 'HANGUP' }
   | { type: 'DISMISS_ERROR' }
@@ -328,7 +336,13 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         localStream: action.stream,
-        screen: { type: 'waiting-for-peer', pin: state.screen.pin },
+        screen: {
+          type: 'waiting-for-peer',
+          pin: state.screen.pin,
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
       };
     }
 
@@ -363,6 +377,9 @@ export function reducer(state: AppState, action: Action): AppState {
           type: 'negotiating',
           pin: state.screen.pin,
           role: 'caller', // We're the first peer, we create offer
+          muted: state.screen.muted,
+          videoOff: state.screen.videoOff,
+          pipHidden: state.screen.pipHidden,
         },
       };
     }
@@ -376,6 +393,9 @@ export function reducer(state: AppState, action: Action): AppState {
           type: 'negotiating',
           pin: state.screen.pin,
           role: 'callee', // We received offer, we create answer
+          muted: state.screen.muted,
+          videoOff: state.screen.videoOff,
+          pipHidden: state.screen.pipHidden,
         },
       };
     }
@@ -428,8 +448,9 @@ export function reducer(state: AppState, action: Action): AppState {
         screen: {
           type: 'call',
           pin: state.screen.pin,
-          muted: false,
-          videoOff: false,
+          muted: state.screen.muted,
+          videoOff: state.screen.videoOff,
+          pipHidden: state.screen.pipHidden,
         },
       };
     }
@@ -453,7 +474,13 @@ export function reducer(state: AppState, action: Action): AppState {
 
     // ===== IN-CALL ACTIONS =====
     case 'TOGGLE_MUTE': {
-      if (state.screen.type !== 'call') return state;
+      if (
+        state.screen.type !== 'waiting-for-peer' &&
+        state.screen.type !== 'negotiating' &&
+        state.screen.type !== 'call'
+      ) {
+        return state;
+      }
 
       return {
         ...state,
@@ -465,13 +492,38 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'TOGGLE_VIDEO': {
-      if (state.screen.type !== 'call') return state;
+      if (
+        state.screen.type !== 'waiting-for-peer' &&
+        state.screen.type !== 'negotiating' &&
+        state.screen.type !== 'call'
+      ) {
+        return state;
+      }
 
       return {
         ...state,
         screen: {
           ...state.screen,
           videoOff: !state.screen.videoOff,
+        },
+      };
+    }
+
+    case 'TOGGLE_PIP_VISIBILITY': {
+      // PiP toggle available on waiting, negotiating, and call screens
+      if (
+        state.screen.type !== 'waiting-for-peer' &&
+        state.screen.type !== 'negotiating' &&
+        state.screen.type !== 'call'
+      ) {
+        return state;
+      }
+
+      return {
+        ...state,
+        screen: {
+          ...state.screen,
+          pipHidden: !state.screen.pipHidden,
         },
       };
     }

@@ -125,7 +125,12 @@ export function handleSideEffects(
   // ===== TOGGLE MUTE → Update audio track =====
   if (action.type === 'TOGGLE_MUTE' && newState.localStream) {
     const audioTrack = newState.localStream.getAudioTracks()[0];
-    if (audioTrack && newState.screen.type === 'call') {
+    if (
+      audioTrack &&
+      (newState.screen.type === 'waiting-for-peer' ||
+        newState.screen.type === 'negotiating' ||
+        newState.screen.type === 'call')
+    ) {
       audioTrack.enabled = !newState.screen.muted;
       console.log('[MEDIA] Audio', newState.screen.muted ? 'muted' : 'unmuted');
     }
@@ -134,7 +139,12 @@ export function handleSideEffects(
   // ===== TOGGLE VIDEO → Update video track =====
   if (action.type === 'TOGGLE_VIDEO' && newState.localStream) {
     const videoTrack = newState.localStream.getVideoTracks()[0];
-    if (videoTrack && newState.screen.type === 'call') {
+    if (
+      videoTrack &&
+      (newState.screen.type === 'waiting-for-peer' ||
+        newState.screen.type === 'negotiating' ||
+        newState.screen.type === 'call')
+    ) {
       videoTrack.enabled = !newState.screen.videoOff;
       console.log('[MEDIA] Video', newState.screen.videoOff ? 'off' : 'on');
     }

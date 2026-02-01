@@ -33,6 +33,7 @@ export function setupEventListeners(dispatch: Dispatch): void {
   const videoBtn = document.getElementById('video-btn') as HTMLButtonElement;
   const flipBtn = document.getElementById('flip-btn') as HTMLButtonElement;
   const hangupBtn = document.getElementById('hangup-btn') as HTMLButtonElement;
+  const pipToggleBtn = document.getElementById('pip-toggle-btn') as HTMLButtonElement;
 
   /**
    * PIN form submission handler
@@ -115,6 +116,22 @@ export function setupEventListeners(dispatch: Dispatch): void {
    */
   flipBtn.addEventListener('click', () => {
     dispatch({ type: 'FLIP_CAMERA' });
+  });
+
+  /**
+   * PiP toggle button handler
+   * Shows/hides local video preview
+   *
+   * @remarks
+   * State machine handles:
+   * - Ignoring toggle in non-call states
+   * - Updating pipHidden flag in state
+   * Render module handles:
+   * - Adding/removing pip-hidden class on local video
+   * - Updating button icon (eye when hidden, X when visible)
+   */
+  pipToggleBtn.addEventListener('click', () => {
+    dispatch({ type: 'TOGGLE_PIP_VISIBILITY' });
   });
 
   /**

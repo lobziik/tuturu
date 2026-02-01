@@ -192,13 +192,24 @@ video {
 
 #local-video {
   position: absolute;
-  bottom: 1rem;
-  right: 1rem;
+  /* Using top/left for drag positioning - initial position set by JS */
+  top: 0;
+  left: 0;
   width: 240px;
   aspect-ratio: 16 / 9;
   border: 2px solid var(--border);
   border-radius: 0.5rem;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  /* Draggable PiP styles */
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  will-change: left, top;
+  z-index: 5;
+}
+
+#local-video.pip-dragging {
+  cursor: grabbing;
 }
 
 /* Controls */
@@ -353,12 +364,10 @@ footer a:hover {
     object-fit: cover;
   }
 
-  /* Local video (PiP) - bottom-right, portrait orientation */
+  /* Local video (PiP) - position controlled by JS, portrait orientation */
   .mobile-call #local-video {
     position: absolute;
-    bottom: 100px; /* Above controls */
-    right: 1rem;
-    left: auto;
+    /* top/left set by JS for drag positioning */
     width: 100px;
     height: 133px; /* 3:4 portrait ratio */
     aspect-ratio: 3 / 4;
@@ -366,6 +375,13 @@ footer a:hover {
     border: 2px solid rgba(255, 255, 255, 0.3);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     object-fit: cover;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .mobile-call #local-video.pip-dragging {
+    cursor: grabbing;
   }
 
   /* Status bar overlay at top-right */

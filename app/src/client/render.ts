@@ -5,6 +5,7 @@
 
 import type { AppState } from './state';
 import { hasMultipleCameras } from './media';
+import { setupPipDrag, cleanupPipDrag } from './pip-drag';
 
 /**
  * DOM element references
@@ -117,12 +118,17 @@ window.addEventListener('orientationchange', handleResize);
  * No manual DOM manipulation elsewhere in the codebase
  */
 export function render(state: AppState): void {
-  // Clear status bar timeout if leaving call screen
-  if (state.screen.type !== 'call' && statusHideTimeoutId !== null) {
-    clearTimeout(statusHideTimeoutId);
-    statusHideTimeoutId = null;
+  // Clean up when leaving call screen
+  if (state.screen.type !== 'call') {
+    // Clear status bar timeout
+    if (statusHideTimeoutId !== null) {
+      clearTimeout(statusHideTimeoutId);
+      statusHideTimeoutId = null;
+    }
     elements.statusBar.classList.remove('hidden-overlay');
     elements.callInterface.classList.remove('mobile-call');
+    // Clean up PiP drag handlers
+    cleanupPipDrag();
   }
 
   // Hide all screens first
@@ -297,6 +303,8 @@ function renderCall(state: AppState): void {
     elements.videoBtn.title = 'Video On/Off';
     // Update flip button visibility based on camera count (async)
     void updateFlipButtonVisibility(state);
+    // Initialize PiP drag behavior (idempotent - safe to call multiple times)
+    setupPipDrag(elements.localVideo);
   }
 }
 

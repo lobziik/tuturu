@@ -1,7 +1,7 @@
 # =============================================================================
 # Stage 1: Build Bun application
 # =============================================================================
-FROM oven/bun:1.3.5-debian AS app-builder
+FROM oven/bun:1.3.11-debian AS app-builder
 
 WORKDIR /build
 
@@ -28,7 +28,7 @@ RUN BUN_TARGET="bun-linux-x64" && \
 # =============================================================================
 # Stage 2: Final UBI10-init image with systemd
 # =============================================================================
-FROM redhat/ubi10-init:10.1-1763368398
+FROM redhat/ubi10-init:10.1-1774254118
 
 LABEL org.opencontainers.image.title="tuturu" \
       org.opencontainers.image.description="WebRTC 1 to 1 video calling" \

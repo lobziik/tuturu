@@ -9,7 +9,7 @@ Type=oneshot
 # Stop nginx to free port 80, renew certs, then restart services
 ExecStart=/usr/bin/certbot renew --quiet \
     --pre-hook "systemctl stop tuturu-nginx" \
-    --post-hook "systemctl start tuturu-nginx && systemctl reload tuturu-coturn"
+    --post-hook "systemctl start tuturu-nginx; systemctl restart tuturu-coturn"
 
 StandardOutput=journal+console
 StandardError=journal+console

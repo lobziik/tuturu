@@ -14,7 +14,7 @@ export default [
 
   // Base TypeScript config for all TS files
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'src/**/*.tsx'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -23,6 +23,7 @@ export default [
         tsconfigRootDir: process.cwd(),
         ecmaVersion: 2022,
         sourceType: 'module',
+        ecmaFeatures: { jsx: true },
       },
       globals: {
         ...globals.es2022,

@@ -35,3 +35,22 @@ jobs:
       - name: Prettier check
         working-directory: app
         run: bun run format:check
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        working-directory: app
+        run: bun install
+
+      - name: Run tests
+        working-directory: app
+        run: bun run test

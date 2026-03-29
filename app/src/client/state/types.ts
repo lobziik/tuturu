@@ -38,30 +38,18 @@ export type Screen =
   | { type: 'error'; message: string; canRetry: boolean; previousScreen?: Screen };
 
 /**
- * Application state - single source of truth
+ * Application state - single source of truth (serializable data only)
  *
  * @remarks
  * - `screen`: Current UI state (what the user sees)
- * - Resources (ws, pc, streams): Mutable objects with their own lifecycle
  * - ICE config: Received from server, used for RTCPeerConnection creation
  *
- * All resources are nullable — not always present.
+ * Mutable resources (ws, pc, localStream, remoteStream) live in useRef,
+ * NOT on state. This keeps the reducer pure and state serializable.
  */
 export interface AppState {
   /** Current screen - determines what UI is shown */
   screen: Screen;
-
-  /** WebSocket connection to signaling server */
-  ws: WebSocket | null;
-
-  /** RTCPeerConnection for WebRTC media exchange */
-  pc: RTCPeerConnection | null;
-
-  /** Local media stream (camera + microphone) */
-  localStream: MediaStream | null;
-
-  /** Remote media stream (peer's camera + microphone) */
-  remoteStream: MediaStream | null;
 
   /** ICE server configuration (STUN/TURN servers) */
   iceServers: IceServerConfig[] | null;
@@ -115,13 +103,9 @@ export type Action =
   | { type: 'RTC_FAILED'; reason: string }
   | { type: 'RTC_TRACK_RECEIVED'; stream: MediaStream };
 
-/** Initial state - application starts at PIN entry with all resources null */
+/** Initial state - application starts at PIN entry */
 export const initialState: AppState = {
   screen: { type: 'pin-entry' },
-  ws: null,
-  pc: null,
-  localStream: null,
-  remoteStream: null,
   iceServers: null,
   iceTransportPolicy: 'all',
 };

@@ -120,7 +120,6 @@ describe('reducer', () => {
       const newState = reducer(state, action);
 
       expect(newState.screen.type).toBe('waiting-for-peer');
-      expect(newState.localStream).toBe(mockStream);
       if (newState.screen.type === 'waiting-for-peer') {
         expect(newState.screen.pin).toBe('123456');
         expect(newState.screen.muted).toBe(false);
@@ -143,7 +142,7 @@ describe('reducer', () => {
       };
       const newState = reducer(state, action);
 
-      expect(newState.localStream).toBe(mockStream);
+      expect(newState.screen.type).toBe('waiting-for-peer');
     });
 
     test('MEDIA_ERROR transitions to error state', () => {
@@ -333,7 +332,7 @@ describe('reducer', () => {
   });
 
   describe('WebRTC lifecycle', () => {
-    test('RTC_TRACK_RECEIVED stores remote stream', () => {
+    test('RTC_TRACK_RECEIVED returns state unchanged (stream in ref)', () => {
       const mockStream = {} as MediaStream;
       const action: Action = {
         type: 'RTC_TRACK_RECEIVED',
@@ -341,7 +340,7 @@ describe('reducer', () => {
       };
       const newState = reducer(initialState, action);
 
-      expect(newState.remoteStream).toBe(mockStream);
+      expect(newState).toBe(initialState);
     });
 
     test('RTC_CONNECTED transitions negotiating to call', () => {
@@ -635,7 +634,6 @@ describe('reducer', () => {
       const state: AppState = {
         ...initialState,
         screen: { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
-        localStream: {} as MediaStream,
       };
 
       const action: Action = { type: 'FLIP_CAMERA' };

@@ -76,7 +76,6 @@ export function reducer(state: AppState, action: Action): AppState {
 
       return {
         ...state,
-        localStream: action.stream,
         screen: {
           type: 'waiting-for-peer',
           pin: state.screen.pin,
@@ -172,10 +171,8 @@ export function reducer(state: AppState, action: Action): AppState {
 
     // ===== WEBRTC LIFECYCLE =====
     case 'RTC_TRACK_RECEIVED': {
-      return {
-        ...state,
-        remoteStream: action.stream,
-      };
+      // Stream stored in ref by dispatch wrapper, not in reducer state
+      return state;
     }
 
     case 'RTC_CONNECTED': {

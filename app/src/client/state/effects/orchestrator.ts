@@ -3,17 +3,17 @@
  *
  * @remarks
  * Called synchronously from the dispatch wrapper in App.tsx.
- * Order matters: WS must exist before media can send join-pin,
- * PC must exist before WebRTC negotiation runs.
+ * Order: cleanup first (teardown before creating new resources),
+ * then ws → media → webrtc → error.
  *
  * @module state/effects/orchestrator
  */
 
 import type { EffectContext, EffectArgs } from './types';
+import { handleCleanupEffects } from './cleanup';
 import { handleWebSocketEffects } from './websocket';
 import { handleMediaEffects } from './media';
 import { handleWebRTCEffects } from './webrtc';
-import { handleCleanupEffects } from './cleanup';
 import { handleErrorEffects } from './error';
 
 /**
@@ -21,9 +21,9 @@ import { handleErrorEffects } from './error';
  * Must be called synchronously — NOT from useEffect.
  */
 export function runEffects(ctx: EffectContext, args: EffectArgs): void {
+  handleCleanupEffects(ctx, args);
   handleWebSocketEffects(ctx, args);
   handleMediaEffects(ctx, args);
   handleWebRTCEffects(ctx, args);
-  handleCleanupEffects(ctx, args);
   handleErrorEffects(ctx, args);
 }

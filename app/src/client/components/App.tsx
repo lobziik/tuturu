@@ -15,7 +15,7 @@ import { reducer } from '../state/reducer';
 import { initialState, type AppState, type Action } from '../state/types';
 import { AppContext, createDebugReducer } from '../state/context';
 import type { Dispatch } from '../state/context';
-import { runEffects, type ResourceRefs } from '../state/effects';
+import { runEffects, cleanupResources, type ResourceRefs } from '../state/effects';
 
 import { PinEntryScreen } from './PinEntryScreen';
 import { ConnectingScreen } from './ConnectingScreen';
@@ -62,16 +62,7 @@ export function App() {
     }
 
     // Side effects — synchronous, before re-render
-    runEffects(
-      { refs, dispatch },
-      {
-        prevState,
-        newState,
-        action,
-        prevScreen: prevState.screen.type,
-        newScreen: newState.screen.type,
-      },
-    );
+    runEffects({ refs, dispatch }, { prevState, newState, action });
 
     // Trigger Preact re-render
     rawDispatch(action);
@@ -79,18 +70,7 @@ export function App() {
 
   // Page unload cleanup
   useEffect(() => {
-    const handleUnload = () => {
-      if (refs.ws.current) {
-        refs.ws.current.close(1000, 'User closed page');
-      }
-      if (refs.localStream.current) {
-        refs.localStream.current.getTracks().forEach((track) => track.stop());
-      }
-      if (refs.pc.current) {
-        refs.pc.current.close();
-      }
-    };
-
+    const handleUnload = () => cleanupResources(refs);
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);

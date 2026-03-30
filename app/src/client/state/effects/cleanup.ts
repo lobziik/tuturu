@@ -33,8 +33,7 @@ export function cleanupResources(refs: ResourceRefs): void {
 /** Handle cleanup-related side effects: hangup and non-retryable errors */
 export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void {
   const { refs } = ctx;
-  const { action, newScreen } = args;
-  const newState = args.newState;
+  const { action, newState } = args;
 
   // HANGUP → Send leave message and tear down everything
   if (action.type === 'HANGUP') {
@@ -45,7 +44,7 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
   }
 
   // Non-retryable error → Cleanup resources so nothing lingers
-  if (newScreen === 'error' && newState.screen.type === 'error' && !newState.screen.canRetry) {
+  if (newState.screen.type === 'error' && !newState.screen.canRetry) {
     cleanupResources(refs);
   }
 }

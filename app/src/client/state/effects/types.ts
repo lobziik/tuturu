@@ -9,7 +9,7 @@
  * @module state/effects/types
  */
 
-import type { AppState, Action, Screen } from '../types';
+import type { AppState, Action } from '../types';
 import type { Dispatch } from '../context';
 
 /**
@@ -36,13 +36,13 @@ export interface EffectContext {
 /**
  * Per-dispatch arguments describing the state transition that occurred.
  * Created fresh for each action processed.
+ *
+ * @remarks
+ * Handlers should check `newState.screen.type` directly (not via convenience
+ * fields) so TypeScript can narrow `newState.screen` to the specific variant.
  */
 export interface EffectArgs {
   readonly prevState: AppState;
   readonly newState: AppState;
   readonly action: Action;
-  /** Convenience: prevState.screen.type */
-  readonly prevScreen: Screen['type'];
-  /** Convenience: newState.screen.type */
-  readonly newScreen: Screen['type'];
 }

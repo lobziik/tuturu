@@ -16,13 +16,11 @@ import type { EffectContext, EffectArgs } from './types';
 /** Handle WebRTC-related side effects */
 export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void {
   const { refs, dispatch } = ctx;
-  const { action, prevScreen, newScreen } = args;
-  const newState = args.newState;
+  const { action, prevState, newState } = args;
 
   // Entering negotiating as caller → Create peer connection and send offer
   if (
-    newScreen === 'negotiating' &&
-    prevScreen !== 'negotiating' &&
+    prevState.screen.type !== 'negotiating' &&
     newState.screen.type === 'negotiating' &&
     newState.screen.role === 'caller'
   ) {

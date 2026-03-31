@@ -9,8 +9,9 @@
  * @module state/effects/types
  */
 
-import type { AppState, Action } from '../types';
+import type { AppState, Action, Screen } from '../types';
 import type { Dispatch } from '../context';
+import type { IceServerConfig, IceTransportPolicy } from '../../../types';
 
 /**
  * Mutable resource refs that effect handlers read and write.
@@ -38,11 +39,34 @@ export interface EffectContext {
  * Created fresh for each action processed.
  *
  * @remarks
- * Handlers should check `newState.screen.type` directly (not via convenience
- * fields) so TypeScript can narrow `newState.screen` to the specific variant.
+ * Handlers should use {@link getScreen} to access the call screen safely,
+ * then check the screen's `type` directly so TypeScript can narrow.
  */
 export interface EffectArgs {
   readonly prevState: AppState;
   readonly newState: AppState;
   readonly action: Action;
+}
+
+/**
+ * Phase-safe screen accessor. Returns the call screen if in room phase, null otherwise.
+ * Effects only apply to the video call sub-machine which exists within room phase.
+ */
+export function getScreen(state: AppState): Screen | null {
+  return state.phase === 'room' ? state.screen : null;
+}
+
+/** ICE configuration extracted from room-phase state */
+export interface IceConfig {
+  iceServers: IceServerConfig[] | null;
+  iceTransportPolicy: IceTransportPolicy;
+}
+
+/**
+ * Phase-safe ICE config accessor. Returns ICE config if in room phase, null otherwise.
+ */
+export function getIceConfig(state: AppState): IceConfig | null {
+  return state.phase === 'room'
+    ? { iceServers: state.iceServers, iceTransportPolicy: state.iceTransportPolicy }
+    : null;
 }

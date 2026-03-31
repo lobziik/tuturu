@@ -12,7 +12,7 @@
 
 import { useReducer, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import { reducer } from '../state/reducer';
-import { initialState, type AppState, type Action } from '../state/types';
+import { initialState, type AppState, type Action, type RoomState } from '../state/types';
 import { AppContext, createDebugReducer } from '../state/context';
 import type { Dispatch } from '../state/context';
 import { runEffects, cleanupResources, type ResourceRefs } from '../state/effects';
@@ -85,9 +85,33 @@ export function App() {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  // Screen routing
-  const renderScreen = () => {
-    switch (state.screen.type) {
+  // Phase-level routing
+  const renderPhase = () => {
+    switch (state.phase) {
+      case 'nickname':
+        // Placeholder until Session 5 adds NicknameScreen
+        return (
+          <div id="pin-entry" class="card">
+            <h2>Loading...</h2>
+          </div>
+        );
+
+      case 'login':
+        // Placeholder until Session 5 adds LoginScreen
+        return (
+          <div id="pin-entry" class="card">
+            <h2>Loading...</h2>
+          </div>
+        );
+
+      case 'room':
+        return renderRoomScreen(state);
+    }
+  };
+
+  // Screen routing within room phase
+  const renderRoomScreen = (roomState: RoomState) => {
+    switch (roomState.screen.type) {
       case 'pin-entry':
         return <PinEntryScreen dispatch={dispatch} />;
 
@@ -102,7 +126,7 @@ export function App() {
       case 'call':
         return (
           <CallScreen
-            screen={state.screen}
+            screen={roomState.screen}
             localStream={refs.localStream.current}
             remoteStream={refs.remoteStream.current}
             dispatch={dispatch}
@@ -112,13 +136,13 @@ export function App() {
       case 'error':
         return (
           <ErrorBanner
-            message={state.screen.message}
-            canRetry={state.screen.canRetry}
+            message={roomState.screen.message}
+            canRetry={roomState.screen.canRetry}
             dispatch={dispatch}
           />
         );
     }
   };
 
-  return <AppContext.Provider value={{ state, dispatch }}>{renderScreen()}</AppContext.Provider>;
+  return <AppContext.Provider value={{ state, dispatch }}>{renderPhase()}</AppContext.Provider>;
 }

@@ -1,22 +1,82 @@
 /**
- * Pure reducer function for tuturu state machine
- * No side effects, no I/O, no mutations - fully testable
+ * Pure reducer function for tuturu state machine.
+ * Two-level dispatch: outer switch on phase, inner switch on action type.
+ * No side effects, no I/O, no mutations — fully testable.
  *
  * @module state/reducer
  */
 
-import type { AppState, Action } from './types';
+import type { AppState, Action, RoomState } from './types';
 
 /**
- * Pure reducer - given current state and action, returns new state.
+ * Top-level reducer — routes to phase-specific sub-reducers.
  *
  * @remarks
  * - Same inputs always produce same output
  * - No side effects, no async, no DOM
- * - State transition guards check `state.screen.type` before transitioning
  * - Invalid transitions return state unchanged
  */
 export function reducer(state: AppState, action: Action): AppState {
+  switch (state.phase) {
+    case 'nickname':
+      return nicknameReducer(state, action);
+    case 'login':
+      return loginReducer(state, action);
+    case 'room':
+      return roomReducer(state, action);
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
+
+// ============================================================================
+// Phase: nickname
+// ============================================================================
+
+function nicknameReducer(
+  state: Extract<AppState, { phase: 'nickname' }>,
+  action: Action,
+): AppState {
+  switch (action.type) {
+    case 'SUBMIT_NICKNAME':
+      return { phase: 'login', nickname: action.nickname };
+
+    case 'NICKNAME_LOADED':
+      return { phase: 'login', nickname: action.nickname };
+
+    default:
+      return state;
+  }
+}
+
+// ============================================================================
+// Phase: login
+// ============================================================================
+
+function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Action): AppState {
+  switch (action.type) {
+    case 'SUBMIT_LOGIN':
+      // Placeholder: Session 5 will pass roomId, aesKey, deviceId from crypto derivation.
+      // For now, transition to room with default v1 state.
+      return {
+        phase: 'room',
+        screen: { type: 'pin-entry' },
+        iceServers: null,
+        iceTransportPolicy: 'all',
+      };
+
+    default:
+      return state;
+  }
+}
+
+// ============================================================================
+// Phase: room — video call sub-state machine
+// ============================================================================
+
+function roomReducer(state: RoomState, action: Action): AppState {
   switch (action.type) {
     // ===== PIN ENTRY =====
     case 'SUBMIT_PIN': {
@@ -139,13 +199,11 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'RECEIVED_ANSWER': {
+    case 'RECEIVED_ANSWER':
       return state;
-    }
 
-    case 'RECEIVED_ICE_CANDIDATE': {
+    case 'RECEIVED_ICE_CANDIDATE':
       return state;
-    }
 
     case 'PEER_LEFT': {
       return {
@@ -170,10 +228,9 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     // ===== WEBRTC LIFECYCLE =====
-    case 'RTC_TRACK_RECEIVED': {
+    case 'RTC_TRACK_RECEIVED':
       // Stream stored in ref by dispatch wrapper, not in reducer state
       return state;
-    }
 
     case 'RTC_CONNECTED': {
       if (state.screen.type !== 'negotiating') return state;
@@ -190,9 +247,8 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'RTC_DISCONNECTED': {
+    case 'RTC_DISCONNECTED':
       return state;
-    }
 
     case 'RTC_FAILED': {
       return {
@@ -282,10 +338,11 @@ export function reducer(state: AppState, action: Action): AppState {
       };
     }
 
-    default: {
-      const _exhaustive: never = action;
+    // Phase transition actions — not applicable in room phase
+    case 'SUBMIT_NICKNAME':
+    case 'NICKNAME_LOADED':
+    case 'SUBMIT_LOGIN':
       return state;
-    }
   }
 }
 

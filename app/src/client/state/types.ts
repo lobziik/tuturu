@@ -1,9 +1,13 @@
 /**
- * State machine types for tuturu WebRTC client
+ * State machine types for tuturu client.
  *
  * @remarks
- * Screen types form a discriminated union on the `type` field.
- * TypeScript narrows types in switch statements, ensuring exhaustive handling.
+ * AppState uses a phase-based discriminated union on the `phase` field.
+ * Currently only the `room` phase is active (v1 video call flow).
+ * `nickname` and `login` phases will be populated in Session 5.
+ *
+ * Within the `room` phase, `Screen` is a nested discriminated union on `type`
+ * that drives the video call sub-state machine.
  *
  * Screen Transition Flow (Happy Path):
  * ```
@@ -19,6 +23,10 @@
  */
 
 import type { IceServerConfig, IceTransportPolicy } from '../../types';
+
+// ============================================================================
+// Screen types — video call sub-state machine (within room phase)
+// ============================================================================
 
 /** Screen types - discriminated union for type-safe state transitions */
 export type Screen =
@@ -37,40 +45,60 @@ export type Screen =
   | { type: 'call'; pin: string; muted: boolean; videoOff: boolean; pipHidden: boolean }
   | { type: 'error'; message: string; canRetry: boolean; previousScreen?: Screen };
 
+// ============================================================================
+// AppState — phase-based discriminated union
+// ============================================================================
+
 /**
- * Application state - single source of truth (serializable data only)
+ * Application state — discriminated union on `phase`.
  *
  * @remarks
- * - `screen`: Current UI state (what the user sees)
- * - ICE config: Received from server, used for RTCPeerConnection creation
+ * - `nickname`: First launch, user enters display name
+ * - `login`: User enters passphrase + PIN for key derivation
+ * - `room`: Active session — video call sub-state machine + (future) chat
  *
  * Mutable resources (ws, pc, localStream, remoteStream) live in useRef,
  * NOT on state. This keeps the reducer pure and state serializable.
  */
-export interface AppState {
-  /** Current screen - determines what UI is shown */
-  screen: Screen;
+export type AppState =
+  | { phase: 'nickname' }
+  | { phase: 'login'; nickname: string }
+  | {
+      phase: 'room';
+      /** Video call sub-state machine */
+      screen: Screen;
+      /** ICE server configuration (STUN/TURN servers) */
+      iceServers: IceServerConfig[] | null;
+      /** ICE transport policy: 'all' (default) or 'relay' (force TURN) */
+      iceTransportPolicy: IceTransportPolicy;
+    };
 
-  /** ICE server configuration (STUN/TURN servers) */
-  iceServers: IceServerConfig[] | null;
+/** Extract the room-phase state for components that only operate in room phase */
+export type RoomState = Extract<AppState, { phase: 'room' }>;
 
-  /** ICE transport policy: 'all' (default) or 'relay' (force TURN) */
-  iceTransportPolicy: IceTransportPolicy;
-}
+// ============================================================================
+// Actions
+// ============================================================================
 
 /**
- * Actions - all possible state transitions
+ * Actions — all possible state transitions.
  *
  * @remarks
  * Categories:
- * 1. User Interactions (SUBMIT_PIN, TOGGLE_MUTE, etc.)
- * 2. WebSocket Lifecycle (WS_CONNECTED, WS_CLOSED, etc.)
- * 3. Media Lifecycle (MEDIA_ACQUIRED, MEDIA_ERROR)
- * 4. Signaling Messages (PEER_JOINED, RECEIVED_OFFER, etc.)
- * 5. WebRTC Lifecycle (RTC_CONNECTED, RTC_FAILED, etc.)
+ * 1. Phase Transitions (SUBMIT_NICKNAME, NICKNAME_LOADED, SUBMIT_LOGIN)
+ * 2. User Interactions (SUBMIT_PIN, TOGGLE_MUTE, etc.)
+ * 3. WebSocket Lifecycle (WS_CONNECTED, WS_CLOSED, etc.)
+ * 4. Media Lifecycle (MEDIA_ACQUIRED, MEDIA_ERROR)
+ * 5. Signaling Messages (PEER_JOINED, RECEIVED_OFFER, etc.)
+ * 6. WebRTC Lifecycle (RTC_CONNECTED, RTC_FAILED, etc.)
  */
 export type Action =
-  // User interactions
+  // Phase transitions
+  | { type: 'SUBMIT_NICKNAME'; nickname: string }
+  | { type: 'NICKNAME_LOADED'; nickname: string }
+  | { type: 'SUBMIT_LOGIN' }
+
+  // User interactions (room phase — video call)
   | { type: 'SUBMIT_PIN'; pin: string }
   | { type: 'TOGGLE_MUTE' }
   | { type: 'TOGGLE_VIDEO' }
@@ -103,8 +131,12 @@ export type Action =
   | { type: 'RTC_FAILED'; reason: string }
   | { type: 'RTC_TRACK_RECEIVED'; stream: MediaStream };
 
-/** Initial state - application starts at PIN entry */
+/**
+ * Initial state — app starts directly in room phase (v1 compatibility).
+ * Once Session 5 adds nickname/login UI, this will change to `{ phase: 'nickname' }`.
+ */
 export const initialState: AppState = {
+  phase: 'room',
   screen: { type: 'pin-entry' },
   iceServers: null,
   iceTransportPolicy: 'all',

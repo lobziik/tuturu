@@ -8,6 +8,7 @@ import { closeWebSocket, sendMessage } from '../../services/websocket';
 import { closePeerConnection } from '../../services/webrtc';
 import { stopMediaStream } from '../../services/media';
 import type { EffectContext, EffectArgs, ResourceRefs } from './types';
+import { getScreen } from './types';
 
 /**
  * Release all mutable resources (peer connection, media streams, WebSocket).
@@ -33,7 +34,9 @@ export function cleanupResources(refs: ResourceRefs): void {
 /** Handle cleanup-related side effects: hangup and non-retryable errors */
 export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void {
   const { refs } = ctx;
-  const { action, newState } = args;
+  const { action, newState, prevState } = args;
+  const newScreen = getScreen(newState);
+  const prevScreen = getScreen(prevState);
 
   // HANGUP → Send leave message and tear down everything
   if (action.type === 'HANGUP') {
@@ -44,11 +47,7 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
   }
 
   // Entering non-retryable error → Cleanup resources so nothing lingers
-  if (
-    newState.screen.type === 'error' &&
-    !newState.screen.canRetry &&
-    args.prevState.screen.type !== 'error'
-  ) {
+  if (newScreen?.type === 'error' && !newScreen.canRetry && prevScreen?.type !== 'error') {
     cleanupResources(refs);
   }
 }

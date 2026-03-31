@@ -12,22 +12,27 @@ import {
 } from '../../services/webrtc';
 import { sendMessage } from '../../services/websocket';
 import type { EffectContext, EffectArgs } from './types';
+import { getScreen, getIceConfig } from './types';
 
 /** Handle WebRTC-related side effects */
 export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void {
   const { refs, dispatch } = ctx;
   const { action, prevState, newState } = args;
+  const newScreen = getScreen(newState);
+  const prevScreen = getScreen(prevState);
+  const iceConfig = getIceConfig(newState);
 
   // Entering negotiating as caller → Create peer connection and send offer
   if (
-    prevState.screen.type !== 'negotiating' &&
-    newState.screen.type === 'negotiating' &&
-    newState.screen.role === 'caller'
+    prevScreen?.type !== 'negotiating' &&
+    newScreen?.type === 'negotiating' &&
+    newScreen.role === 'caller' &&
+    iceConfig
   ) {
     const pc = createPeerConnection(
       {
-        iceServers: newState.iceServers ?? [],
-        iceTransportPolicy: newState.iceTransportPolicy,
+        iceServers: iceConfig.iceServers ?? [],
+        iceTransportPolicy: iceConfig.iceTransportPolicy,
       },
       refs.localStream.current,
       refs.ws.current,
@@ -51,12 +56,12 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
   }
 
   // Received offer → Create peer connection (if needed) and handle as callee
-  if (action.type === 'RECEIVED_OFFER') {
+  if (action.type === 'RECEIVED_OFFER' && iceConfig) {
     if (!refs.pc.current) {
       const pc = createPeerConnection(
         {
-          iceServers: newState.iceServers ?? [],
-          iceTransportPolicy: newState.iceTransportPolicy,
+          iceServers: iceConfig.iceServers ?? [],
+          iceTransportPolicy: iceConfig.iceTransportPolicy,
         },
         refs.localStream.current,
         refs.ws.current,

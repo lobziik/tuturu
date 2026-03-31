@@ -34,6 +34,9 @@ const ARGON2_PARALLELISM = 1;
 /** Argon2id output length in bytes (256-bit master key) */
 const ARGON2_HASH_LENGTH = 32;
 
+/** Fixed HKDF salt — domain separator per RFC 5869 §3.1 */
+const HKDF_SALT = new TextEncoder().encode('tuturu-hkdf-v1');
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -170,7 +173,7 @@ export async function deriveKeys(
       name: 'HKDF',
       hash: 'SHA-256',
       info: encoder.encode('room-id'),
-      salt: new Uint8Array(0),
+      salt: HKDF_SALT,
     },
     hkdfKey,
     128,
@@ -183,7 +186,7 @@ export async function deriveKeys(
       name: 'HKDF',
       hash: 'SHA-256',
       info: encoder.encode('encryption-key'),
-      salt: new Uint8Array(0),
+      salt: HKDF_SALT,
     },
     hkdfKey,
     256,

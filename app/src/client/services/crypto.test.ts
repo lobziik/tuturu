@@ -128,7 +128,7 @@ describe('deriveKeys', () => {
 
   test('produces correct test vector roomId', () => {
     // Canonical test vector: passphrase="correct horse battery staple", pin="123456", hostname="call.example.com"
-    expect(keys.roomId).toBe('33378d61d69617becb399003a24e51d2');
+    expect(keys.roomId).toBe('36f910fbcaaa990d79d003c356ff611d');
   });
 
   test('is deterministic — same inputs produce same roomId', async () => {

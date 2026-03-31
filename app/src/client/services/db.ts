@@ -221,6 +221,25 @@ export async function putLastSeenSeq(
 }
 
 // ============================================================================
+// Atomic compound operations
+// ============================================================================
+
+/**
+ * Store a message and update the sender's lastSeenSeq in a single transaction.
+ * Prevents inconsistency if a crash occurs between the two writes.
+ */
+export async function putMessageAndSeq(
+  db: IDBDatabase,
+  message: ChatMessage,
+  seq: number,
+): Promise<void> {
+  const tx = db.transaction(['messages', 'seq'], 'readwrite');
+  tx.objectStore('messages').put(message);
+  tx.objectStore('seq').put({ deviceId: message.deviceId, lastSeenSeq: seq } satisfies SeqRecord);
+  await promisifyTransaction(tx);
+}
+
+// ============================================================================
 // Bulk operations
 // ============================================================================
 

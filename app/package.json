@@ -11,8 +11,8 @@
     "dev": "bun run --hot src/server/index.ts",
     "start": "bun run src/server/index.ts",
     "start:prod": "./dist/server",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
+    "test": "bun test --randomize",
+    "test:watch": "bun test --randomize --watch",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "lint": "bunx eslint . --ext .ts,.tsx --max-warnings=0",
     "lint:fix": "bunx eslint . --ext .ts,.tsx --fix",
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "bun": "^1.3.11",
+    "hash-wasm": "^4.12.0",
     "preact": "^10.29.0",
     "zod": "^4.3.6"
   },

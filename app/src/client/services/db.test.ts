@@ -6,7 +6,7 @@
  */
 
 import 'fake-indexeddb/auto';
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
 import {
   openDB,
   resetDBCache,
@@ -38,11 +38,21 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
+/** Track last opened connection so we can close it before deleting the database */
+let lastDB: IDBDatabase | null = null;
+
 // Reset between tests to get a fresh database
 beforeEach(() => {
+  if (lastDB) lastDB.close();
+  lastDB = null;
   resetDBCache();
   // Delete the database to ensure clean state
   indexedDB.deleteDatabase('tuturu');
+});
+
+afterAll(() => {
+  if (lastDB) lastDB.close();
+  resetDBCache();
 });
 
 // ============================================================================

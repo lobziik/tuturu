@@ -19,6 +19,7 @@ import {
   getOrCreateDeviceId,
   getLastSeenSeq,
   putLastSeenSeq,
+  checkAndStoreMessage,
   clearAllData,
 } from './db';
 import type { ChatMessage } from '../../shared/types';
@@ -343,6 +344,80 @@ describe('seq tracking', () => {
 
     expect(await getLastSeenSeq(db, 'device-a')).toBe(5);
     expect(await getLastSeenSeq(db, 'device-b')).toBe(10);
+
+    db.close();
+  });
+});
+
+// ============================================================================
+// Atomic check-and-store
+// ============================================================================
+
+describe('checkAndStoreMessage', () => {
+  test('stores message and updates seq on success', async () => {
+    const db = await openDB();
+    const msg = makeMessage({ seq: 1, deviceId: 'dev-1' });
+
+    const result = await checkAndStoreMessage(db, msg);
+
+    expect(result).toEqual({ stored: true });
+    expect(await getMessage(db, msg.uuid)).toEqual(msg);
+    expect(await getLastSeenSeq(db, 'dev-1')).toBe(1);
+
+    db.close();
+  });
+
+  test('rejects replay (seq <= lastSeenSeq)', async () => {
+    const db = await openDB();
+    await putLastSeenSeq(db, 'dev-1', 5);
+
+    const msg = makeMessage({ seq: 5, deviceId: 'dev-1' });
+    const result = await checkAndStoreMessage(db, msg);
+
+    expect(result).toEqual({ stored: false, reason: 'replay' });
+    expect(await getMessage(db, msg.uuid)).toBeUndefined();
+
+    db.close();
+  });
+
+  test('rejects duplicate UUID', async () => {
+    const db = await openDB();
+    const msg1 = makeMessage({ seq: 1, uuid: 'same-uuid', deviceId: 'dev-1' });
+    await checkAndStoreMessage(db, msg1);
+
+    const msg2 = makeMessage({ seq: 2, uuid: 'same-uuid', deviceId: 'dev-1' });
+    const result = await checkAndStoreMessage(db, msg2);
+
+    expect(result).toEqual({ stored: false, reason: 'duplicate' });
+    // seq should NOT have been updated to 2
+    expect(await getLastSeenSeq(db, 'dev-1')).toBe(1);
+
+    db.close();
+  });
+
+  test('replay check runs before dedup check', async () => {
+    const db = await openDB();
+    // Store message at seq=5
+    const msg = makeMessage({ seq: 5, uuid: 'msg-uuid', deviceId: 'dev-1' });
+    await checkAndStoreMessage(db, msg);
+
+    // Try seq=3 with same UUID — should be 'replay', not 'duplicate'
+    const replay = makeMessage({ seq: 3, uuid: 'msg-uuid', deviceId: 'dev-1' });
+    const result = await checkAndStoreMessage(db, replay);
+
+    expect(result).toEqual({ stored: false, reason: 'replay' });
+
+    db.close();
+  });
+
+  test('tracks seq per deviceId independently', async () => {
+    const db = await openDB();
+    await putLastSeenSeq(db, 'dev-1', 10);
+
+    const msg = makeMessage({ seq: 1, deviceId: 'dev-2' });
+    const result = await checkAndStoreMessage(db, msg);
+
+    expect(result).toEqual({ stored: true });
 
     db.close();
   });

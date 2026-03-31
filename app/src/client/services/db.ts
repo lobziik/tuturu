@@ -224,19 +224,66 @@ export async function putLastSeenSeq(
 // Atomic compound operations
 // ============================================================================
 
+/** Result of atomic check-and-store: either stored, or rejected with reason */
+export type StoreResult = { stored: true } | { stored: false; reason: 'replay' | 'duplicate' };
+
 /**
- * Store a message and update the sender's lastSeenSeq in a single transaction.
- * Prevents inconsistency if a crash occurs between the two writes.
+ * Atomically check replay/dedup guards and store a message in a single readwrite transaction.
+ *
+ * Performs in one IDB transaction:
+ * 1. Read lastSeenSeq for message.deviceId — reject if message.seq ≤ lastSeenSeq
+ * 2. Read messages store by UUID — reject if already exists
+ * 3. Write message + update lastSeenSeq
+ *
+ * This eliminates TOCTOU races when multiple messages are processed concurrently.
  */
-export async function putMessageAndSeq(
-  db: IDBDatabase,
-  message: ChatMessage,
-  seq: number,
-): Promise<void> {
-  const tx = db.transaction(['messages', 'seq'], 'readwrite');
-  tx.objectStore('messages').put(message);
-  tx.objectStore('seq').put({ deviceId: message.deviceId, lastSeenSeq: seq } satisfies SeqRecord);
-  await promisifyTransaction(tx);
+export function checkAndStoreMessage(db: IDBDatabase, message: ChatMessage): Promise<StoreResult> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['messages', 'seq'], 'readwrite');
+    const seqStore = tx.objectStore('seq');
+    const messagesStore = tx.objectStore('messages');
+
+    // Step 1: Read lastSeenSeq
+    const seqReq = seqStore.get(message.deviceId);
+    seqReq.onsuccess = () => {
+      const record = seqReq.result as SeqRecord | undefined;
+      const lastSeenSeq = record?.lastSeenSeq ?? 0;
+
+      if (message.seq <= lastSeenSeq) {
+        tx.abort();
+        resolve({ stored: false, reason: 'replay' });
+        return;
+      }
+
+      // Step 2: Check UUID dedup
+      const msgReq = messagesStore.get(message.uuid);
+      msgReq.onsuccess = () => {
+        if (msgReq.result !== undefined) {
+          tx.abort();
+          resolve({ stored: false, reason: 'duplicate' });
+          return;
+        }
+
+        // Step 3: Write message + update seq
+        messagesStore.put(message);
+        seqStore.put({
+          deviceId: message.deviceId,
+          lastSeenSeq: message.seq,
+        } satisfies SeqRecord);
+        // Transaction will auto-commit; oncomplete resolves below
+      };
+      msgReq.onerror = () => reject(msgReq.error);
+    };
+    seqReq.onerror = () => reject(seqReq.error);
+
+    tx.oncomplete = () => resolve({ stored: true });
+    tx.onerror = () => reject(tx.error);
+    // onabort fires for our intentional aborts — already resolved above
+    tx.onabort = () => {
+      // Only reject if we haven't already resolved (unexpected abort)
+      // Intentional aborts (replay/duplicate) resolve before aborting
+    };
+  });
 }
 
 // ============================================================================

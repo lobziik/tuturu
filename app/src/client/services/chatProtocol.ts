@@ -13,7 +13,7 @@
 import { ChatMessageSchema } from '../../shared/schemas';
 import type { ChatMessage } from '../../shared/types';
 import { decryptMessage, fromBase64 } from './crypto';
-import { getMessage, getLastSeenSeq, putMessageAndSeq } from './db';
+import { checkAndStoreMessage } from './db';
 
 // ============================================================================
 // Result Types
@@ -118,20 +118,12 @@ export async function handleIncomingMessage(
   }
   const message = parsed.data;
 
-  // Step 6: Replay detection (seq must be strictly greater than lastSeenSeq)
-  const lastSeq = await getLastSeenSeq(db, message.deviceId);
-  if (message.seq <= lastSeq) {
-    return { type: 'replay' };
+  // Steps 6-8: Replay check + dedup check + store in a single IDB transaction.
+  // Eliminates TOCTOU races when multiple messages are processed concurrently.
+  const storeResult = await checkAndStoreMessage(db, message);
+  if (!storeResult.stored) {
+    return { type: storeResult.reason };
   }
-
-  // Step 7: UUID deduplication
-  const existing = await getMessage(db, message.uuid);
-  if (existing !== undefined) {
-    return { type: 'duplicate' };
-  }
-
-  // Step 8: Store message + update lastSeenSeq atomically
-  await putMessageAndSeq(db, message, message.seq);
 
   return { type: 'ok', message };
 }

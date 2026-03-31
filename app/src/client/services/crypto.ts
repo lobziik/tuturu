@@ -158,13 +158,11 @@ export async function deriveKeys(
   const masterBytes = hexToBytes(masterHex);
 
   // Step 2: Import master as HKDF key material
-  const hkdfKey = await crypto.subtle.importKey(
-    'raw',
-    masterBytes.buffer as ArrayBuffer,
-    'HKDF',
-    false,
-    ['deriveBits'],
-  );
+  // Note: cast works around bun-types declaring BufferSource as ArrayBuffer instead of ArrayBufferLike.
+  // Passing Uint8Array directly is correct per Web Crypto spec — it implements BufferSource.
+  const hkdfKey = await crypto.subtle.importKey('raw', masterBytes as BufferSource, 'HKDF', false, [
+    'deriveBits',
+  ]);
 
   // Step 3: HKDF → room ID (16 bytes = 128 bits)
   const roomIdBits = await crypto.subtle.deriveBits(
@@ -217,7 +215,7 @@ export async function encryptMessage(
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     aesKey,
-    plaintext.buffer as ArrayBuffer,
+    plaintext as BufferSource,
   );
 
   const result = new Uint8Array(IV_LENGTH + ciphertext.byteLength);
@@ -248,7 +246,7 @@ export async function decryptMessage(aesKey: CryptoKey, wire: Uint8Array): Promi
   const plaintext = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
     aesKey,
-    ciphertext.buffer as ArrayBuffer,
+    ciphertext as BufferSource,
   );
   return new Uint8Array(plaintext);
 }

@@ -10,7 +10,7 @@
  * @module components/App
  */
 
-import { useReducer, useEffect, useRef, useCallback } from 'preact/hooks';
+import { useReducer, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import { reducer } from '../state/reducer';
 import { initialState, type AppState, type Action } from '../state/types';
 import { AppContext, createDebugReducer } from '../state/context';
@@ -29,14 +29,24 @@ const debugReducer = createDebugReducer(reducer);
 export function App() {
   const [state, rawDispatch] = useReducer(debugReducer, initialState);
 
-  // Mutable resource refs, grouped into ResourceRefs for effect handlers
-  const refs: ResourceRefs = {
-    ws: useRef<WebSocket | null>(null),
-    pc: useRef<RTCPeerConnection | null>(null),
-    localStream: useRef<MediaStream | null>(null),
-    remoteStream: useRef<MediaStream | null>(null),
-    errorTimeout: useRef<number | null>(null),
-  };
+  // Mutable resource refs — individual useRef calls for hook-order stability
+  const wsRef = useRef<WebSocket | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const errorTimeoutRef = useRef<number | null>(null);
+
+  // Stable container object for effect handlers (memoized so identity doesn't change)
+  const refs = useMemo<ResourceRefs>(
+    () => ({
+      ws: wsRef,
+      pc: pcRef,
+      localStream: localStreamRef,
+      remoteStream: remoteStreamRef,
+      errorTimeout: errorTimeoutRef,
+    }),
+    [],
+  );
 
   // Authoritative state ref — updated synchronously in dispatch
   const stateRef = useRef<AppState>(initialState);

@@ -211,17 +211,17 @@ describe('encryptMessage / decryptMessage', () => {
     expect(wire.length).toBe(12 + 4 + 16);
   });
 
-  test('IVs are unique across 100 encryptions', async () => {
+  test('IVs are unique across 100500 encryptions', async () => {
     const plaintext = new TextEncoder().encode('same plaintext');
     const ivs = new Set<string>();
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 100500; i++) {
       const wire = await encryptMessage(aesKey, plaintext);
       const iv = bytesToHex(wire.slice(0, 12));
       ivs.add(iv);
     }
 
-    expect(ivs.size).toBe(100);
+    expect(ivs.size).toBe(100500);
   });
 
   test('wrong key fails to decrypt', async () => {

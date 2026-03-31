@@ -280,8 +280,9 @@ export function checkAndStoreMessage(db: IDBDatabase, message: ChatMessage): Pro
     tx.onerror = () => reject(tx.error);
     // onabort fires for our intentional aborts — already resolved above
     tx.onabort = () => {
-      // Only reject if we haven't already resolved (unexpected abort)
-      // Intentional aborts (replay/duplicate) resolve before aborting
+      // Intentional aborts (replay/duplicate) already resolved — this is a no-op for those.
+      // For unexpected aborts (e.g. QuotaExceededError), this rejects the promise.
+      reject(tx.error ?? new DOMException('Transaction aborted'));
     };
   });
 }

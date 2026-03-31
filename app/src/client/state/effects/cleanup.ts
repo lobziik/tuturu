@@ -43,8 +43,12 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
     cleanupResources(refs);
   }
 
-  // Non-retryable error → Cleanup resources so nothing lingers
-  if (newState.screen.type === 'error' && !newState.screen.canRetry) {
+  // Entering non-retryable error → Cleanup resources so nothing lingers
+  if (
+    newState.screen.type === 'error' &&
+    !newState.screen.canRetry &&
+    args.prevState.screen.type !== 'error'
+  ) {
     cleanupResources(refs);
   }
 }

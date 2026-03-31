@@ -18,6 +18,7 @@ export function handleMediaEffects(ctx: EffectContext, args: EffectArgs): void {
   }
 
   // Toggle mute → Update audio track enabled state
+  // 'in' operator narrows newState.screen to variants that have 'muted' (waiting-for-peer | negotiating | call)
   if (action.type === 'TOGGLE_MUTE' && refs.localStream.current && 'muted' in newState.screen) {
     const audioTrack = refs.localStream.current.getAudioTracks()[0];
     if (audioTrack) {

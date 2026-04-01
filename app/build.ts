@@ -10,7 +10,6 @@ import type { BunPlugin } from 'bun';
 import { resolve } from 'path';
 
 const preactJsxRuntime = resolve(
-  // @ts-ignore
   import.meta.dir,
   'node_modules/preact/jsx-runtime/dist/jsxRuntime.mjs',
 );

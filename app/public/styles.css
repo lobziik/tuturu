@@ -126,13 +126,13 @@ button {
   color: white;
 }
 
-#connect-btn:hover:not(:disabled) {
-  background: var(--primary-dark);
-}
-
 #connect-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+#connect-btn:hover:not(:disabled) {
+  background: var(--primary-dark);
 }
 
 .hint {
@@ -192,15 +192,18 @@ video {
 
 #local-video {
   position: absolute;
+
   /* Using top/left for drag positioning - initial position set by JS */
   top: 0;
   left: 0;
+
   /* Base PiP size - non-fullscreen fallback, overridden by .mobile-call/.desktop-call */
   width: 100px;
   aspect-ratio: 3 / 4;
   border: 2px solid var(--border);
   border-radius: 0.5rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 6px rgb(0 0 0 / 30%);
+
   /* Draggable PiP styles */
   cursor: grab;
   touch-action: none;
@@ -266,14 +269,15 @@ video {
   border-radius: 0.5rem;
   max-width: 600px;
   text-align: center;
-  animation: slideIn 0.3s ease-out;
+  animation: slide-in 0.3s ease-out;
 }
 
-@keyframes slideIn {
+@keyframes slide-in {
   from {
     opacity: 0;
     transform: translateY(-1rem);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -347,10 +351,9 @@ footer a:hover {
   right: 1rem;
   left: auto;
   padding: 0.75rem 1rem;
-  background: rgba(30, 41, 59, 0.85);
+  background: rgb(30 41 59 / 85%);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 0.5rem;
   margin: 0;
   z-index: 10;
@@ -361,10 +364,9 @@ footer a:hover {
   bottom: 2rem;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(30, 41, 59, 0.85);
+  background: rgb(30 41 59 / 85%);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 1rem;
   padding: 1rem;
   z-index: 10;
@@ -376,8 +378,8 @@ footer a:hover {
   max-height: 120px;
   aspect-ratio: 4 / 3;
   border-radius: 0.75rem;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 2px solid rgb(255 255 255 / 30%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 40%);
   object-fit: cover;
 }
 
@@ -411,19 +413,18 @@ footer a:hover {
 .waiting-overlay-text {
   font-size: 1.5rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgb(255 255 255 / 90%);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-  background: rgba(0, 0, 0, 0.4);
+  text-shadow: 0 2px 8px rgb(0 0 0 / 50%);
+  background: rgb(0 0 0 / 40%);
   padding: 1rem 2rem;
   border-radius: 0.5rem;
   backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 /* Mobile Responsive - Non-call screens */
-@media (max-width: 767px) {
+@media (width <= 767px) {
   header h1 {
     font-size: 2rem;
   }
@@ -434,13 +435,14 @@ footer a:hover {
 }
 
 /* Mobile Full-Screen Call Mode */
-@media (max-width: 767px) {
+@media (width <= 767px) {
   /* Full-screen call interface */
   #call-interface.mobile-call {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
+
     /* Use dynamic viewport height to account for mobile browser chrome */
     height: 100vh; /* Fallback for older browsers */
     height: 100svh; /* Small viewport height - excludes browser UI */
@@ -478,8 +480,8 @@ footer a:hover {
     max-height: 133px;
     aspect-ratio: 3 / 4;
     border-radius: 0.75rem;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    border: 2px solid rgb(255 255 255 / 30%);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 40%);
     object-fit: cover;
   }
 
@@ -492,7 +494,7 @@ footer a:hover {
     padding: 1rem;
     padding-top: env(safe-area-inset-top, 1rem);
     padding-right: env(safe-area-inset-right, 1rem);
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
+    background: linear-gradient(180deg, rgb(0 0 0 / 70%) 0%, transparent 100%);
     border: none;
     border-radius: 0;
     margin: 0;
@@ -539,10 +541,9 @@ footer a:hover {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(30, 41, 59, 0.8);
+    background: rgb(30 41 59 / 80%);
     backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgb(255 255 255 / 20%);
   }
 
   .mobile-call .control-btn .icon {
@@ -554,19 +555,19 @@ footer a:hover {
   }
 
   .mobile-call .control-btn.danger {
-    background: rgba(239, 68, 68, 0.9);
+    background: rgb(239 68 68 / 90%);
   }
 
   .mobile-call .control-btn.active {
-    background: rgba(239, 68, 68, 0.8);
+    background: rgb(239 68 68 / 80%);
   }
 
   .mobile-call .control-btn:hover {
-    background: rgba(51, 65, 85, 0.9);
+    background: rgb(51 65 85 / 90%);
   }
 
   .mobile-call .control-btn.danger:hover {
-    background: rgba(220, 38, 38, 0.95);
+    background: rgb(220 38 38 / 95%);
   }
 
   /* Flip button visibility in mobile-call mode */
@@ -672,7 +673,6 @@ footer a:hover {
   max-width: 75%;
   padding: 0.5rem 0.75rem;
   border-radius: 1rem;
-  word-wrap: break-word;
   overflow-wrap: break-word;
   font-size: 0.9375rem;
   line-height: 1.4;
@@ -710,7 +710,7 @@ footer a:hover {
 }
 
 .chat-bubble.own .chat-timestamp {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255 255 255 / 70%);
 }
 
 /* Photo Placeholder */
@@ -754,7 +754,7 @@ footer a:hover {
   transition: opacity 0.2s, transform 0.2s;
   pointer-events: none;
   z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
 }
 
 .scroll-to-bottom.visible {

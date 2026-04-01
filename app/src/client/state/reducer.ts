@@ -62,6 +62,8 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       // For now, transition to room with default v1 state.
       return {
         phase: 'room',
+        view: 'chat',
+        messages: [],
         screen: { type: 'pin-entry' },
         iceServers: null,
         iceTransportPolicy: 'all',
@@ -78,6 +80,20 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
 
 function roomReducer(state: RoomState, action: Action): AppState {
   switch (action.type) {
+    // ===== VIEW SWITCHING =====
+    case 'SWITCH_TO_CALL':
+      return { ...state, view: 'call' };
+
+    case 'SWITCH_TO_CHAT':
+      return { ...state, view: 'chat' };
+
+    // ===== CHAT (mock — TODO(session-8): replace with real chat actions) =====
+    case 'LOAD_MOCK_MESSAGES':
+      return { ...state, messages: action.messages };
+
+    case 'MOCK_SEND_MESSAGE':
+      return { ...state, messages: [...state.messages, action.message] };
+
     // ===== PIN ENTRY =====
     case 'SUBMIT_PIN': {
       if (state.screen.type !== 'pin-entry') return state;

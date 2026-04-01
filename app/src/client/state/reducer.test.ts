@@ -21,6 +21,8 @@ function roomState(
 ): RoomState {
   return {
     phase: 'room',
+    view: 'chat',
+    messages: [],
     screen,
     iceServers: null,
     iceTransportPolicy: 'all',

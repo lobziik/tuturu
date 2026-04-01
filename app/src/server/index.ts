@@ -25,6 +25,7 @@ async function main(): Promise<void> {
   // Start HTTP and WebSocket server
   const server = serve<ClientData>({
     port: config.port,
+    // hostname: '0.0.0.0',
     fetch,
     websocket: {
       open: handleOpen,
@@ -40,9 +41,9 @@ async function main(): Promise<void> {
 ║         tuturu WebRTC Server          ║
 ╚═══════════════════════════════════════╝
 
-🚀 Server running on http://localhost:${config.port}
-📞 WebSocket endpoint: ws://localhost:${config.port}/ws
-🏥 Health check: http://localhost:${config.port}/health
+🚀 Server running on http://${server.hostname}:${server.port}
+📞 WebSocket endpoint: ws://${server.hostname}:${server.port}/ws
+🏥 Health check: http://${server.hostname}:${server.port}/health
 🌍 Environment: ${config.nodeEnv}
 
 📡 STUN servers: ${config.stunServers.join(', ')}

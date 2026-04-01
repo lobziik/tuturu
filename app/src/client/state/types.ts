@@ -23,6 +23,7 @@
  */
 
 import type { IceServerConfig, IceTransportPolicy } from '../../types';
+import type { ChatMessage } from '../../shared/schemas';
 
 // ============================================================================
 // Screen types — video call sub-state machine (within room phase)
@@ -65,6 +66,10 @@ export type AppState =
   | { phase: 'login'; nickname: string }
   | {
       phase: 'room';
+      /** Which view is currently visible: chat home or video call */
+      view: 'chat' | 'call';
+      /** Chat messages (sorted by timestamp ascending) */
+      messages: ChatMessage[];
       /** Video call sub-state machine */
       screen: Screen;
       /** ICE server configuration (STUN/TURN servers) */
@@ -97,6 +102,13 @@ export type Action =
   | { type: 'SUBMIT_NICKNAME'; nickname: string }
   | { type: 'NICKNAME_LOADED'; nickname: string }
   | { type: 'SUBMIT_LOGIN' }
+
+  // User interactions (room phase — chat)
+  | { type: 'SWITCH_TO_CALL' }
+  | { type: 'SWITCH_TO_CHAT' }
+  // TODO(session-8): replace with real chat actions
+  | { type: 'LOAD_MOCK_MESSAGES'; messages: ChatMessage[] }
+  | { type: 'MOCK_SEND_MESSAGE'; message: ChatMessage }
 
   // User interactions (room phase — video call)
   | { type: 'SUBMIT_PIN'; pin: string }
@@ -137,6 +149,8 @@ export type Action =
  */
 export const initialState: AppState = {
   phase: 'room',
+  view: 'chat',
+  messages: [],
   screen: { type: 'pin-entry' },
   iceServers: null,
   iceTransportPolicy: 'all',

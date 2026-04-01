@@ -22,6 +22,7 @@ import { ConnectingScreen } from './ConnectingScreen';
 import { AcquiringMediaScreen } from './AcquiringMediaScreen';
 import { CallScreen } from './CallScreen';
 import { ErrorBanner } from './ErrorBanner';
+import { RoomScreen } from './RoomScreen';
 
 const debugReducer = createDebugReducer(reducer);
 
@@ -109,8 +110,14 @@ export function App() {
     }
   };
 
-  // Screen routing within room phase
+  // Screen routing within room phase — view-based: chat or call
   const renderRoomScreen = (roomState: RoomState) => {
+    // Chat view — default home screen
+    if (roomState.view === 'chat') {
+      return <RoomScreen messages={roomState.messages} dispatch={dispatch} />;
+    }
+
+    // Call view — video call sub-state machine
     switch (roomState.screen.type) {
       case 'pin-entry':
         return <PinEntryScreen dispatch={dispatch} />;

@@ -4,17 +4,19 @@
  * @module components/ChatInput
  */
 
-import { useState, useRef, useCallback } from 'preact/hooks';
+import { useState, useCallback } from 'preact/hooks';
+import type { RefObject } from 'preact';
 
 interface ChatInputProps {
   /** Callback when user sends a message */
   onSend: (text: string) => void;
+  /** External ref to the textarea element (for parent-driven refocus) */
+  inputRef: RefObject<HTMLTextAreaElement>;
 }
 
 /** Chat input bar with auto-growing textarea and send button */
-export function ChatInput({ onSend }: ChatInputProps) {
+export function ChatInput({ onSend, inputRef }: ChatInputProps) {
   const [text, setText] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const canSend = text.trim().length > 0;
 
@@ -23,11 +25,12 @@ export function ChatInput({ onSend }: ChatInputProps) {
     if (trimmed.length === 0) return;
     onSend(trimmed);
     setText('');
-    // Reset textarea height
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      // Re-focus textarea so mobile keyboard stays open after send
+      inputRef.current.focus();
     }
-  }, [text, onSend]);
+  }, [text, onSend, inputRef]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -50,14 +53,14 @@ export function ChatInput({ onSend }: ChatInputProps) {
   const handleFocus = useCallback(() => {
     // Safety net for iOS keyboard: scroll input into view after keyboard appears
     setTimeout(() => {
-      textareaRef.current?.scrollIntoView({ block: 'nearest' });
+      inputRef.current?.scrollIntoView({ block: 'nearest' });
     }, 300);
-  }, []);
+  }, [inputRef]);
 
   return (
     <div class="chat-input-bar">
       <textarea
-        ref={textareaRef}
+        ref={inputRef}
         class="chat-text-input"
         placeholder="Message..."
         rows={1}

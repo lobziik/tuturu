@@ -18,6 +18,8 @@ interface ChatFeedProps {
   selfDeviceId: string;
   /** Callback when user scrolls to top (for future pagination) */
   onLoadMore: () => void;
+  /** Re-focus the chat input after scroll-to-bottom tap (keeps mobile keyboard open) */
+  onRefocusInput: () => void;
 }
 
 // ============================================================================
@@ -96,7 +98,7 @@ function buildFeedItems(messages: ChatMessage[], selfDeviceId: string): FeedItem
 // ============================================================================
 
 /** Virtualized chat feed with date separators, auto-scroll, and scroll-to-bottom */
-export function ChatFeed({ messages, selfDeviceId, onLoadMore }: ChatFeedProps) {
+export function ChatFeed({ messages, selfDeviceId, onLoadMore, onRefocusInput }: ChatFeedProps) {
   const vListRef = useRef<VListHandle>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const prevMessageCountRef = useRef(0);
@@ -154,7 +156,9 @@ export function ChatFeed({ messages, selfDeviceId, onLoadMore }: ChatFeedProps) 
     const handle = vListRef.current;
     if (!handle || feedItems.length === 0) return;
     handle.scrollToIndex(feedItems.length - 1, { align: 'end', smooth: true });
-  }, [feedItems.length]);
+    // Re-focus input so mobile keyboard stays open
+    onRefocusInput();
+  }, [feedItems.length, onRefocusInput]);
 
   return (
     <div class="chat-feed-container">

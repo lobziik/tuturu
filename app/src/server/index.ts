@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   // Start HTTP and WebSocket server
   const server = serve<ClientData>({
     port: config.port,
-    // hostname: '0.0.0.0',
+    hostname: '0.0.0.0',
     fetch,
     websocket: {
       open: handleOpen,

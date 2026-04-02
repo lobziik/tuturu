@@ -29,6 +29,7 @@ let mockSendSeq = 1000;
 /** Room screen: header + virtualized chat feed + input bar */
 export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
   const initialLoadDone = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load mock messages on mount
   useEffect(() => {
@@ -63,6 +64,10 @@ export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
     console.log('[ChatFeed] Load more triggered (no-op in mock mode)');
   }, []);
 
+  const handleRefocusInput = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
+
   return (
     <div class="room-screen">
       <Header onCallClick={handleCallClick} />
@@ -70,8 +75,9 @@ export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
         messages={messages}
         selfDeviceId={MOCK_SELF_DEVICE_ID}
         onLoadMore={handleLoadMore}
+        onRefocusInput={handleRefocusInput}
       />
-      <ChatInput onSend={handleSend} />
+      <ChatInput onSend={handleSend} inputRef={inputRef} />
     </div>
   );
 }

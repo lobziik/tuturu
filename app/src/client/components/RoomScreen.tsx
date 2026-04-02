@@ -29,7 +29,54 @@ let mockSendSeq = 1000;
 /** Room screen: header + virtualized chat feed + input bar */
 export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
   const initialLoadDone = useRef(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+
+  // VisualViewport tracking — iOS Safari doesn't resize the layout viewport
+  // when the keyboard opens. Instead, it scrolls the fixed-position page behind
+  // the keyboard. We listen to visualViewport resize/scroll events and manually
+  // set the room screen's height and top to match the actual visible area.
+  useEffect(() => {
+    const screen = screenRef.current;
+    const vv = window.visualViewport;
+    if (!screen || !vv) return;
+
+    const syncToVisualViewport = () => {
+      screen.style.height = `${String(vv.height)}px`;
+      screen.style.top = `${String(vv.offsetTop)}px`;
+    };
+
+    vv.addEventListener('resize', syncToVisualViewport);
+    vv.addEventListener('scroll', syncToVisualViewport);
+
+    return () => {
+      vv.removeEventListener('resize', syncToVisualViewport);
+      vv.removeEventListener('scroll', syncToVisualViewport);
+      screen.style.height = '';
+      screen.style.top = '';
+    };
+  }, []);
+
+  // Block touchmove on non-scrollable areas to prevent iOS from scrolling the
+  // layout viewport behind the keyboard. Allow scroll only inside the chat feed
+  // (VList manages its own scroll) and overflowing contenteditable input.
+  useEffect(() => {
+    const screen = screenRef.current;
+    if (!screen) return;
+
+    const handler = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      // Allow scroll inside chat feed (VList's scroll container)
+      if (target.closest('.chat-feed-container')) return;
+      // Allow scroll inside overflowing contenteditable input
+      const editable = target.closest('[contenteditable]') as HTMLElement | null;
+      if (editable && editable.scrollHeight > editable.clientHeight) return;
+      e.preventDefault();
+    };
+
+    screen.addEventListener('touchmove', handler, { passive: false });
+    return () => screen.removeEventListener('touchmove', handler);
+  }, []);
 
   // Load mock messages on mount
   useEffect(() => {
@@ -69,7 +116,7 @@ export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
   }, []);
 
   return (
-    <div class="room-screen">
+    <div ref={screenRef} class="room-screen">
       <Header onCallClick={handleCallClick} />
       <ChatFeed
         messages={messages}

@@ -580,13 +580,17 @@ footer a:hover {
 
 .room-screen {
   position: fixed;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 100vh;
   height: 100dvh;
+  display: flex;
+  flex-direction: column;
   z-index: 50;
   background: var(--bg);
+  overflow: hidden;
+  /* JS overrides height + top via VisualViewport on iOS when keyboard is open */
 }
 
 /* Chat Header */
@@ -789,14 +793,19 @@ footer a:hover {
   border: 1px solid var(--border);
   border-radius: 1.25rem;
   outline: none;
-  resize: none;
   max-height: 6rem;
   line-height: 1.4;
   overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
-.chat-text-input::placeholder {
+.chat-text-input:empty::before {
+  content: attr(data-placeholder);
   color: var(--text-muted);
+  pointer-events: none;
 }
 
 .chat-text-input:focus {

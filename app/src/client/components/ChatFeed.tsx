@@ -121,9 +121,12 @@ export function ChatFeed({ messages, selfDeviceId, onLoadMore, onRefocusInput }:
     const lastMsg = messages[messages.length - 1];
     const isOwnMessage = lastMsg != null && lastMsg.deviceId === selfDeviceId;
 
-    if (isOwnMessage) {
+    if (isOwnMessage || isAtBottom) {
       requestAnimationFrame(() => {
-        handle.scrollToIndex(feedItems.length - 1, { align: 'end', smooth: true });
+        handle.scrollToIndex(feedItems.length - 1, {
+          align: 'end',
+          smooth: isOwnMessage,
+        });
       });
     }
   }, [feedItems.length, messages.length, isAtBottom, selfDeviceId]);

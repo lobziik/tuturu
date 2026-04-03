@@ -6,7 +6,7 @@
  * @module components/ChatInput
  */
 
-import { useCallback } from 'preact/hooks';
+import { useState, useCallback } from 'preact/hooks';
 import type { RefObject } from 'preact';
 
 interface ChatInputProps {
@@ -16,20 +16,37 @@ interface ChatInputProps {
   inputRef: RefObject<HTMLDivElement>;
 }
 
-/** Chat input bar with contenteditable and send button */
+/** Chat input bar with auto-growing contenteditable and send button */
 export function ChatInput({ onSend, inputRef }: ChatInputProps) {
-  /** Get plain text content from the editable div */
-  const getText = (): string => inputRef.current?.textContent ?? '';
+  const [canSend, setCanSend] = useState(false);
+
+  /** Get plain text from editable div (innerText preserves line breaks from <br>) */
+  const getText = (): string => inputRef.current?.innerText ?? '';
+
+  /** Recalculate height to fit content, capped by CSS max-height */
+  const autoGrow = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${String(el.scrollHeight)}px`;
+  };
 
   const doSend = useCallback(() => {
     const trimmed = getText().trim();
     if (trimmed.length === 0) return;
     onSend(trimmed);
     if (inputRef.current) {
-      inputRef.current.textContent = '';
+      inputRef.current.innerHTML = '';
+      inputRef.current.style.height = 'auto';
       inputRef.current.focus();
     }
+    setCanSend(false);
   }, [onSend, inputRef]);
+
+  const handleInput = useCallback(() => {
+    setCanSend(getText().trim().length > 0);
+    autoGrow();
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -40,6 +57,13 @@ export function ChatInput({ onSend, inputRef }: ChatInputProps) {
     },
     [doSend],
   );
+
+  /** Strip HTML on paste — only allow plain text */
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    document.execCommand('insertText', false, text);
+  }, []);
 
   const handleFocus = useCallback(() => {
     // Safety net for iOS keyboard: scroll input into view after keyboard appears
@@ -65,12 +89,15 @@ export function ChatInput({ onSend, inputRef }: ChatInputProps) {
         role="textbox"
         aria-label="Message"
         data-placeholder="Message..."
+        onInput={handleInput}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         onFocus={handleFocus}
       />
       <button
         class="chat-send-btn"
         type="button"
+        disabled={!canSend}
         onMouseDown={preventFocusSteal}
         onClick={doSend}
         aria-label="Send message"

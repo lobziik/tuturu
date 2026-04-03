@@ -11,11 +11,20 @@ interface ScrollToBottomProps {
   onClick: () => void;
 }
 
+/**
+ * Prevent mousedown default to stop the button from stealing focus from the
+ * textarea. This keeps the iOS keyboard open when tapping scroll-to-bottom.
+ */
+function preventFocusSteal(e: MouseEvent): void {
+  e.preventDefault();
+}
+
 /** Floating circular button with down-arrow for jumping to latest messages */
 export function ScrollToBottom({ visible, onClick }: ScrollToBottomProps) {
   return (
     <button
       class={`scroll-to-bottom ${visible ? 'visible' : ''}`}
+      onMouseDown={preventFocusSteal}
       onClick={onClick}
       aria-label="Scroll to bottom"
       type="button"

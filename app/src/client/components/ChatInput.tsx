@@ -6,7 +6,7 @@
  * @module components/ChatInput
  */
 
-import { useCallback, useRef } from 'preact/hooks';
+import { useCallback } from 'preact/hooks';
 import type { RefObject } from 'preact';
 
 interface ChatInputProps {
@@ -16,16 +16,10 @@ interface ChatInputProps {
   inputRef: RefObject<HTMLDivElement>;
 }
 
-/** Chat input bar with auto-growing contenteditable and send button */
+/** Chat input bar with contenteditable and send button */
 export function ChatInput({ onSend, inputRef }: ChatInputProps) {
-  const canSendRef = useRef(false);
-
   /** Get plain text content from the editable div */
   const getText = (): string => inputRef.current?.textContent ?? '';
-
-  const updateSendState = () => {
-    canSendRef.current = getText().trim().length > 0;
-  };
 
   const doSend = useCallback(() => {
     const trimmed = getText().trim();
@@ -35,12 +29,7 @@ export function ChatInput({ onSend, inputRef }: ChatInputProps) {
       inputRef.current.textContent = '';
       inputRef.current.focus();
     }
-    canSendRef.current = false;
   }, [onSend, inputRef]);
-
-  const handleInput = useCallback(() => {
-    updateSendState();
-  }, []);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -53,14 +42,19 @@ export function ChatInput({ onSend, inputRef }: ChatInputProps) {
   );
 
   const handleFocus = useCallback(() => {
+    // Safety net for iOS keyboard: scroll input into view after keyboard appears
     setTimeout(() => {
       inputRef.current?.scrollIntoView({ block: 'nearest' });
     }, 300);
   }, [inputRef]);
 
-  const handleSendClick = useCallback(() => {
-    doSend();
-  }, [doSend]);
+  /**
+   * Prevent mousedown default on send button to stop it from stealing focus
+   * from the editable div. Keeps iOS keyboard open after sending.
+   */
+  const preventFocusSteal = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+  }, []);
 
   return (
     <div class="chat-input-bar">
@@ -71,14 +65,14 @@ export function ChatInput({ onSend, inputRef }: ChatInputProps) {
         role="textbox"
         aria-label="Message"
         data-placeholder="Message..."
-        onInput={handleInput}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
       />
       <button
         class="chat-send-btn"
         type="button"
-        onClick={handleSendClick}
+        onMouseDown={preventFocusSteal}
+        onClick={doSend}
         aria-label="Send message"
       >
         &#x27A4;

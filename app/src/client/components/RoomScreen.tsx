@@ -58,16 +58,17 @@ export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
   }, []);
 
   // Block touchmove on non-scrollable areas to prevent iOS from scrolling the
-  // layout viewport behind the keyboard. Allow scroll only inside the chat feed
-  // (VList manages its own scroll) and overflowing contenteditable input.
+  // layout viewport behind the keyboard. Allow scroll only inside VList's scroll
+  // container and overflowing textareas.
   useEffect(() => {
     const screen = screenRef.current;
     if (!screen) return;
 
     const handler = (e: TouchEvent) => {
       const target = e.target as HTMLElement;
-      // Allow scroll inside chat feed (VList's scroll container)
-      if (target.closest('.chat-feed-container')) return;
+      // Allow scroll inside VList's scroll container, but NOT the overlay
+      // scroll-to-bottom button (which is absolutely positioned on top)
+      if (target.closest('.chat-feed-container') && !target.closest('.scroll-to-bottom')) return;
       // Allow scroll inside overflowing contenteditable input
       const editable = target.closest('[contenteditable]') as HTMLElement | null;
       if (editable && editable.scrollHeight > editable.clientHeight) return;

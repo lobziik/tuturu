@@ -590,6 +590,7 @@ footer a:hover {
   z-index: 50;
   background: var(--bg);
   overflow: hidden;
+  /* stylelint-disable-next-line comment-empty-line-before */
   /* JS overrides height + top via VisualViewport on iOS when keyboard is open */
 }
 
@@ -797,8 +798,7 @@ footer a:hover {
   line-height: 1.4;
   overflow-y: auto;
   white-space: pre-wrap;
-  word-break: break-word;
-  -webkit-user-select: text;
+  overflow-wrap: break-word;
   user-select: text;
 }
 

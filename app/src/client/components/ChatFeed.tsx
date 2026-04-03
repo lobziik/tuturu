@@ -106,7 +106,9 @@ export function ChatFeed({ messages, selfDeviceId, onLoadMore, onRefocusInput }:
 
   const feedItems = useMemo(() => buildFeedItems(messages, selfDeviceId), [messages, selfDeviceId]);
 
-  // Auto-scroll to bottom on initial load and when new messages arrive (if user was at bottom)
+  // Auto-scroll to bottom when new messages arrive.
+  // Own messages always scroll (like Telegram — you see what you just sent).
+  // Other people's messages only scroll if user was already at bottom.
   useEffect(() => {
     const handle = vListRef.current;
     if (!handle || feedItems.length === 0) return;
@@ -114,13 +116,17 @@ export function ChatFeed({ messages, selfDeviceId, onLoadMore, onRefocusInput }:
     const isNewMessage = messages.length > prevMessageCountRef.current;
     prevMessageCountRef.current = messages.length;
 
-    if (isNewMessage && isAtBottom) {
-      // Use requestAnimationFrame to ensure virtua has rendered the new items
+    if (!isNewMessage) return;
+
+    const lastMsg = messages[messages.length - 1];
+    const isOwnMessage = lastMsg != null && lastMsg.deviceId === selfDeviceId;
+
+    if (isOwnMessage) {
       requestAnimationFrame(() => {
-        handle.scrollToIndex(feedItems.length - 1, { align: 'end' });
+        handle.scrollToIndex(feedItems.length - 1, { align: 'end', smooth: true });
       });
     }
-  }, [feedItems.length, messages.length, isAtBottom]);
+  }, [feedItems.length, messages.length, isAtBottom, selfDeviceId]);
 
   // Scroll to bottom on mount
   useEffect(() => {

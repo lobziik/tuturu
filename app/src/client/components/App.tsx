@@ -16,7 +16,10 @@ import { initialState, type AppState, type Action, type RoomState } from '../sta
 import { AppContext, createDebugReducer } from '../state/context';
 import type { Dispatch } from '../state/context';
 import { runEffects, cleanupResources, type ResourceRefs } from '../state/effects';
+import { openDB, getSetting } from '../services/db';
 
+import { NicknameScreen } from './NicknameScreen';
+import { LoginScreen } from './LoginScreen';
 import { PinEntryScreen } from './PinEntryScreen';
 import { ConnectingScreen } from './ConnectingScreen';
 import { AcquiringMediaScreen } from './AcquiringMediaScreen';
@@ -36,6 +39,7 @@ export function App() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const errorTimeoutRef = useRef<number | null>(null);
+  const aesKeyRef = useRef<CryptoKey | null>(null);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
@@ -45,6 +49,7 @@ export function App() {
       localStream: localStreamRef,
       remoteStream: remoteStreamRef,
       errorTimeout: errorTimeoutRef,
+      aesKey: aesKeyRef,
     }),
     [],
   );
@@ -71,6 +76,9 @@ export function App() {
     if (action.type === 'RTC_TRACK_RECEIVED') {
       refs.remoteStream.current = action.stream;
     }
+    if (action.type === 'SUBMIT_LOGIN') {
+      refs.aesKey.current = action.aesKey;
+    }
 
     // Side effects — synchronous, before re-render
     runEffects({ refs, dispatch }, { prevState, newState, action });
@@ -86,24 +94,28 @@ export function App() {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
+  // Startup: check IndexedDB for saved nickname → skip to login phase if found
+  useEffect(() => {
+    openDB()
+      .then((db) => getSetting(db, 'nickname'))
+      .then((nickname) => {
+        if (nickname) {
+          dispatch({ type: 'NICKNAME_LOADED', nickname });
+        }
+      })
+      .catch((err: unknown) => {
+        console.error('[App] IndexedDB startup check failed:', err);
+      });
+  }, []);
+
   // Phase-level routing
   const renderPhase = () => {
     switch (state.phase) {
       case 'nickname':
-        // Placeholder until Session 5 adds NicknameScreen
-        return (
-          <div id="pin-entry" class="card">
-            <h2>Loading...</h2>
-          </div>
-        );
+        return <NicknameScreen dispatch={dispatch} />;
 
       case 'login':
-        // Placeholder until Session 5 adds LoginScreen
-        return (
-          <div id="pin-entry" class="card">
-            <h2>Loading...</h2>
-          </div>
-        );
+        return <LoginScreen nickname={state.nickname} dispatch={dispatch} />;
 
       case 'room':
         return renderRoomScreen(state);

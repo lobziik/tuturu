@@ -66,6 +66,12 @@ export type AppState =
   | { phase: 'login'; nickname: string }
   | {
       phase: 'room';
+      /** Hex-encoded room identifier derived from passphrase+PIN */
+      roomId: string;
+      /** Persistent device identifier (UUID v4, stored in IndexedDB) */
+      deviceId: string;
+      /** User display name */
+      nickname: string;
       /** Which view is currently visible: chat home or video call */
       view: 'chat' | 'call';
       /** Chat messages (sorted by timestamp ascending) */
@@ -101,7 +107,7 @@ export type Action =
   // Phase transitions
   | { type: 'SUBMIT_NICKNAME'; nickname: string }
   | { type: 'NICKNAME_LOADED'; nickname: string }
-  | { type: 'SUBMIT_LOGIN' }
+  | { type: 'SUBMIT_LOGIN'; roomId: string; aesKey: CryptoKey; deviceId: string }
 
   // User interactions (room phase — chat)
   | { type: 'SWITCH_TO_CALL' }
@@ -144,14 +150,8 @@ export type Action =
   | { type: 'RTC_TRACK_RECEIVED'; stream: MediaStream };
 
 /**
- * Initial state — app starts directly in room phase (v1 compatibility).
- * Once Session 5 adds nickname/login UI, this will change to `{ phase: 'nickname' }`.
+ * Initial state — app starts on nickname screen.
+ * On mount, App.tsx checks IndexedDB for a saved nickname and dispatches
+ * NICKNAME_LOADED to skip to login phase if found.
  */
-export const initialState: AppState = {
-  phase: 'room',
-  view: 'chat',
-  messages: [],
-  screen: { type: 'pin-entry' },
-  iceServers: null,
-  iceTransportPolicy: 'all',
-};
+export const initialState: AppState = { phase: 'nickname' };

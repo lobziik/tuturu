@@ -58,10 +58,12 @@ function nicknameReducer(
 function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Action): AppState {
   switch (action.type) {
     case 'SUBMIT_LOGIN':
-      // Placeholder: Session 5 will pass roomId, aesKey, deviceId from crypto derivation.
-      // For now, transition to room with default v1 state.
+      // aesKey is captured into a ref by App.tsx dispatch wrapper (non-serializable)
       return {
         phase: 'room',
+        roomId: action.roomId,
+        deviceId: action.deviceId,
+        nickname: state.nickname,
         view: 'chat',
         messages: [],
         screen: { type: 'pin-entry' },

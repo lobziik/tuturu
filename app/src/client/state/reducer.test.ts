@@ -7,20 +7,22 @@
 
 import { describe, test, expect } from 'bun:test';
 import { reducer } from './reducer';
-import { initialState } from './types';
 import type { Action, AppState, RoomState, Screen } from './types';
 
 // ============================================================================
 // Test helpers
 // ============================================================================
 
-/** Build a room-phase state with a given screen (defaults match initialState) */
+/** Build a room-phase state with a given screen */
 function roomState(
   screen: Screen,
   overrides?: Partial<Omit<RoomState, 'phase' | 'screen'>>,
 ): RoomState {
   return {
     phase: 'room',
+    roomId: 'test-room-id',
+    deviceId: 'test-device-id',
+    nickname: 'TestUser',
     view: 'chat',
     messages: [],
     screen,
@@ -65,12 +67,21 @@ describe('reducer', () => {
       }
     });
 
-    test('SUBMIT_LOGIN transitions from login to room', () => {
+    test('SUBMIT_LOGIN transitions from login to room with derived data', () => {
       const state: AppState = { phase: 'login', nickname: 'Мама' };
-      const action: Action = { type: 'SUBMIT_LOGIN' };
+      const mockAesKey = {} as CryptoKey;
+      const action: Action = {
+        type: 'SUBMIT_LOGIN',
+        roomId: 'abc123',
+        aesKey: mockAesKey,
+        deviceId: 'device-1',
+      };
       const newState = reducer(state, action);
 
       const room = expectRoom(newState);
+      expect(room.roomId).toBe('abc123');
+      expect(room.deviceId).toBe('device-1');
+      expect(room.nickname).toBe('Мама');
       expect(room.screen.type).toBe('pin-entry');
       expect(room.iceServers).toBeNull();
       expect(room.iceTransportPolicy).toBe('all');
@@ -86,7 +97,13 @@ describe('reducer', () => {
 
     test('SUBMIT_LOGIN is ignored in room phase', () => {
       const state = roomState({ type: 'pin-entry' });
-      const action: Action = { type: 'SUBMIT_LOGIN' };
+      const mockAesKey = {} as CryptoKey;
+      const action: Action = {
+        type: 'SUBMIT_LOGIN',
+        roomId: 'abc123',
+        aesKey: mockAesKey,
+        deviceId: 'device-1',
+      };
       const newState = reducer(state, action);
 
       expect(newState).toBe(state);
@@ -107,6 +124,36 @@ describe('reducer', () => {
 
       expect(newState).toBe(state);
     });
+
+    test('NICKNAME_LOADED is ignored in room phase', () => {
+      const state = roomState({ type: 'pin-entry' });
+      const action: Action = { type: 'NICKNAME_LOADED', nickname: 'Ignored' };
+      const newState = reducer(state, action);
+
+      expect(newState).toBe(state);
+    });
+
+    test('SUBMIT_NICKNAME is ignored in login phase', () => {
+      const state: AppState = { phase: 'login', nickname: 'Existing' };
+      const action: Action = { type: 'SUBMIT_NICKNAME', nickname: 'New' };
+      const newState = reducer(state, action);
+
+      expect(newState).toBe(state);
+    });
+
+    test('SUBMIT_LOGIN is ignored in nickname phase', () => {
+      const state: AppState = { phase: 'nickname' };
+      const mockAesKey = {} as CryptoKey;
+      const action: Action = {
+        type: 'SUBMIT_LOGIN',
+        roomId: 'abc123',
+        aesKey: mockAesKey,
+        deviceId: 'device-1',
+      };
+      const newState = reducer(state, action);
+
+      expect(newState).toBe(state);
+    });
   });
 
   // ========================================================================
@@ -115,8 +162,9 @@ describe('reducer', () => {
 
   describe('PIN submission flow', () => {
     test('SUBMIT_PIN transitions from pin-entry to connecting', () => {
+      const state = roomState({ type: 'pin-entry' });
       const action: Action = { type: 'SUBMIT_PIN', pin: '123456' };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
       const room = expectRoom(newState);
       expect(room.screen.type).toBe('connecting');
@@ -206,11 +254,12 @@ describe('reducer', () => {
     });
 
     test('WS_ERROR transitions to error state', () => {
+      const state = roomState({ type: 'pin-entry' });
       const action: Action = {
         type: 'WS_ERROR',
         error: 'WebSocket connection failed',
       };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
       const room = expectRoom(newState);
       expect(room.screen.type).toBe('error');
@@ -286,13 +335,14 @@ describe('reducer', () => {
 
   describe('Signaling messages', () => {
     test('JOINED_ROOM stores ICE servers and transport policy', () => {
+      const state = roomState({ type: 'pin-entry' });
       const mockIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
       const action: Action = {
         type: 'JOINED_ROOM',
         iceServers: mockIceServers,
         iceTransportPolicy: 'all',
       };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
       const room = expectRoom(newState);
       expect(room.iceServers).toBe(mockIceServers);
@@ -300,13 +350,14 @@ describe('reducer', () => {
     });
 
     test('JOINED_ROOM stores relay transport policy', () => {
+      const state = roomState({ type: 'pin-entry' });
       const mockIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
       const action: Action = {
         type: 'JOINED_ROOM',
         iceServers: mockIceServers,
         iceTransportPolicy: 'relay',
       };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
       const room = expectRoom(newState);
       expect(room.iceServers).toBe(mockIceServers);
@@ -434,11 +485,12 @@ describe('reducer', () => {
     });
 
     test('SERVER_ERROR shows non-retryable error', () => {
+      const state = roomState({ type: 'pin-entry' });
       const action: Action = {
         type: 'SERVER_ERROR',
         error: 'Room is full',
       };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
       const room = expectRoom(newState);
       expect(room.screen.type).toBe('error');
@@ -455,14 +507,15 @@ describe('reducer', () => {
 
   describe('WebRTC lifecycle', () => {
     test('RTC_TRACK_RECEIVED returns state unchanged (stream in ref)', () => {
+      const state = roomState({ type: 'pin-entry' });
       const mockStream = {} as MediaStream;
       const action: Action = {
         type: 'RTC_TRACK_RECEIVED',
         stream: mockStream,
       };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
-      expect(newState).toBe(initialState);
+      expect(newState).toBe(state);
     });
 
     test('RTC_CONNECTED transitions negotiating to call', () => {
@@ -511,11 +564,12 @@ describe('reducer', () => {
     });
 
     test('RTC_FAILED shows error', () => {
+      const state = roomState({ type: 'pin-entry' });
       const action: Action = {
         type: 'RTC_FAILED',
         reason: 'ICE connection failed',
       };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
       const room = expectRoom(newState);
       expect(room.screen.type).toBe('error');
@@ -665,17 +719,19 @@ describe('reducer', () => {
     });
 
     test('TOGGLE_MUTE is ignored in pin-entry state', () => {
+      const state = roomState({ type: 'pin-entry' });
       const action: Action = { type: 'TOGGLE_MUTE' };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
-      expect(newState).toBe(initialState);
+      expect(newState).toBe(state);
     });
 
     test('TOGGLE_VIDEO is ignored in pin-entry state', () => {
+      const state = roomState({ type: 'pin-entry' });
       const action: Action = { type: 'TOGGLE_VIDEO' };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
-      expect(newState).toBe(initialState);
+      expect(newState).toBe(state);
     });
 
     test('TOGGLE_PIP_VISIBILITY flips pipHidden flag in call state', () => {
@@ -736,10 +792,11 @@ describe('reducer', () => {
     });
 
     test('TOGGLE_PIP_VISIBILITY is ignored in pin-entry state', () => {
+      const state = roomState({ type: 'pin-entry' });
       const action: Action = { type: 'TOGGLE_PIP_VISIBILITY' };
-      const newState = reducer(initialState, action);
+      const newState = reducer(state, action);
 
-      expect(newState).toBe(initialState);
+      expect(newState).toBe(state);
     });
 
     test('FLIP_CAMERA returns same state in call screen', () => {

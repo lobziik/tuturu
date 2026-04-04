@@ -23,6 +23,7 @@ export interface ResourceRefs {
   localStream: { current: MediaStream | null };
   remoteStream: { current: MediaStream | null };
   errorTimeout: { current: number | null };
+  aesKey: { current: CryptoKey | null };
 }
 
 /**

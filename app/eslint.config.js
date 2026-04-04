@@ -62,7 +62,7 @@ export default [
 
   // Browser globals for client
   {
-    files: ['src/client.ts'],
+    files: ['src/client/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
         ...globals.browser,

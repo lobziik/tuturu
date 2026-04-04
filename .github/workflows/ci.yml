@@ -32,9 +32,17 @@ jobs:
         working-directory: app
         run: bun run lint
 
+      - name: Stylelint
+        working-directory: app
+        run: bun run lint:css
+
       - name: Prettier check
         working-directory: app
         run: bun run format:check
+
+      - name: Build client
+        working-directory: app
+        run: bun run build
 
   test:
     runs-on: ubuntu-latest

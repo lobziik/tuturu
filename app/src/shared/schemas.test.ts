@@ -98,8 +98,18 @@ describe('ClientToServerMessageSchema', () => {
       type: 'join',
       v: 1,
       roomId: 'abc123def456',
+      encryptedNickname: 'encrypted-nick-blob',
     });
     expect(result.success).toBe(true);
+  });
+
+  test('rejects join without encryptedNickname', () => {
+    const result = ClientToServerMessageSchema.safeParse({
+      type: 'join',
+      v: 1,
+      roomId: 'abc123def456',
+    });
+    expect(result.success).toBe(false);
   });
 
   test('parses offer message', () => {
@@ -153,8 +163,19 @@ describe('ClientToServerMessageSchema', () => {
       v: 1,
       roomId: 'abc123',
       blob: 'base64encodedblob==',
+      uuid: 'msg-uuid-1',
     });
     expect(result.success).toBe(true);
+  });
+
+  test('rejects chat without uuid', () => {
+    const result = ClientToServerMessageSchema.safeParse({
+      type: 'chat',
+      v: 1,
+      roomId: 'abc123',
+      blob: 'base64encodedblob==',
+    });
+    expect(result.success).toBe(false);
   });
 
   test('parses history-request message', () => {
@@ -214,8 +235,35 @@ describe('ClientToServerMessageSchema', () => {
     const result = ClientToServerMessageSchema.safeParse({
       type: 'join',
       v: 1,
+      encryptedNickname: 'nick',
     });
     expect(result.success).toBe(false);
+  });
+
+  test('parses join-call message', () => {
+    const result = ClientToServerMessageSchema.safeParse({
+      type: 'join-call',
+      v: 1,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('parses leave-call message', () => {
+    const result = ClientToServerMessageSchema.safeParse({
+      type: 'leave-call',
+      v: 1,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('parses chat-received message', () => {
+    const result = ClientToServerMessageSchema.safeParse({
+      type: 'chat-received',
+      v: 1,
+      uuid: 'msg-uuid-1',
+      peerId: 'peer-uuid-1',
+    });
+    expect(result.success).toBe(true);
   });
 
   test('rejects history-request with non-positive limit', () => {
@@ -262,9 +310,20 @@ describe('ServerToClientMessageSchema', () => {
       type: 'peer-joined',
       v: 1,
       peerId: 'uuid-123',
+      encryptedNickname: 'encrypted-nick',
       count: 2,
     });
     expect(result.success).toBe(true);
+  });
+
+  test('rejects peer-joined without encryptedNickname', () => {
+    const result = ServerToClientMessageSchema.safeParse({
+      type: 'peer-joined',
+      v: 1,
+      peerId: 'uuid-123',
+      count: 2,
+    });
+    expect(result.success).toBe(false);
   });
 
   test('parses peer-left', () => {
@@ -281,7 +340,10 @@ describe('ServerToClientMessageSchema', () => {
     const result = ServerToClientMessageSchema.safeParse({
       type: 'peers-list',
       v: 1,
-      peers: [{ peerId: 'uuid-1' }, { peerId: 'uuid-2' }],
+      peers: [
+        { peerId: 'uuid-1', encryptedNickname: 'nick-1' },
+        { peerId: 'uuid-2', encryptedNickname: 'nick-2' },
+      ],
       selfPeerId: 'uuid-3',
     });
     expect(result.success).toBe(true);
@@ -330,8 +392,8 @@ describe('ServerToClientMessageSchema', () => {
       type: 'history',
       v: 1,
       messages: [
-        { blob: 'base64a==', created_at: 1700000001000 },
-        { blob: 'base64b==', created_at: 1700000000000 },
+        { id: 2, blob: 'base64a==', created_at: 1700000001000 },
+        { id: 1, blob: 'base64b==', created_at: 1700000000000 },
       ],
       hasMore: true,
     });
@@ -384,6 +446,61 @@ describe('ServerToClientMessageSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  test('parses chat-ack', () => {
+    const result = ServerToClientMessageSchema.safeParse({
+      type: 'chat-ack',
+      v: 1,
+      uuid: 'msg-uuid-1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('parses chat-received relay', () => {
+    const result = ServerToClientMessageSchema.safeParse({
+      type: 'chat-received',
+      v: 1,
+      uuid: 'msg-uuid-1',
+      peerId: 'peer-uuid-1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('parses peer-joined-call', () => {
+    const result = ServerToClientMessageSchema.safeParse({
+      type: 'peer-joined-call',
+      v: 1,
+      peerId: 'uuid-123',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('parses peer-left-call', () => {
+    const result = ServerToClientMessageSchema.safeParse({
+      type: 'peer-left-call',
+      v: 1,
+      peerId: 'uuid-123',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('parses call-peers', () => {
+    const result = ServerToClientMessageSchema.safeParse({
+      type: 'call-peers',
+      v: 1,
+      callPeers: ['uuid-1', 'uuid-2'],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('parses call-peers with empty array', () => {
+    const result = ServerToClientMessageSchema.safeParse({
+      type: 'call-peers',
+      v: 1,
+      callPeers: [],
+    });
+    expect(result.success).toBe(true);
+  });
+
   test('rejects missing v field', () => {
     const result = ServerToClientMessageSchema.safeParse({
       type: 'ping',
@@ -404,6 +521,7 @@ describe('ErrorCodeSchema', () => {
     'BLOB_TOO_LARGE',
     'INVALID_BLOB_ID',
     'NOT_IN_ROOM',
+    'UNKNOWN_PEER',
     'UNKNOWN',
   ];
 

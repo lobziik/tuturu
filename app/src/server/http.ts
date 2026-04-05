@@ -1,25 +1,44 @@
 /**
- * HTTP request routing
+ * HTTP request routing.
  *
- * Handles static asset serving with ETag caching, health endpoint, and WebSocket upgrades.
+ * Handles static asset serving with ETag caching, health endpoint,
+ * blob upload/download endpoints, and WebSocket upgrades.
+ *
+ * @module server/http
  */
 
 import type { Server } from 'bun';
-import type { ClientData } from '../types';
 import type { LoadedAssets } from './assets';
-import { getRoomCount } from './rooms';
-import { generateClientId } from './websocket';
+import type { BlobStore } from './blob';
+import type { ServerClientData } from './rooms';
+import { isValidUuidV4 } from '../shared/validation';
+
+/** Dependencies for the HTTP handler */
+interface HttpDeps {
+  assets: LoadedAssets;
+  blobStore: BlobStore;
+  blobMaxBytes: number;
+  blobRateLimitMs: number;
+  getRoomCount: () => number;
+}
 
 /**
- * Create HTTP request handler with loaded assets.
+ * Create HTTP request handler with loaded assets and blob store.
  *
- * @param assets - Loaded static assets
+ * @param deps - Handler dependencies
  * @returns Fetch handler function for Bun.serve
  */
-export function createFetchHandler(assets: LoadedAssets) {
+export function createFetchHandler(deps: HttpDeps) {
+  const { assets, blobStore, blobMaxBytes, blobRateLimitMs, getRoomCount } = deps;
   const { text, binary, etags } = assets;
 
-  return function fetch(req: Request, server: Server<ClientData>): Response | undefined {
+  /** Rate limiter: IP → last upload timestamp */
+  const uploadTimestamps = new Map<string, number>();
+
+  return function fetch(
+    req: Request,
+    server: Server<ServerClientData>,
+  ): Response | Promise<Response> | undefined {
     const url = new URL(req.url);
 
     // Health check endpoint
@@ -40,9 +59,9 @@ export function createFetchHandler(assets: LoadedAssets) {
     if (url.pathname === '/ws') {
       const upgraded = server.upgrade(req, {
         data: {
-          id: generateClientId(),
-          pin: '',
-        } as ClientData,
+          peerId: crypto.randomUUID(),
+          roomId: null,
+        } satisfies ServerClientData,
       });
 
       if (!upgraded) {
@@ -52,16 +71,45 @@ export function createFetchHandler(assets: LoadedAssets) {
       return undefined;
     }
 
+    // Blob endpoints: POST /api/blob/{blobId} and GET /api/blob/{blobId}
+    const blobMatch = url.pathname.match(/^\/api\/blob\/([^/]+)$/);
+    if (blobMatch) {
+      const blobId = blobMatch[1]!;
+
+      if (!isValidUuidV4(blobId)) {
+        return new Response(JSON.stringify({ error: 'Invalid blob ID — must be UUID v4' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (req.method === 'POST') {
+        return handleBlobUpload(
+          req,
+          blobId,
+          blobMaxBytes,
+          blobRateLimitMs,
+          blobStore,
+          uploadTimestamps,
+        );
+      }
+
+      if (req.method === 'GET') {
+        return handleBlobDownload(blobId, blobStore);
+      }
+
+      return new Response('Method not allowed', { status: 405 });
+    }
+
     // Serve embedded static assets with ETag-based caching
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      // Return 304 Not Modified if content unchanged
       if (req.headers.get('If-None-Match') === etags.html) {
         return new Response(null, { status: 304 });
       }
       return new Response(text.indexHtml, {
         headers: {
           'Content-Type': 'text/html',
-          'Cache-Control': 'no-cache', // Always revalidate
+          'Cache-Control': 'no-cache',
           ETag: etags.html,
         },
       });
@@ -167,4 +215,56 @@ export function createFetchHandler(assets: LoadedAssets) {
       headers: { 'Content-Type': 'text/plain' },
     });
   };
+}
+
+/** Handle blob upload with rate limiting and size validation */
+async function handleBlobUpload(
+  req: Request,
+  blobId: string,
+  blobMaxBytes: number,
+  blobRateLimitMs: number,
+  blobStore: BlobStore,
+  uploadTimestamps: Map<string, number>,
+): Promise<Response> {
+  // Always consume the request body — Bun keeps connections alive, and an
+  // unconsumed body on a keep-alive connection corrupts subsequent requests.
+  const buffer = await req.arrayBuffer();
+
+  if (buffer.byteLength > blobMaxBytes) {
+    return new Response(JSON.stringify({ error: 'Blob too large' }), {
+      status: 413,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Rate limit by IP
+  const ip = req.headers.get('X-Forwarded-For') ?? req.headers.get('X-Real-IP') ?? 'unknown';
+  const now = Date.now();
+  const lastUpload = uploadTimestamps.get(ip);
+  if (lastUpload && now - lastUpload < blobRateLimitMs) {
+    return new Response(JSON.stringify({ error: 'Rate limited — try again later' }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  uploadTimestamps.set(ip, now);
+
+  blobStore.write(blobId, new Uint8Array(buffer));
+  return new Response(null, { status: 201 });
+}
+
+/** Handle blob download */
+function handleBlobDownload(blobId: string, blobStore: BlobStore): Response {
+  const data = blobStore.read(blobId);
+  if (!data) {
+    return new Response(JSON.stringify({ error: 'Blob not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  return new Response(data.buffer as ArrayBuffer, {
+    status: 200,
+    headers: { 'Content-Type': 'application/octet-stream' },
+  });
 }

@@ -23,6 +23,7 @@ export const ErrorCodeSchema = z.enum([
   'BLOB_TOO_LARGE',
   'INVALID_BLOB_ID',
   'NOT_IN_ROOM',
+  'UNKNOWN_PEER',
   'UNKNOWN',
 ]);
 
@@ -77,6 +78,8 @@ const JoinSchema = z.object({
   type: z.literal('join'),
   v: z.literal(1),
   roomId: z.string(),
+  /** Encrypted nickname blob — server stores and relays without parsing */
+  encryptedNickname: z.string(),
 });
 
 const ClientOfferSchema = z.object({
@@ -111,13 +114,15 @@ const ChatSchema = z.object({
   roomId: z.string(),
   /** Base64-encoded encrypted blob: iv || AES-GCM(json) || authTag */
   blob: z.string(),
+  /** Message UUID — echoed back in chat-ack for delivery confirmation */
+  uuid: z.string(),
 });
 
 const HistoryRequestSchema = z.object({
   type: z.literal('history-request'),
   v: z.literal(1),
   roomId: z.string(),
-  /** Cursor: fetch messages with created_at < before (unix ms) */
+  /** Cursor: fetch messages with id < before (server-assigned message ID) */
   before: z.number().optional(),
   /** Page size override (server caps at HISTORY_BATCH_SIZE) */
   limit: z.number().int().positive().optional(),
@@ -126,6 +131,25 @@ const HistoryRequestSchema = z.object({
 const PongSchema = z.object({
   type: z.literal('pong'),
   v: z.literal(1),
+});
+
+const JoinCallSchema = z.object({
+  type: z.literal('join-call'),
+  v: z.literal(1),
+});
+
+const LeaveCallSchema = z.object({
+  type: z.literal('leave-call'),
+  v: z.literal(1),
+});
+
+const ChatReceivedSchema = z.object({
+  type: z.literal('chat-received'),
+  v: z.literal(1),
+  /** UUID of the message being acknowledged */
+  uuid: z.string(),
+  /** Target peerId — who should receive this delivery ACK */
+  peerId: z.string(),
 });
 
 export const ClientToServerMessageSchema = z.discriminatedUnion('type', [
@@ -137,6 +161,9 @@ export const ClientToServerMessageSchema = z.discriminatedUnion('type', [
   ChatSchema,
   HistoryRequestSchema,
   PongSchema,
+  JoinCallSchema,
+  LeaveCallSchema,
+  ChatReceivedSchema,
 ]);
 
 export type ClientToServerMessage = z.infer<typeof ClientToServerMessageSchema>;
@@ -156,6 +183,8 @@ const PeerJoinedSchema = z.object({
   type: z.literal('peer-joined'),
   v: z.literal(1),
   peerId: z.string(),
+  /** Encrypted nickname blob — opaque to server */
+  encryptedNickname: z.string(),
   count: z.number().int(),
 });
 
@@ -169,7 +198,7 @@ const PeerLeftSchema = z.object({
 const PeersListSchema = z.object({
   type: z.literal('peers-list'),
   v: z.literal(1),
-  peers: z.array(z.object({ peerId: z.string() })),
+  peers: z.array(z.object({ peerId: z.string(), encryptedNickname: z.string() })),
   selfPeerId: z.string(),
 });
 
@@ -204,6 +233,8 @@ const ChatBroadcastSchema = z.object({
 });
 
 const HistoryMessageSchema = z.object({
+  /** Server-assigned message ID — used as cursor for pagination */
+  id: z.number(),
   /** Base64-encoded encrypted blob */
   blob: z.string(),
   /** Server-assigned timestamp (unix ms) */
@@ -222,6 +253,41 @@ const PingSchema = z.object({
   v: z.literal(1),
 });
 
+const ChatAckSchema = z.object({
+  type: z.literal('chat-ack'),
+  v: z.literal(1),
+  /** UUID of the persisted message */
+  uuid: z.string(),
+});
+
+/** Delivery ACK relayed from recipient to sender */
+const ChatReceivedRelaySchema = z.object({
+  type: z.literal('chat-received'),
+  v: z.literal(1),
+  /** UUID of the delivered message */
+  uuid: z.string(),
+  /** peerId of the peer who received the message */
+  peerId: z.string(),
+});
+
+const PeerJoinedCallSchema = z.object({
+  type: z.literal('peer-joined-call'),
+  v: z.literal(1),
+  peerId: z.string(),
+});
+
+const PeerLeftCallSchema = z.object({
+  type: z.literal('peer-left-call'),
+  v: z.literal(1),
+  peerId: z.string(),
+});
+
+const CallPeersSchema = z.object({
+  type: z.literal('call-peers'),
+  v: z.literal(1),
+  callPeers: z.array(z.string()),
+});
+
 const ServerErrorSchema = z.object({
   type: z.literal('error'),
   v: z.literal(1),
@@ -238,8 +304,13 @@ export const ServerToClientMessageSchema = z.discriminatedUnion('type', [
   ServerAnswerSchema,
   ServerIceCandidateSchema,
   ChatBroadcastSchema,
+  ChatAckSchema,
+  ChatReceivedRelaySchema,
   HistorySchema,
   PingSchema,
+  PeerJoinedCallSchema,
+  PeerLeftCallSchema,
+  CallPeersSchema,
   ServerErrorSchema,
 ]);
 

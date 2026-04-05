@@ -1,0 +1,386 @@
+/**
+ * Message handler orchestration layer.
+ *
+ * Each handler receives dependencies explicitly. Pure orchestration — no state.
+ * Handlers bridge between the WebSocket router (ws.ts) and the data layer
+ * (rooms, database, blob store).
+ *
+ * @module server/handlers
+ */
+
+import type { ServerWebSocket } from 'bun';
+import type { ClientToServerMessage, ServerToClientMessage } from '../shared/schemas';
+import type { MessageStore } from './database';
+import type { RoomManager, ServerClientData, SendFn } from './rooms';
+import type { Heartbeat } from './heartbeat';
+import { createHeartbeat } from './heartbeat';
+
+/** ICE configuration provider */
+interface IceConfig {
+  buildIceServers(peerId: string): Array<{
+    urls: string | string[];
+    username?: string;
+    credential?: string;
+  }>;
+  forceRelay: boolean;
+}
+
+/** Dependencies injected into the handler factory */
+interface HandlerDeps {
+  rooms: RoomManager;
+  db: MessageStore;
+  iceConfig: IceConfig;
+  historyBatchSize: number;
+  send: SendFn;
+  pingIntervalMs: number;
+  pongTimeoutMs: number;
+}
+
+/** Public handler interface used by the WS router */
+export interface Handlers {
+  handleJoin(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'join' }>,
+  ): void;
+  handleLeave(ws: ServerWebSocket<ServerClientData>, peerId: string): void;
+  handleChat(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'chat' }>,
+  ): void;
+  handleHistoryRequest(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'history-request' }>,
+  ): void;
+  handleRelay(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg:
+      | Extract<ClientToServerMessage, { type: 'offer' }>
+      | Extract<ClientToServerMessage, { type: 'answer' }>
+      | Extract<ClientToServerMessage, { type: 'ice-candidate' }>,
+  ): void;
+  handleJoinCall(ws: ServerWebSocket<ServerClientData>, peerId: string): void;
+  handleLeaveCall(ws: ServerWebSocket<ServerClientData>, peerId: string): void;
+  handleChatReceived(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'chat-received' }>,
+  ): void;
+  handlePong(ws: ServerWebSocket<ServerClientData>, peerId: string): void;
+  /** Called on WS close — cleanup heartbeat and room membership */
+  handleDisconnect(ws: ServerWebSocket<ServerClientData>, peerId: string): void;
+}
+
+/**
+ * Create message handlers with injected dependencies.
+ */
+export function createHandlers(deps: HandlerDeps): Handlers {
+  const { rooms, db, iceConfig, historyBatchSize, send, pingIntervalMs, pongTimeoutMs } = deps;
+
+  /** Active heartbeats per peerId */
+  const heartbeats = new Map<string, Heartbeat>();
+
+  function startHeartbeat(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
+    stopHeartbeat(peerId);
+    const hb = createHeartbeat(
+      () => send(ws, { type: 'ping', v: 1 }),
+      () => {
+        console.log(`[HEARTBEAT] Peer ${peerId} timed out — closing connection`);
+        stopHeartbeat(peerId);
+        try {
+          ws.close(1000, 'Pong timeout');
+        } catch {
+          // Connection already closed
+        }
+      },
+      { pingIntervalMs, pongTimeoutMs },
+    );
+    heartbeats.set(peerId, hb);
+    hb.start();
+  }
+
+  function stopHeartbeat(peerId: string): void {
+    const hb = heartbeats.get(peerId);
+    if (hb) {
+      hb.stop();
+      heartbeats.delete(peerId);
+    }
+  }
+
+  function handleJoin(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'join' }>,
+  ): void {
+    const result = rooms.join(msg.roomId, peerId, ws, msg.encryptedNickname);
+
+    if ('error' in result) {
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'ROOM_FULL',
+        message: 'Room has reached maximum capacity',
+      });
+      return;
+    }
+
+    // Store roomId on WebSocket data
+    ws.data.roomId = msg.roomId;
+
+    // Send ICE configuration
+    const iceServers = iceConfig.buildIceServers(peerId);
+    send(ws, {
+      type: 'join',
+      v: 1,
+      iceServers,
+      iceTransportPolicy: iceConfig.forceRelay ? 'relay' : 'all',
+    });
+
+    // Send peers list to the new peer
+    send(ws, {
+      type: 'peers-list',
+      v: 1,
+      selfPeerId: peerId,
+      peers: result.peers.map((p) => ({
+        peerId: p.peerId,
+        encryptedNickname: p.encryptedNickname,
+      })),
+    });
+
+    // Send initial history batch
+    const history = db.getHistory(msg.roomId, undefined, historyBatchSize);
+    send(ws, {
+      type: 'history',
+      v: 1,
+      messages: history.messages.map((m) => ({
+        id: m.id,
+        blob: m.blob,
+        created_at: m.createdAt,
+      })),
+      hasMore: history.hasMore,
+    });
+
+    // Start heartbeat for this connection
+    startHeartbeat(ws, peerId);
+  }
+
+  function handleLeave(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
+    const roomId = ws.data.roomId;
+    if (roomId) {
+      rooms.leave(roomId, peerId);
+      ws.data.roomId = null;
+    }
+    stopHeartbeat(peerId);
+  }
+
+  function handleChat(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'chat' }>,
+  ): void {
+    const roomId = ws.data.roomId;
+    if (!roomId) {
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'NOT_IN_ROOM',
+        message: 'Must join a room before sending chat',
+      });
+      return;
+    }
+
+    // Verify the chat message targets the room the peer is in
+    if (msg.roomId !== roomId) {
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'NOT_IN_ROOM',
+        message: 'Chat roomId does not match joined room',
+      });
+      return;
+    }
+
+    // Persist the message
+    const { createdAt } = db.insertMessage(roomId, msg.blob);
+
+    // Broadcast to all peers except sender
+    rooms.broadcast(
+      roomId,
+      {
+        type: 'chat-broadcast',
+        v: 1,
+        blob: msg.blob,
+        created_at: createdAt,
+      },
+      peerId,
+    );
+
+    // Send ack to sender
+    send(ws, { type: 'chat-ack', v: 1, uuid: msg.uuid });
+  }
+
+  function handleHistoryRequest(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'history-request' }>,
+  ): void {
+    const roomId = ws.data.roomId;
+    if (!roomId) {
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'NOT_IN_ROOM',
+        message: 'Must join a room before requesting history',
+      });
+      return;
+    }
+
+    const limit =
+      msg.limit !== undefined ? Math.min(msg.limit, historyBatchSize) : historyBatchSize;
+    const history = db.getHistory(msg.roomId, msg.before, limit);
+
+    send(ws, {
+      type: 'history',
+      v: 1,
+      messages: history.messages.map((m) => ({
+        id: m.id,
+        blob: m.blob,
+        created_at: m.createdAt,
+      })),
+      hasMore: history.hasMore,
+    });
+  }
+
+  function handleRelay(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg:
+      | Extract<ClientToServerMessage, { type: 'offer' }>
+      | Extract<ClientToServerMessage, { type: 'answer' }>
+      | Extract<ClientToServerMessage, { type: 'ice-candidate' }>,
+  ): void {
+    const roomId = ws.data.roomId;
+    if (!roomId) {
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'NOT_IN_ROOM',
+        message: 'Must join a room before relaying',
+      });
+      return;
+    }
+
+    const targetPeerId = msg.targetPeerId;
+
+    if (targetPeerId) {
+      // Targeted relay: substitute peerId
+      let relayMsg: ServerToClientMessage;
+      switch (msg.type) {
+        case 'offer':
+          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          break;
+        case 'answer':
+          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          break;
+        case 'ice-candidate':
+          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, fromPeerId: peerId };
+          break;
+      }
+
+      const found = rooms.routeToPeer(roomId, targetPeerId, relayMsg);
+      if (!found) {
+        console.warn(`[RELAY] Target peer ${targetPeerId} not found in room ${roomId}`);
+      }
+    } else {
+      // Broadcast relay (v1 compatibility — single peer in room)
+      let relayMsg: ServerToClientMessage;
+      switch (msg.type) {
+        case 'offer':
+          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          break;
+        case 'answer':
+          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          break;
+        case 'ice-candidate':
+          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, fromPeerId: peerId };
+          break;
+      }
+      rooms.broadcast(roomId, relayMsg, peerId);
+    }
+  }
+
+  function handleJoinCall(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
+    const roomId = ws.data.roomId;
+    if (!roomId) {
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'NOT_IN_ROOM',
+        message: 'Must join a room before joining call',
+      });
+      return;
+    }
+
+    const result = rooms.joinCall(roomId, peerId);
+    if ('error' in result) {
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'NOT_IN_ROOM',
+        message: 'Must join a room before joining call',
+      });
+      return;
+    }
+
+    // Send current call peers to the new call participant
+    send(ws, { type: 'call-peers', v: 1, callPeers: result.callPeers });
+  }
+
+  function handleLeaveCall(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
+    const roomId = ws.data.roomId;
+    if (!roomId) return;
+    rooms.leaveCall(roomId, peerId);
+  }
+
+  function handleChatReceived(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'chat-received' }>,
+  ): void {
+    const roomId = ws.data.roomId;
+    if (!roomId) return;
+
+    // Relay the delivery ACK to the target peer
+    rooms.routeToPeer(roomId, msg.peerId, {
+      type: 'chat-received',
+      v: 1,
+      uuid: msg.uuid,
+      peerId,
+    });
+  }
+
+  function handlePong(_ws: ServerWebSocket<ServerClientData>, peerId: string): void {
+    const hb = heartbeats.get(peerId);
+    if (hb) hb.receivedPong();
+  }
+
+  function handleDisconnect(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
+    handleLeave(ws, peerId);
+  }
+
+  return {
+    handleJoin,
+    handleLeave,
+    handleChat,
+    handleHistoryRequest,
+    handleRelay,
+    handleJoinCall,
+    handleLeaveCall,
+    handleChatReceived,
+    handlePong,
+    handleDisconnect,
+  };
+}

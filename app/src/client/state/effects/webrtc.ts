@@ -43,11 +43,11 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
     pc.createOffer()
       .then((offer) => pc.setLocalDescription(offer))
       .then(() => {
-        sendMessage(refs.ws.current, {
-          type: 'offer',
-          v: 1,
-          sdp: pc.localDescription!.sdp!,
-        });
+        const sdp = pc.localDescription?.sdp;
+        if (!sdp) {
+          throw new Error('localDescription has no SDP after setLocalDescription');
+        }
+        sendMessage(refs.ws.current, { type: 'offer', v: 1, sdp });
         console.log('[RTC] Sent offer');
       })
       .catch((error: Error) => {

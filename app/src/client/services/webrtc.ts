@@ -36,7 +36,11 @@ export function createPeerConnection(
   console.log('[RTC] ICE transport policy:', config.iceTransportPolicy);
 
   const pc = new RTCPeerConnection({
-    iceServers: config.iceServers as RTCIceServer[],
+    iceServers: config.iceServers.map((s) => ({
+      urls: s.urls,
+      ...(s.username !== undefined && { username: s.username }),
+      ...(s.credential !== undefined && { credential: s.credential }),
+    })),
     iceTransportPolicy: config.iceTransportPolicy,
   });
 
@@ -122,7 +126,10 @@ export async function handleOffer(
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp! });
+    if (!answer.sdp) {
+      throw new Error('Created answer has no SDP');
+    }
+    sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp });
     console.log('[RTC] Sent answer');
   } catch (error) {
     console.error('[RTC] Failed to handle offer:', error);

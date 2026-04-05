@@ -206,21 +206,24 @@ const ServerOfferSchema = z.object({
   type: z.literal('offer'),
   v: z.literal(1),
   sdp: z.string(),
-  fromPeerId: z.string().optional(),
+  /** Peer that sent this offer — set by server during relay */
+  peerId: z.string().optional(),
 });
 
 const ServerAnswerSchema = z.object({
   type: z.literal('answer'),
   v: z.literal(1),
   sdp: z.string(),
-  fromPeerId: z.string().optional(),
+  /** Peer that sent this answer — set by server during relay */
+  peerId: z.string().optional(),
 });
 
 const ServerIceCandidateSchema = z.object({
   type: z.literal('ice-candidate'),
   v: z.literal(1),
   candidate: z.unknown(),
-  fromPeerId: z.string().optional(),
+  /** Peer that sent this candidate — set by server during relay */
+  peerId: z.string().optional(),
 });
 
 const ChatBroadcastSchema = z.object({

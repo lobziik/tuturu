@@ -15,7 +15,7 @@ import { reducer } from '../state/reducer';
 import { initialState, type AppState, type Action, type RoomState } from '../state/types';
 import { AppContext, createDebugReducer } from '../state/context';
 import type { Dispatch } from '../state/context';
-import { runEffects, cleanupResources, type ResourceRefs } from '../state/effects';
+import { runEffects, cleanupRoomResources, type ResourceRefs } from '../state/effects';
 import { openDB, getSetting } from '../services/db';
 
 import { NicknameScreen } from './NicknameScreen';
@@ -40,6 +40,11 @@ export function App() {
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const errorTimeoutRef = useRef<number | null>(null);
   const aesKeyRef = useRef<CryptoKey | null>(null);
+  const dbRef = useRef<IDBDatabase | null>(null);
+  const deadTimerRef = useRef<number | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef<number>(0);
+  const seqRef = useRef<number>(0);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
@@ -50,6 +55,11 @@ export function App() {
       remoteStream: remoteStreamRef,
       errorTimeout: errorTimeoutRef,
       aesKey: aesKeyRef,
+      db: dbRef,
+      deadTimer: deadTimerRef,
+      reconnectTimer: reconnectTimerRef,
+      reconnectAttempt: reconnectAttemptRef,
+      seq: seqRef,
     }),
     [],
   );
@@ -89,15 +99,18 @@ export function App() {
 
   // Page unload cleanup
   useEffect(() => {
-    const handleUnload = () => cleanupResources(refs);
+    const handleUnload = () => cleanupRoomResources(refs);
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  // Startup: check IndexedDB for saved nickname → skip to login phase if found
+  // Startup: open IndexedDB, cache ref, check for saved nickname
   useEffect(() => {
     openDB()
-      .then((db) => getSetting(db, 'nickname'))
+      .then((db) => {
+        refs.db.current = db;
+        return getSetting(db, 'nickname');
+      })
       .then((nickname) => {
         if (nickname) {
           dispatch({ type: 'NICKNAME_LOADED', nickname });
@@ -126,7 +139,15 @@ export function App() {
   const renderRoomScreen = (roomState: RoomState) => {
     // Chat view — default home screen
     if (roomState.view === 'chat') {
-      return <RoomScreen messages={roomState.messages} dispatch={dispatch} />;
+      return (
+        <RoomScreen
+          messages={roomState.messages}
+          deviceId={roomState.deviceId}
+          wsStatus={roomState.wsStatus}
+          historyHasMore={roomState.historyHasMore}
+          dispatch={dispatch}
+        />
+      );
     }
 
     // Call view — video call sub-state machine

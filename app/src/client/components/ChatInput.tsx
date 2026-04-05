@@ -14,10 +14,12 @@ interface ChatInputProps {
   onSend: (text: string) => void;
   /** External ref to the editable element (for parent-driven refocus) */
   inputRef: RefObject<HTMLDivElement>;
+  /** When true, input is greyed out and send is blocked (e.g. WS disconnected) */
+  disabled?: boolean;
 }
 
 /** Chat input bar with auto-growing contenteditable and send button */
-export function ChatInput({ onSend, inputRef }: Readonly<ChatInputProps>) {
+export function ChatInput({ onSend, inputRef, disabled = false }: Readonly<ChatInputProps>) {
   const [canSend, setCanSend] = useState(false);
 
   /** Get plain text from editable div (innerText preserves line breaks from <br>) */
@@ -32,6 +34,7 @@ export function ChatInput({ onSend, inputRef }: Readonly<ChatInputProps>) {
   };
 
   const doSend = useCallback(() => {
+    if (disabled) return;
     const trimmed = getText().trim();
     if (trimmed.length === 0) return;
     onSend(trimmed);
@@ -41,7 +44,7 @@ export function ChatInput({ onSend, inputRef }: Readonly<ChatInputProps>) {
       inputRef.current.focus();
     }
     setCanSend(false);
-  }, [onSend, inputRef]);
+  }, [onSend, inputRef, disabled]);
 
   const handleInput = useCallback(() => {
     setCanSend(getText().trim().length > 0);
@@ -86,16 +89,17 @@ export function ChatInput({ onSend, inputRef }: Readonly<ChatInputProps>) {
   }, []);
 
   return (
-    <div class="chat-input-bar">
+    <div class={`chat-input-bar${disabled ? ' chat-input-bar-disabled' : ''}`}>
       <div // NOSONAR: contenteditable used intentionally in attempt to avoid iOS Safari form accessory bar.
         // Doesn't work, though... :/
         ref={inputRef}
         class="chat-text-input"
-        contentEditable
+        contentEditable={!disabled}
         role="textbox"
         aria-label="Message"
-        tabIndex={0}
-        data-placeholder="Message..."
+        aria-disabled={disabled}
+        tabIndex={disabled ? -1 : 0}
+        data-placeholder={disabled ? 'Offline...' : 'Message...'}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
@@ -104,7 +108,7 @@ export function ChatInput({ onSend, inputRef }: Readonly<ChatInputProps>) {
       <button
         class="chat-send-btn"
         type="button"
-        disabled={!canSend}
+        disabled={!canSend || disabled}
         onMouseDown={preventFocusSteal}
         onClick={doSend}
         aria-label="Send message"

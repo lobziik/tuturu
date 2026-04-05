@@ -5,5 +5,5 @@
  */
 
 export { runEffects } from './orchestrator';
-export { cleanupResources } from './cleanup';
+export { cleanupCallResources, cleanupRoomResources } from './cleanup';
 export type { EffectContext, EffectArgs, ResourceRefs } from './types';

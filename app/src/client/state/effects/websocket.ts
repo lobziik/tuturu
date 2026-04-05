@@ -1,37 +1,25 @@
 /**
- * WebSocket side effects — connection creation and message sending.
+ * Video-call WebSocket side effects — call-level signaling only.
+ *
+ * Room-level WS lifecycle (connect, heartbeat, reconnect) is handled by
+ * roomWebSocket.ts. This module only handles call-specific messages:
+ * sending join-call when media is acquired.
  *
  * @module state/effects/websocket
  */
 
-import { createWebSocket, setupWebSocketHandlers, sendMessage } from '../../services/websocket';
+import { sendMessage } from '../../services/websocket';
 import type { EffectContext, EffectArgs } from './types';
 import { getScreen } from './types';
 
-/** Handle WebSocket-related side effects */
+/** Handle video-call WebSocket side effects */
 export function handleWebSocketEffects(ctx: EffectContext, args: EffectArgs): void {
-  const { refs, dispatch } = ctx;
-  const { action, prevState, newState } = args;
+  const { refs } = ctx;
+  const { action, newState } = args;
   const newScreen = getScreen(newState);
-  const prevScreen = getScreen(prevState);
 
-  // Entering connecting → Create WebSocket and wire up handlers
-  if (newScreen?.type === 'connecting' && prevScreen?.type !== 'connecting') {
-    const ws = createWebSocket();
-    setupWebSocketHandlers(dispatch, ws);
-    refs.ws.current = ws;
-  }
-
-  // Media acquired + now waiting → Send join to server (v2 protocol)
+  // Media acquired + now waiting → Send join-call to server
   if (action.type === 'MEDIA_ACQUIRED' && newScreen?.type === 'waiting-for-peer') {
-    if (newState.phase === 'room') {
-      sendMessage(refs.ws.current, {
-        type: 'join',
-        v: 1,
-        roomId: newState.roomId,
-        // TODO: encrypt with AES-256-GCM (refs.aesKey) — plaintext until crypto integration
-        encryptedNickname: newState.nickname,
-      });
-    }
+    sendMessage(refs.ws.current, { type: 'join-call', v: 1 });
   }
 }

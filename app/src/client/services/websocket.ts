@@ -82,7 +82,14 @@ function handleServerMessage(message: ServerToClientMessage, dispatch: Dispatch)
       break;
 
     case 'error':
-      dispatch({ type: 'SERVER_ERROR', error: message.error });
+      // v2 server sends `message` field, v1 type has `error` field — handle both
+      dispatch({
+        type: 'SERVER_ERROR',
+        error:
+          (message as unknown as { message?: string }).message ??
+          message.error ??
+          'Unknown server error',
+      });
       break;
   }
 }

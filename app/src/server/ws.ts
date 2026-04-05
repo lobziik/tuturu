@@ -37,17 +37,24 @@ export function createWebSocketHandlers(
     try {
       parsed = JSON.parse(raw.toString());
     } catch {
+      console.warn(`[WS] ${peerId} ✗ invalid JSON received`);
       send(ws, { type: 'error', v: 1, code: 'INVALID_MESSAGE', message: 'Invalid JSON' });
       return;
     }
 
     const result = ClientToServerMessageSchema.safeParse(parsed);
     if (!result.success) {
+      const rawType =
+        typeof parsed === 'object' && parsed !== null && 'type' in parsed
+          ? String((parsed as { type: unknown }).type)
+          : '<no type>';
+      const issues = result.error.issues.map((i) => i.message).join('; ');
+      console.warn(`[WS] ${peerId} ✗ validation failed for "${rawType}": ${issues}`);
       send(ws, {
         type: 'error',
         v: 1,
         code: 'INVALID_MESSAGE',
-        message: 'Message validation failed',
+        message: `Message validation failed: ${issues}`,
       });
       return;
     }

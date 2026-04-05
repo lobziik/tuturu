@@ -118,6 +118,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     const result = rooms.join(msg.roomId, peerId, ws, msg.encryptedNickname);
 
     if ('error' in result) {
+      console.warn(`[HANDLER] ${peerId} join rejected: room ${msg.roomId} is full`);
       send(ws, {
         type: 'error',
         v: 1,
@@ -183,6 +184,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = ws.data.roomId;
     if (!roomId) {
+      console.warn(`[HANDLER] ${peerId} chat rejected: not in room`);
       send(ws, {
         type: 'error',
         v: 1,
@@ -194,6 +196,9 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     // Verify the chat message targets the room the peer is in
     if (msg.roomId !== roomId) {
+      console.warn(
+        `[HANDLER] ${peerId} chat rejected: roomId mismatch (sent=${msg.roomId}, joined=${roomId})`,
+      );
       send(ws, {
         type: 'error',
         v: 1,
@@ -229,6 +234,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = ws.data.roomId;
     if (!roomId) {
+      console.warn(`[HANDLER] ${peerId} history-request rejected: not in room`);
       send(ws, {
         type: 'error',
         v: 1,
@@ -264,6 +270,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = ws.data.roomId;
     if (!roomId) {
+      console.warn(`[HANDLER] ${peerId} relay (${msg.type}) rejected: not in room`);
       send(ws, {
         type: 'error',
         v: 1,
@@ -315,6 +322,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   function handleJoinCall(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
     const roomId = ws.data.roomId;
     if (!roomId) {
+      console.warn(`[HANDLER] ${peerId} join-call rejected: not in room`);
       send(ws, {
         type: 'error',
         v: 1,
@@ -326,6 +334,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     const result = rooms.joinCall(roomId, peerId);
     if ('error' in result) {
+      console.warn(`[HANDLER] ${peerId} join-call rejected: not in room (rooms check)`);
       send(ws, {
         type: 'error',
         v: 1,

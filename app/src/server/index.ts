@@ -30,6 +30,9 @@ import { buildIceServers } from './ice';
  * Single point for error handling — log failures, never crash the server.
  */
 function send(ws: ServerWebSocket<ServerClientData>, message: ServerToClientMessage): void {
+  if (message.type === 'error') {
+    console.warn(`[SEND] Error to ${ws.data.peerId}: [${message.code}] ${message.message}`);
+  }
   try {
     const json = JSON.stringify(message);
     const result = ws.send(json);

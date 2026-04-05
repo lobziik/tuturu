@@ -208,7 +208,7 @@ export function createRoomManager(options: { maxParticipants: number; send: Send
     peerId: string,
   ): { callPeers: string[] } | { error: 'not_in_room' } {
     const room = rooms.get(roomId);
-    if (!room || !room.peers.has(peerId)) {
+    if (!room?.peers.has(peerId)) {
       return { error: 'not_in_room' };
     }
 
@@ -231,7 +231,7 @@ export function createRoomManager(options: { maxParticipants: number; send: Send
 
   function leaveCall(roomId: string, peerId: string): void {
     const room = rooms.get(roomId);
-    if (!room || !room.callPeers.has(peerId)) return;
+    if (!room?.callPeers.has(peerId)) return;
 
     room.callPeers.delete(peerId);
 

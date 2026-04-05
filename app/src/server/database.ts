@@ -119,18 +119,18 @@ export function createDatabase(
     if (effectiveLimit === 0) {
       // Still need to determine hasMore for zero-limit requests
       const checkRows =
-        before !== undefined
-          ? selectBeforeStmt.all(roomId, before, 1)
-          : selectNewestStmt.all(roomId, 1);
+        before === undefined
+          ? selectNewestStmt.all(roomId, 1)
+          : selectBeforeStmt.all(roomId, before, 1);
       return { messages: [], hasMore: checkRows.length > 0 };
     }
 
     // Fetch one extra to determine hasMore
     const fetchCount = effectiveLimit + 1;
     const rows =
-      before !== undefined
-        ? selectBeforeStmt.all(roomId, before, fetchCount)
-        : selectNewestStmt.all(roomId, fetchCount);
+      before === undefined
+        ? selectNewestStmt.all(roomId, fetchCount)
+        : selectBeforeStmt.all(roomId, before, fetchCount);
 
     const hasMore = rows.length > effectiveLimit;
     const resultRows = hasMore ? rows.slice(0, effectiveLimit) : rows;

@@ -8,7 +8,7 @@
  */
 
 import type { Server } from 'bun';
-import type { LoadedAssets } from './assets';
+import type { LoadedAssets, TextAssets, BinaryAssets, AssetEtags } from './assets';
 import type { BlobStore } from './blob';
 import type { ServerClientData } from './rooms';
 import { isValidUuidV4 } from '../shared/validation';
@@ -21,6 +21,8 @@ interface HttpDeps {
   blobRateLimitMs: number;
   getRoomCount: () => number;
 }
+
+const BLOB_PATTERN = /^\/api\/blob\/([^/]+)$/;
 
 /**
  * Create HTTP request handler with loaded assets and blob store.
@@ -72,7 +74,7 @@ export function createFetchHandler(deps: HttpDeps) {
     }
 
     // Blob endpoints: POST /api/blob/{blobId} and GET /api/blob/{blobId}
-    const blobMatch = url.pathname.match(/^\/api\/blob\/([^/]+)$/);
+    const blobMatch = BLOB_PATTERN.exec(url.pathname);
     if (blobMatch) {
       const blobId = blobMatch[1]!;
 
@@ -101,120 +103,99 @@ export function createFetchHandler(deps: HttpDeps) {
       return new Response('Method not allowed', { status: 405 });
     }
 
-    // Serve embedded static assets with ETag-based caching
-    if (url.pathname === '/' || url.pathname === '/index.html') {
-      if (req.headers.get('If-None-Match') === etags.html) {
-        return new Response(null, { status: 304 });
-      }
-      return new Response(text.indexHtml, {
-        headers: {
-          'Content-Type': 'text/html',
-          'Cache-Control': 'no-cache',
-          ETag: etags.html,
-        },
-      });
-    }
-
-    if (url.pathname === '/styles.css') {
-      if (req.headers.get('If-None-Match') === etags.css) {
-        return new Response(null, { status: 304 });
-      }
-      return new Response(text.styles, {
-        headers: {
-          'Content-Type': 'text/css',
-          'Cache-Control': 'public, max-age=0, must-revalidate',
-          ETag: etags.css,
-        },
-      });
-    }
-
-    if (url.pathname === '/index.js') {
-      if (req.headers.get('If-None-Match') === etags.js) {
-        return new Response(null, { status: 304 });
-      }
-      return new Response(text.clientJs, {
-        headers: {
-          'Content-Type': 'application/javascript',
-          'Cache-Control': 'public, max-age=0, must-revalidate',
-          ETag: etags.js,
-        },
-      });
-    }
-
-    // Favicon routes
-    if (url.pathname === '/favicon.ico') {
-      return new Response(binary.faviconIco, {
-        headers: {
-          'Content-Type': 'image/x-icon',
-          'Cache-Control': 'public, max-age=604800',
-        },
-      });
-    }
-
-    if (url.pathname === '/favicon-16x16.png') {
-      return new Response(binary.favicon16, {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=604800',
-        },
-      });
-    }
-
-    if (url.pathname === '/favicon-32x32.png') {
-      return new Response(binary.favicon32, {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=604800',
-        },
-      });
-    }
-
-    if (url.pathname === '/apple-touch-icon.png') {
-      return new Response(binary.appleTouchIcon, {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=604800',
-        },
-      });
-    }
-
-    if (url.pathname === '/android-chrome-192x192.png') {
-      return new Response(binary.androidChrome192, {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=604800',
-        },
-      });
-    }
-
-    if (url.pathname === '/android-chrome-512x512.png') {
-      return new Response(binary.androidChrome512, {
-        headers: {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'public, max-age=604800',
-        },
-      });
-    }
-
-    if (url.pathname === '/site.webmanifest') {
-      if (req.headers.get('If-None-Match') === etags.manifest) {
-        return new Response(null, { status: 304 });
-      }
-      return new Response(text.webmanifest, {
-        headers: {
-          'Content-Type': 'application/manifest+json',
-          'Cache-Control': 'public, max-age=0, must-revalidate',
-          ETag: etags.manifest,
-        },
-      });
-    }
-
-    // 404 for unknown paths
-    return new Response('Not found', {
-      status: 404,
-      headers: { 'Content-Type': 'text/plain' },
-    });
+    // Static assets (extracted to reduce cognitive complexity)
+    return serveStaticAsset(url.pathname, req, text, binary, etags);
   };
+}
+
+/**
+ * Serve embedded static assets with ETag-based caching.
+ *
+ * @returns Response for known assets, or 404
+ */
+function serveStaticAsset(
+  pathname: string,
+  req: Request,
+  text: TextAssets,
+  binary: BinaryAssets,
+  etags: AssetEtags,
+): Response {
+  if (pathname === '/' || pathname === '/index.html') {
+    if (req.headers.get('If-None-Match') === etags.html) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(text.indexHtml, {
+      headers: {
+        'Content-Type': 'text/html',
+        'Cache-Control': 'no-cache',
+        ETag: etags.html,
+      },
+    });
+  }
+
+  if (pathname === '/styles.css') {
+    if (req.headers.get('If-None-Match') === etags.css) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(text.styles, {
+      headers: {
+        'Content-Type': 'text/css',
+        'Cache-Control': 'public, max-age=0, must-revalidate',
+        ETag: etags.css,
+      },
+    });
+  }
+
+  if (pathname === '/index.js') {
+    if (req.headers.get('If-None-Match') === etags.js) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(text.clientJs, {
+      headers: {
+        'Content-Type': 'application/javascript',
+        'Cache-Control': 'public, max-age=0, must-revalidate',
+        ETag: etags.js,
+      },
+    });
+  }
+
+  if (pathname === '/site.webmanifest') {
+    if (req.headers.get('If-None-Match') === etags.manifest) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(text.webmanifest, {
+      headers: {
+        'Content-Type': 'application/manifest+json',
+        'Cache-Control': 'public, max-age=0, must-revalidate',
+        ETag: etags.manifest,
+      },
+    });
+  }
+
+  // Binary assets (favicons, icons) — long cache, no ETag
+  const binaryRoutes: Record<string, { body: ArrayBuffer; contentType: string }> = {
+    '/favicon.ico': { body: binary.faviconIco, contentType: 'image/x-icon' },
+    '/favicon-16x16.png': { body: binary.favicon16, contentType: 'image/png' },
+    '/favicon-32x32.png': { body: binary.favicon32, contentType: 'image/png' },
+    '/apple-touch-icon.png': { body: binary.appleTouchIcon, contentType: 'image/png' },
+    '/android-chrome-192x192.png': { body: binary.androidChrome192, contentType: 'image/png' },
+    '/android-chrome-512x512.png': { body: binary.androidChrome512, contentType: 'image/png' },
+  };
+
+  const binaryAsset = binaryRoutes[pathname];
+  if (binaryAsset) {
+    return new Response(binaryAsset.body, {
+      headers: {
+        'Content-Type': binaryAsset.contentType,
+        'Cache-Control': 'public, max-age=604800',
+      },
+    });
+  }
+
+  return new Response('Not found', {
+    status: 404,
+    headers: { 'Content-Type': 'text/plain' },
+  });
 }
 
 /** Handle blob upload with rate limiting and size validation */

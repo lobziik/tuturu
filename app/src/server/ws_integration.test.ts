@@ -155,15 +155,25 @@ function connect(): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     ws.addEventListener('open', () => resolve(ws));
-    ws.addEventListener('error', (e) =>
-      reject(new Error(`WebSocket connect failed: ${String(e)}`)),
-    );
+    ws.addEventListener('error', () => reject(new Error('WebSocket connect failed')));
   });
 }
 
 /** Send a typed message */
 function sendMsg(ws: WebSocket, msg: ClientToServerMessage): void {
   ws.send(JSON.stringify(msg));
+}
+
+/** Find a message by type in an array, throwing if not found */
+function findMsg<T extends ServerToClientMessage['type']>(
+  messages: ServerToClientMessage[],
+  type: T,
+): Extract<ServerToClientMessage, { type: T }> {
+  const msg = messages.find((m) => m.type === type);
+  if (!msg) {
+    throw new Error(`Missing "${type}" message. Got: ${messages.map((m) => m.type).join(', ')}`);
+  }
+  return msg as Extract<ServerToClientMessage, { type: T }>;
 }
 
 /** Connect and join a room, returning the ws and join-related messages */
@@ -185,24 +195,9 @@ async function connectAndJoin(
 
   const messages = await messagesPromise;
 
-  const joinMsg = messages.find((m) => m.type === 'join') as Extract<
-    ServerToClientMessage,
-    { type: 'join' }
-  >;
-  const peersList = messages.find((m) => m.type === 'peers-list') as Extract<
-    ServerToClientMessage,
-    { type: 'peers-list' }
-  >;
-  const history = messages.find((m) => m.type === 'history') as Extract<
-    ServerToClientMessage,
-    { type: 'history' }
-  >;
-
-  if (!joinMsg || !peersList || !history) {
-    throw new Error(
-      `Missing expected messages after join. Got: ${messages.map((m) => m.type).join(', ')}`,
-    );
-  }
+  const joinMsg = findMsg(messages, 'join');
+  const peersList = findMsg(messages, 'peers-list');
+  const history = findMsg(messages, 'history');
 
   return { ws, joinMsg, peersList, history };
 }

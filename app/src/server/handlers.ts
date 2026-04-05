@@ -245,7 +245,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     }
 
     const limit =
-      msg.limit !== undefined ? Math.min(msg.limit, historyBatchSize) : historyBatchSize;
+      msg.limit === undefined ? historyBatchSize : Math.min(msg.limit, historyBatchSize);
     const history = db.getHistory(roomId, msg.before, limit);
 
     send(ws, {

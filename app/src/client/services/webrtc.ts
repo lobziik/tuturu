@@ -3,8 +3,11 @@
  * Handles RTCPeerConnection lifecycle, offer/answer negotiation, and ICE handling
  */
 
-import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
-import type { ClientToServerMessage } from '../../shared/types';
+import type {
+  IceServerConfig,
+  IceTransportPolicy,
+  ClientToServerMessage,
+} from '../../shared/types';
 import type { Action } from '../state/types';
 import { sendMessage } from './websocket';
 

@@ -59,6 +59,10 @@ jobs:
         working-directory: app
         run: bun install
 
+      - name: Build client
+        working-directory: app
+        run: bun run build
+
       - name: Run tests
         working-directory: app
         run: bun run test

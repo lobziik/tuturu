@@ -169,11 +169,13 @@ function findMsg<T extends ServerToClientMessage['type']>(
   messages: ServerToClientMessage[],
   type: T,
 ): Extract<ServerToClientMessage, { type: T }> {
-  const msg = messages.find((m) => m.type === type);
+  const msg = messages.find(
+    (m): m is Extract<ServerToClientMessage, { type: T }> => m.type === type,
+  );
   if (!msg) {
     throw new Error(`Missing "${type}" message. Got: ${messages.map((m) => m.type).join(', ')}`);
   }
-  return msg as Extract<ServerToClientMessage, { type: T }>;
+  return msg;
 }
 
 /** Connect and join a room, returning the ws and join-related messages */

@@ -6,7 +6,7 @@
  * @module state/reducer
  */
 
-import type { AppState, Action, RoomState } from './types';
+import type { AppState, Action, RoomState, Screen } from './types';
 
 /**
  * Top-level reducer — routes to phase-specific sub-reducers.
@@ -56,24 +56,56 @@ function nicknameReducer(
 // ============================================================================
 
 function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Action): AppState {
-  switch (action.type) {
-    case 'SUBMIT_LOGIN':
-      // aesKey is captured into a ref by App.tsx dispatch wrapper (non-serializable)
-      return {
-        phase: 'room',
-        roomId: action.roomId,
-        deviceId: action.deviceId,
-        nickname: state.nickname,
-        view: 'chat',
-        messages: [],
-        screen: { type: 'pin-entry' },
-        iceServers: null,
-        iceTransportPolicy: 'all',
-      };
-
-    default:
-      return state;
+  if (action.type === 'SUBMIT_LOGIN') {
+    // aesKey is captured into a ref by App.tsx dispatch wrapper (non-serializable)
+    return {
+      phase: 'room',
+      roomId: action.roomId,
+      deviceId: action.deviceId,
+      nickname: state.nickname,
+      view: 'chat',
+      messages: [],
+      screen: { type: 'pin-entry' },
+      iceServers: null,
+      iceTransportPolicy: 'all',
+    };
   }
+  return state;
+}
+
+// ============================================================================
+// Phase: room — helpers
+// ============================================================================
+
+/** Screen types that support media controls (mute, video, PiP) */
+type MediaControlScreen = Extract<Screen, { type: 'waiting-for-peer' | 'negotiating' | 'call' }>;
+
+function isMediaControlScreen(screen: Screen): screen is MediaControlScreen {
+  return (
+    screen.type === 'waiting-for-peer' || screen.type === 'negotiating' || screen.type === 'call'
+  );
+}
+
+/** Toggle a boolean media-control field, guarded by screen type */
+function handleToggle(
+  state: RoomState,
+  field: keyof Pick<MediaControlScreen, 'muted' | 'videoOff' | 'pipHidden'>,
+): AppState {
+  if (!isMediaControlScreen(state.screen)) return state;
+  return { ...state, screen: { ...state.screen, [field]: !state.screen[field] } };
+}
+
+/** Transition to error screen */
+function toErrorScreen(
+  state: RoomState,
+  message: string,
+  canRetry: boolean,
+  previousScreen?: Screen,
+): AppState {
+  const screen: Screen = previousScreen
+    ? { type: 'error', message, canRetry, previousScreen }
+    : { type: 'error', message, canRetry };
+  return { ...state, screen };
 }
 
 // ============================================================================
@@ -89,7 +121,7 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'SWITCH_TO_CHAT':
       return { ...state, view: 'chat' };
 
-    // ===== CHAT (mock — TODO(session-8): replace with real chat actions) =====
+    // ===== CHAT (mock — TODO(session-8): replace with real chat actions) ===== // NOSONAR: placeholder for session-8 real chat actions
     case 'LOAD_MOCK_MESSAGES':
       return { ...state, messages: action.messages };
 
@@ -116,17 +148,8 @@ function roomReducer(state: RoomState, action: Action): AppState {
       };
     }
 
-    case 'WS_ERROR': {
-      return {
-        ...state,
-        screen: {
-          type: 'error',
-          message: action.error,
-          canRetry: true,
-          previousScreen: state.screen,
-        },
-      };
-    }
+    case 'WS_ERROR':
+      return toErrorScreen(state, action.error, true, state.screen);
 
     case 'WS_CLOSED': {
       if (action.intentional) {
@@ -164,17 +187,8 @@ function roomReducer(state: RoomState, action: Action): AppState {
       };
     }
 
-    case 'MEDIA_ERROR': {
-      return {
-        ...state,
-        screen: {
-          type: 'error',
-          message: action.error,
-          canRetry: true,
-          previousScreen: state.screen,
-        },
-      };
-    }
+    case 'MEDIA_ERROR':
+      return toErrorScreen(state, action.error, true, state.screen);
 
     // ===== SIGNALING =====
     case 'JOINED_ROOM': {
@@ -223,27 +237,11 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'RECEIVED_ICE_CANDIDATE':
       return state;
 
-    case 'PEER_LEFT': {
-      return {
-        ...state,
-        screen: {
-          type: 'error',
-          message: 'The other person left the call',
-          canRetry: false,
-        },
-      };
-    }
+    case 'PEER_LEFT':
+      return toErrorScreen(state, 'The other person left the call', false);
 
-    case 'SERVER_ERROR': {
-      return {
-        ...state,
-        screen: {
-          type: 'error',
-          message: action.error,
-          canRetry: false,
-        },
-      };
-    }
+    case 'SERVER_ERROR':
+      return toErrorScreen(state, action.error, false);
 
     // ===== WEBRTC LIFECYCLE =====
     case 'RTC_TRACK_RECEIVED':
@@ -268,71 +266,18 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'RTC_DISCONNECTED':
       return state;
 
-    case 'RTC_FAILED': {
-      return {
-        ...state,
-        screen: {
-          type: 'error',
-          message: action.reason,
-          canRetry: false,
-        },
-      };
-    }
+    case 'RTC_FAILED':
+      return toErrorScreen(state, action.reason, false);
 
     // ===== IN-CALL ACTIONS =====
-    case 'TOGGLE_MUTE': {
-      if (
-        state.screen.type !== 'waiting-for-peer' &&
-        state.screen.type !== 'negotiating' &&
-        state.screen.type !== 'call'
-      ) {
-        return state;
-      }
+    case 'TOGGLE_MUTE':
+      return handleToggle(state, 'muted');
 
-      return {
-        ...state,
-        screen: {
-          ...state.screen,
-          muted: !state.screen.muted,
-        },
-      };
-    }
+    case 'TOGGLE_VIDEO':
+      return handleToggle(state, 'videoOff');
 
-    case 'TOGGLE_VIDEO': {
-      if (
-        state.screen.type !== 'waiting-for-peer' &&
-        state.screen.type !== 'negotiating' &&
-        state.screen.type !== 'call'
-      ) {
-        return state;
-      }
-
-      return {
-        ...state,
-        screen: {
-          ...state.screen,
-          videoOff: !state.screen.videoOff,
-        },
-      };
-    }
-
-    case 'TOGGLE_PIP_VISIBILITY': {
-      if (
-        state.screen.type !== 'waiting-for-peer' &&
-        state.screen.type !== 'negotiating' &&
-        state.screen.type !== 'call'
-      ) {
-        return state;
-      }
-
-      return {
-        ...state,
-        screen: {
-          ...state.screen,
-          pipHidden: !state.screen.pipHidden,
-        },
-      };
-    }
+    case 'TOGGLE_PIP_VISIBILITY':
+      return handleToggle(state, 'pipHidden');
 
     case 'FLIP_CAMERA': {
       if (state.screen.type !== 'call') return state;

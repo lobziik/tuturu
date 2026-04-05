@@ -112,7 +112,7 @@ export type Action =
   // User interactions (room phase — chat)
   | { type: 'SWITCH_TO_CALL' }
   | { type: 'SWITCH_TO_CHAT' }
-  // TODO(session-8): replace with real chat actions
+  // TODO(session-8): replace with real chat actions // NOSONAR: placeholder for session-8 real chat actions
   | { type: 'LOAD_MOCK_MESSAGES'; messages: ChatMessage[] }
   | { type: 'MOCK_SEND_MESSAGE'; message: ChatMessage }
 

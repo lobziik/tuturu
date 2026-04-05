@@ -10,7 +10,7 @@ interface HeaderProps {
 }
 
 /** Room header bar with title and action buttons */
-export function Header({ onCallClick }: HeaderProps) {
+export function Header({ onCallClick }: Readonly<HeaderProps>) {
   return (
     <div class="chat-header">
       <span class="chat-header-title">tuturu</span>

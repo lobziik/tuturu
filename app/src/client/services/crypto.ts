@@ -65,9 +65,9 @@ export function hexToBytes(hex: string): Uint8Array {
 
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
-    const byte = parseInt(hex.substring(i, i + 2), 16);
+    const byte = Number.parseInt(hex.substring(i, i + 2), 16);
     if (Number.isNaN(byte)) {
-      throw new Error(`Invalid hex characters at position ${i}: "${hex.substring(i, i + 2)}"`);
+      throw new TypeError(`Invalid hex characters at position ${i}: "${hex.substring(i, i + 2)}"`);
     }
     bytes[i / 2] = byte;
   }
@@ -91,7 +91,7 @@ export function bytesToHex(bytes: Uint8Array): string {
 export function toBase64(bytes: Uint8Array): string {
   let binary = '';
   for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+    binary += String.fromCodePoint(byte);
   }
   return btoa(binary);
 }
@@ -105,7 +105,7 @@ export function fromBase64(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+    bytes[i] = binary.codePointAt(i)!;
   }
   return bytes;
 }

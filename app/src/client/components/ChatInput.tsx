@@ -17,7 +17,7 @@ interface ChatInputProps {
 }
 
 /** Chat input bar with auto-growing contenteditable and send button */
-export function ChatInput({ onSend, inputRef }: ChatInputProps) {
+export function ChatInput({ onSend, inputRef }: Readonly<ChatInputProps>) {
   const [canSend, setCanSend] = useState(false);
 
   /** Get plain text from editable div (innerText preserves line breaks from <br>) */
@@ -62,7 +62,12 @@ export function ChatInput({ onSend, inputRef }: ChatInputProps) {
   const handlePaste = useCallback((e: ClipboardEvent) => {
     e.preventDefault();
     const text = e.clipboardData?.getData('text/plain') ?? '';
-    document.execCommand('insertText', false, text);
+    const selection = document.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(text));
+    selection.collapseToEnd();
   }, []);
 
   const handleFocus = useCallback(() => {
@@ -82,12 +87,14 @@ export function ChatInput({ onSend, inputRef }: ChatInputProps) {
 
   return (
     <div class="chat-input-bar">
-      <div
+      <div // NOSONAR: contenteditable used intentionally in attempt to avoid iOS Safari form accessory bar.
+        // Doesn't work, though... :/
         ref={inputRef}
         class="chat-text-input"
         contentEditable
         role="textbox"
         aria-label="Message"
+        tabIndex={0}
         data-placeholder="Message..."
         onInput={handleInput}
         onKeyDown={handleKeyDown}

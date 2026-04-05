@@ -2,7 +2,7 @@
  * Mock chat messages for Session 4 UI development.
  * Deterministic data — no randomness — for reproducible testing.
  *
- * TODO(session-8): Remove this file when real chat integration is done.
+ * TODO(session-8): Remove this file when real chat integration is done. NOSONAR: placeholder for session-8 cleanup
  *
  * @module mock/mockMessages
  */

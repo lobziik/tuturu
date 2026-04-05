@@ -7,7 +7,7 @@
  */
 
 import type { BunPlugin } from 'bun';
-import { resolve } from 'path';
+import { resolve } from 'node:path';
 
 const preactJsxRuntime = resolve(
   import.meta.dir,

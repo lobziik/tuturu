@@ -98,7 +98,12 @@ function buildFeedItems(messages: ChatMessage[], selfDeviceId: string): FeedItem
 // ============================================================================
 
 /** Virtualized chat feed with date separators, auto-scroll, and scroll-to-bottom */
-export function ChatFeed({ messages, selfDeviceId, onLoadMore, onRefocusInput }: ChatFeedProps) {
+export function ChatFeed({
+  messages,
+  selfDeviceId,
+  onLoadMore,
+  onRefocusInput,
+}: Readonly<ChatFeedProps>) {
   const vListRef = useRef<VListHandle>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const prevMessageCountRef = useRef(0);
@@ -118,8 +123,8 @@ export function ChatFeed({ messages, selfDeviceId, onLoadMore, onRefocusInput }:
 
     if (!isNewMessage) return;
 
-    const lastMsg = messages[messages.length - 1];
-    const isOwnMessage = lastMsg != null && lastMsg.deviceId === selfDeviceId;
+    const lastMsg = messages.at(-1);
+    const isOwnMessage = lastMsg?.deviceId === selfDeviceId;
 
     if (isOwnMessage || isAtBottom) {
       requestAnimationFrame(() => {

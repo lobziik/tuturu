@@ -87,7 +87,7 @@ describe('isValidBlobSize', () => {
   });
 
   test('rejects NaN', () => {
-    expect(isValidBlobSize(NaN)).toBe(false);
+    expect(isValidBlobSize(Number.NaN)).toBe(false);
   });
 
   test('rejects Infinity', () => {

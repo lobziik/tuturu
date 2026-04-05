@@ -71,7 +71,7 @@ export function openDB(): Promise<IDBDatabase> {
     };
 
     request.onerror = () => {
-      reject(request.error);
+      reject(request.error ?? new DOMException('Failed to open database'));
     };
   });
 }
@@ -91,7 +91,7 @@ export function resetDBCache(): void {
 function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new DOMException('Request failed'));
   });
 }
 
@@ -99,7 +99,7 @@ function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
 function promisifyTransaction(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new DOMException('Transaction failed'));
     tx.onabort = () => reject(tx.error ?? new DOMException('Transaction aborted'));
   });
 }
@@ -152,7 +152,7 @@ export async function getMessagesByTimestamp(
       results.push(cursor.value as ChatMessage);
       cursor.continue();
     };
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new DOMException('Cursor request failed'));
   });
 }
 
@@ -272,12 +272,12 @@ export function checkAndStoreMessage(db: IDBDatabase, message: ChatMessage): Pro
         } satisfies SeqRecord);
         // Transaction will auto-commit; oncomplete resolves below
       };
-      msgReq.onerror = () => reject(msgReq.error);
+      msgReq.onerror = () => reject(msgReq.error ?? new DOMException('Message lookup failed'));
     };
-    seqReq.onerror = () => reject(seqReq.error);
+    seqReq.onerror = () => reject(seqReq.error ?? new DOMException('Sequence lookup failed'));
 
     tx.oncomplete = () => resolve({ stored: true });
-    tx.onerror = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error ?? new DOMException('Transaction failed'));
     // onabort fires for our intentional aborts — already resolved above
     tx.onabort = () => {
       // Intentional aborts (replay/duplicate) already resolved — this is a no-op for those.

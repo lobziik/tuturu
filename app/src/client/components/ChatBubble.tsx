@@ -22,7 +22,7 @@ function formatTime(timestamp: number): string {
 }
 
 /** Chat message bubble with sender name, text/photo content, and timestamp */
-export function ChatBubble({ message, isOwn, showSender }: ChatBubbleProps) {
+export function ChatBubble({ message, isOwn, showSender }: Readonly<ChatBubbleProps>) {
   const rowClass = `chat-bubble-row ${isOwn ? 'own' : ''} ${showSender ? 'has-sender' : ''}`;
   const bubbleClass = `chat-bubble ${isOwn ? 'own' : 'other'}`;
 

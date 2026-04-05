@@ -20,7 +20,7 @@ function preventFocusSteal(e: MouseEvent): void {
 }
 
 /** Floating circular button with down-arrow for jumping to latest messages */
-export function ScrollToBottom({ visible, onClick }: ScrollToBottomProps) {
+export function ScrollToBottom({ visible, onClick }: Readonly<ScrollToBottomProps>) {
   return (
     <button
       class={`scroll-to-bottom ${visible ? 'visible' : ''}`}

@@ -27,7 +27,7 @@ interface RoomScreenProps {
 let mockSendSeq = 1000;
 
 /** Room screen: header + virtualized chat feed + input bar */
-export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
+export function RoomScreen({ messages, dispatch }: Readonly<RoomScreenProps>) {
   const initialLoadDone = useRef(false);
   const inputRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
@@ -108,7 +108,7 @@ export function RoomScreen({ messages, dispatch }: RoomScreenProps) {
   );
 
   const handleLoadMore = useCallback(() => {
-    // TODO(session-8): request history from server
+    // TODO(session-8): request history from server // NOSONAR: placeholder for session-8 server history integration
     console.log('[ChatFeed] Load more triggered (no-op in mock mode)');
   }, []);
 

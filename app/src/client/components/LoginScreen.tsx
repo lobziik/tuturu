@@ -18,7 +18,7 @@ interface LoginScreenProps {
 }
 
 /** Login screen: passphrase + 6-digit PIN → key derivation → room */
-export function LoginScreen({ nickname, dispatch }: LoginScreenProps) {
+export function LoginScreen({ nickname, dispatch }: Readonly<LoginScreenProps>) {
   const [passphrase, setPassphrase] = useState('');
   const [pin, setPin] = useState('');
   const [isLoading, setIsLoading] = useState(false);

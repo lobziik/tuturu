@@ -15,7 +15,7 @@ interface NicknameScreenProps {
 }
 
 /** First-launch screen: user enters their display name */
-export function NicknameScreen({ dispatch }: NicknameScreenProps) {
+export function NicknameScreen({ dispatch }: Readonly<NicknameScreenProps>) {
   const [nickname, setNickname] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');

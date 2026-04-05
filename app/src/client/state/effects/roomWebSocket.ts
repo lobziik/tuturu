@@ -29,63 +29,17 @@ const MAX_RECONNECT_ATTEMPTS = 20;
 
 /** Handle room-level WebSocket side effects */
 export function handleRoomWebSocketEffects(ctx: EffectContext, args: EffectArgs): void {
-  const { refs, dispatch } = ctx;
+  const { refs } = ctx;
   const { action, prevState, newState } = args;
 
-  // === Entering room phase → Create WS and connect ===
+  // === Entering room phase → Create WS, load IDB cache, init seq ===
   if (prevState.phase !== 'room' && newState.phase === 'room') {
-    const { roomId, nickname, deviceId } = newState;
-    const aesKey = refs.aesKey.current;
-
-    if (!aesKey) {
-      console.error('[ROOM_WS] Cannot connect: aesKey not available');
-      return;
-    }
-
-    const roomContext: WsRoomContext = { roomId, nickname, aesKey };
-    connectWebSocket(ctx, roomContext);
-
-    // Load cached messages from IndexedDB for instant display
-    const db = refs.db.current;
-    if (db) {
-      void (async () => {
-        try {
-          const cached = await getMessagesByTimestamp(db, Date.now() + 1, 200);
-          if (cached.length > 0) {
-            dispatch({
-              type: 'HISTORY_LOADED',
-              // getMessagesByTimestamp returns newest-first, reverse to ascending
-              messages: cached.reverse(),
-              cursor: null,
-              hasMore: true, // Server will clarify the actual value
-            });
-          }
-        } catch (err) {
-          console.error('[ROOM_WS] Failed to load cached messages from IDB:', err);
-        }
-      })();
-    }
-
-    // Initialize seq counter from IDB
-    if (db) {
-      void (async () => {
-        try {
-          const { getOwnSeq } = await import('../../services/db');
-          const ownSeq = await getOwnSeq(db, deviceId);
-          refs.seq.current = ownSeq;
-        } catch (err) {
-          console.error('[ROOM_WS] Failed to load seq counter:', err);
-        }
-      })();
-    }
+    handleRoomEntry(ctx, newState);
   }
 
   // === Heartbeat: respond to pings, manage dead detection ===
   if (action.type === 'PING_RECEIVED' && newState.phase === 'room') {
-    // Send pong
     sendMessage(refs.ws.current, { type: 'pong', v: 1 });
-
-    // Reset dead detection timer
     resetDeadTimer(ctx);
   }
 
@@ -96,23 +50,101 @@ export function handleRoomWebSocketEffects(ctx: EffectContext, args: EffectArgs)
     resetDeadTimer(ctx);
   }
 
-  // === Handle disconnection — trigger reconnect ===
-  if (action.type === 'WS_ROOM_DISCONNECTED' && newState.phase === 'room') {
-    clearDeadTimer(refs);
-    startReconnect(ctx, newState.roomId, newState.nickname);
+  // === Disconnection / close / error → reconnect ===
+  if (newState.phase === 'room') {
+    handleDisconnection(ctx, action, newState);
+  }
+}
+
+/** Initialize room: connect WS, load IDB cache, load seq counter */
+function handleRoomEntry(
+  ctx: EffectContext,
+  newState: Extract<EffectArgs['newState'], { phase: 'room' }>,
+): void {
+  const { refs, dispatch } = ctx;
+  const { roomId, nickname, deviceId } = newState;
+  const aesKey = refs.aesKey.current;
+
+  if (!aesKey) {
+    console.error('[ROOM_WS] Cannot connect: aesKey not available');
+    return;
   }
 
-  // === Unintentional WS close → initiate reconnect ===
-  if (action.type === 'WS_CLOSED' && !action.intentional && newState.phase === 'room') {
+  connectWebSocket(ctx, { roomId, nickname, aesKey });
+  loadCachedMessages(refs.db.current, dispatch);
+  initSeqCounter(refs, refs.db.current, deviceId);
+}
+
+/** Load cached messages from IndexedDB for instant display */
+function loadCachedMessages(db: IDBDatabase | null, dispatch: EffectContext['dispatch']): void {
+  if (!db) return;
+
+  void (async () => {
+    try {
+      const cached = await getMessagesByTimestamp(db, Date.now() + 1, 200);
+      if (cached.length > 0) {
+        dispatch({
+          type: 'HISTORY_LOADED',
+          messages: cached.slice().reverse(),
+          cursor: null,
+          hasMore: false,
+          fromCache: true,
+        });
+      }
+    } catch (err) {
+      console.error('[ROOM_WS] Failed to load cached messages from IDB:', err);
+    }
+  })();
+}
+
+/** Initialize seq counter from IDB (must complete before sends are allowed) */
+function initSeqCounter(
+  refs: EffectContext['refs'],
+  db: IDBDatabase | null,
+  deviceId: string,
+): void {
+  refs.seqLoaded.current = false;
+
+  if (!db) {
+    refs.seqLoaded.current = true;
+    return;
+  }
+
+  void (async () => {
+    try {
+      const { getOwnSeq } = await import('../../services/db');
+      const ownSeq = await getOwnSeq(db, deviceId);
+      refs.seq.current = ownSeq;
+    } catch (err) {
+      console.error('[ROOM_WS] Failed to load seq counter:', err);
+    } finally {
+      refs.seqLoaded.current = true;
+    }
+  })();
+}
+
+/** Handle disconnection/close/error actions — trigger reconnect when appropriate */
+function handleDisconnection(
+  ctx: EffectContext,
+  action: EffectArgs['action'],
+  newState: Extract<EffectArgs['newState'], { phase: 'room' }>,
+): void {
+  const { refs } = ctx;
+
+  if (action.type === 'WS_ROOM_DISCONNECTED') {
+    clearDeadTimer(refs);
+    startReconnect(ctx, newState.roomId, newState.nickname);
+    return;
+  }
+
+  if (action.type === 'WS_CLOSED' && !action.intentional) {
     clearDeadTimer(refs);
     refs.ws.current = null;
     startReconnect(ctx, newState.roomId, newState.nickname);
+    return;
   }
 
-  // === WS error without close (some browsers) → treat as disconnection ===
-  if (action.type === 'WS_ERROR' && newState.phase === 'room') {
-    // If WS is already closed or closing, the WS_CLOSED handler will deal with it.
-    // Only act if WS appears gone.
+  if (action.type === 'WS_ERROR') {
     if (!refs.ws.current || refs.ws.current.readyState >= WebSocket.CLOSING) {
       clearDeadTimer(refs);
       refs.ws.current = null;
@@ -171,9 +203,15 @@ function clearReconnectTimer(refs: EffectContext['refs']): void {
   }
 }
 
-/** Start reconnect with exponential backoff */
+/** Start reconnect with exponential backoff. No-op if a reconnect timer is already pending. */
 function startReconnect(ctx: EffectContext, roomId: string, nickname: string): void {
   const { refs, dispatch } = ctx;
+
+  // Guard: prevent duplicate reconnect timers (e.g. WS_ROOM_DISCONNECTED + WS_CLOSED race)
+  if (refs.reconnectTimer.current !== null) {
+    return;
+  }
+
   const attempt = refs.reconnectAttempt.current;
 
   if (attempt >= MAX_RECONNECT_ATTEMPTS) {
@@ -197,7 +235,6 @@ function startReconnect(ctx: EffectContext, roomId: string, nickname: string): v
 
   refs.reconnectAttempt.current = attempt + 1;
 
-  clearReconnectTimer(refs);
   refs.reconnectTimer.current = window.setTimeout(() => {
     refs.reconnectTimer.current = null;
 

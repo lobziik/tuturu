@@ -234,7 +234,7 @@ export async function getOwnSeq(db: IDBDatabase, deviceId: string): Promise<numb
   if (!value) return 0;
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) {
-    throw new Error(`Corrupt own seq counter for device ${deviceId}: "${value}"`);
+    throw new TypeError(`Corrupt own seq counter for device ${deviceId}: "${value}"`);
   }
   return parsed;
 }

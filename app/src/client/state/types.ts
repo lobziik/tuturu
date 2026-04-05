@@ -169,7 +169,18 @@ export type Action =
   // Server responses — chat
   | { type: 'CHAT_RECEIVED'; message: ChatMessage }
   | { type: 'CHAT_ACK'; uuid: string }
-  | { type: 'HISTORY_LOADED'; messages: ChatMessage[]; cursor: number | null; hasMore: boolean }
+  | {
+      type: 'HISTORY_LOADED';
+      messages: ChatMessage[];
+      cursor: number | null;
+      hasMore: boolean;
+      /** When true, this is a local IDB cache load — do not overwrite server pagination state */
+      fromCache?: boolean;
+    }
+
+  // Server responses — call signaling
+  | { type: 'PEER_JOINED_CALL'; peerId: string }
+  | { type: 'PEER_LEFT_CALL'; peerId: string }
 
   // Server responses — signaling / ICE
   | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy }

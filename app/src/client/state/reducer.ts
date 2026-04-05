@@ -118,6 +118,9 @@ function toErrorScreen(
 /**
  * Insert a message into a sorted array by timestamp, deduplicating by uuid.
  * Returns a new array (no mutation).
+ *
+ * TODO: dedup check is O(N) linear scan — consider Set<uuid> cache when message
+ * counts exceed ~1000 (batch history loads make this O(N×M)).
  */
 function insertMessageSorted(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
   // Dedup check — skip if uuid already exists
@@ -143,6 +146,16 @@ function insertMessageSorted(messages: ChatMessage[], msg: ChatMessage): ChatMes
 }
 
 /**
+ * Resolve new history cursor: take the minimum of existing and incoming.
+ * Returns existing cursor if incoming is null (no cursor from server).
+ */
+function resolveHistoryCursor(existing: number | null, incoming: number | null): number | null {
+  if (incoming === null) return existing;
+  if (existing === null) return incoming;
+  return Math.min(existing, incoming);
+}
+
+/**
  * Merge history messages with existing messages.
  * Deduplicates by uuid, sorts by timestamp ascending.
  */
@@ -155,23 +168,77 @@ function mergeHistory(existing: ChatMessage[], incoming: ChatMessage[]): ChatMes
 }
 
 // ============================================================================
-// Phase: room — main reducer
+// Phase: room — main reducer (delegates to domain sub-reducers)
 // ============================================================================
 
 function roomReducer(state: RoomState, action: Action): AppState {
   switch (action.type) {
-    // ===== VIEW SWITCHING =====
+    // View switching
     case 'SWITCH_TO_CALL':
       return { ...state, view: 'call' };
-
     case 'SWITCH_TO_CHAT':
       return { ...state, view: 'chat' };
 
-    // ===== CHAT =====
+    // Chat
     case 'SEND_MESSAGE':
-      // No state change — effect handles encryption + sending + optimistic dispatch
+    case 'CHAT_ACK':
+    case 'PING_RECEIVED':
       return state;
+    case 'REQUEST_HISTORY':
+    case 'CHAT_RECEIVED':
+    case 'HISTORY_LOADED':
+      return roomChatReducer(state, action);
 
+    // Room-level WebSocket + peers
+    case 'WS_ROOM_CONNECTED':
+    case 'WS_ROOM_DISCONNECTED':
+    case 'WS_ROOM_RECONNECTING':
+    case 'WS_ERROR':
+    case 'WS_CLOSED':
+    case 'PEERS_LIST':
+    case 'PEER_JOINED_ROOM':
+    case 'PEER_LEFT_ROOM':
+      return roomConnectionReducer(state, action);
+
+    // Video call sub-machine
+    case 'SUBMIT_PIN':
+    case 'MEDIA_ACQUIRED':
+    case 'MEDIA_ERROR':
+    case 'PEER_JOINED_CALL':
+    case 'PEER_LEFT_CALL':
+    case 'JOINED_ROOM':
+    case 'RECEIVED_OFFER':
+    case 'RECEIVED_ANSWER':
+    case 'RECEIVED_ICE_CANDIDATE':
+    case 'SERVER_ERROR':
+    case 'RTC_TRACK_RECEIVED':
+    case 'RTC_CONNECTED':
+    case 'RTC_DISCONNECTED':
+    case 'RTC_FAILED':
+    case 'TOGGLE_MUTE':
+    case 'TOGGLE_VIDEO':
+    case 'TOGGLE_PIP_VISIBILITY':
+    case 'FLIP_CAMERA':
+    case 'HANGUP':
+    case 'DISMISS_ERROR':
+      return roomCallReducer(state, action);
+
+    // Phase transition actions — not applicable in room phase
+    case 'SUBMIT_NICKNAME':
+    case 'NICKNAME_LOADED':
+    case 'SUBMIT_LOGIN':
+      return state;
+  }
+}
+
+// ============================================================================
+// Room sub-reducer: chat
+// ============================================================================
+
+type ChatAction = Extract<Action, { type: 'REQUEST_HISTORY' | 'CHAT_RECEIVED' | 'HISTORY_LOADED' }>;
+
+function roomChatReducer(state: RoomState, action: ChatAction): AppState {
+  switch (action.type) {
     case 'REQUEST_HISTORY':
       if (!state.historyHasMore || state.loadingHistory) return state;
       return { ...state, loadingHistory: true };
@@ -182,27 +249,46 @@ function roomReducer(state: RoomState, action: Action): AppState {
         messages: insertMessageSorted(state.messages, action.message),
       };
 
-    case 'CHAT_ACK':
-      // Future: mark message as delivered in UI
-      return state;
-
-    case 'HISTORY_LOADED':
+    case 'HISTORY_LOADED': {
+      if (action.fromCache) {
+        return {
+          ...state,
+          messages: mergeHistory(state.messages, action.messages),
+        };
+      }
       return {
         ...state,
         messages: mergeHistory(state.messages, action.messages),
-        historyCursor:
-          action.cursor !== null
-            ? state.historyCursor === null
-              ? action.cursor
-              : Math.min(state.historyCursor, action.cursor)
-            : state.historyCursor,
+        historyCursor: resolveHistoryCursor(state.historyCursor, action.cursor),
         historyHasMore: action.hasMore,
         loadingHistory: false,
       };
+    }
+  }
+}
 
-    // ===== ROOM-LEVEL WEBSOCKET =====
+// ============================================================================
+// Room sub-reducer: connection + peers
+// ============================================================================
+
+type ConnectionAction = Extract<
+  Action,
+  {
+    type:
+      | 'WS_ROOM_CONNECTED'
+      | 'WS_ROOM_DISCONNECTED'
+      | 'WS_ROOM_RECONNECTING'
+      | 'WS_ERROR'
+      | 'WS_CLOSED'
+      | 'PEERS_LIST'
+      | 'PEER_JOINED_ROOM'
+      | 'PEER_LEFT_ROOM';
+  }
+>;
+
+function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppState {
+  switch (action.type) {
     case 'WS_ROOM_CONNECTED': {
-      // If video call was waiting for WS, advance it
       const newScreen =
         state.screen.type === 'connecting'
           ? ({ type: 'acquiring-media', pin: state.screen.pin } as const)
@@ -211,7 +297,6 @@ function roomReducer(state: RoomState, action: Action): AppState {
     }
 
     case 'WS_ROOM_DISCONNECTED': {
-      // If in active video call, transition to error
       const callActive = ['call', 'negotiating', 'waiting-for-peer'].includes(state.screen.type);
       return {
         ...state,
@@ -230,23 +315,15 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'WS_ROOM_RECONNECTING':
       return { ...state, wsStatus: 'reconnecting' };
 
-    // ===== WEBSOCKET CLOSE/ERROR (browser callbacks) =====
     case 'WS_ERROR':
       return { ...state, wsStatus: 'disconnected' };
 
-    case 'WS_CLOSED': {
+    case 'WS_CLOSED':
       if (action.intentional) {
-        return {
-          ...state,
-          wsStatus: 'disconnected',
-          screen: { type: 'pin-entry' },
-        };
+        return { ...state, wsStatus: 'disconnected', screen: { type: 'pin-entry' } };
       }
-      // Unintentional close — effects will handle reconnect
       return { ...state, wsStatus: 'disconnected' };
-    }
 
-    // ===== SERVER RESPONSES — PEERS =====
     case 'PEERS_LIST': {
       const peers: Record<string, { peerId: string }> = {};
       for (const p of action.peers) {
@@ -258,44 +335,59 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'PEER_JOINED_ROOM':
       return {
         ...state,
-        peers: {
-          ...state.peers,
-          [action.peerId]: { peerId: action.peerId },
-        },
+        peers: { ...state.peers, [action.peerId]: { peerId: action.peerId } },
       };
 
     case 'PEER_LEFT_ROOM': {
       const { [action.peerId]: _removed, ...remainingPeers } = state.peers;
       return { ...state, peers: remainingPeers };
     }
+  }
+}
 
-    // ===== HEARTBEAT =====
-    case 'PING_RECEIVED':
-      // No state change — effects handle pong response + dead timer reset
-      return state;
+// ============================================================================
+// Room sub-reducer: video call
+// ============================================================================
 
-    // ===== PIN ENTRY (simplified — WS is already connected at room level) =====
+type CallAction = Extract<
+  Action,
+  {
+    type:
+      | 'SUBMIT_PIN'
+      | 'MEDIA_ACQUIRED'
+      | 'MEDIA_ERROR'
+      | 'PEER_JOINED_CALL'
+      | 'PEER_LEFT_CALL'
+      | 'JOINED_ROOM'
+      | 'RECEIVED_OFFER'
+      | 'RECEIVED_ANSWER'
+      | 'RECEIVED_ICE_CANDIDATE'
+      | 'SERVER_ERROR'
+      | 'RTC_TRACK_RECEIVED'
+      | 'RTC_CONNECTED'
+      | 'RTC_DISCONNECTED'
+      | 'RTC_FAILED'
+      | 'TOGGLE_MUTE'
+      | 'TOGGLE_VIDEO'
+      | 'TOGGLE_PIP_VISIBILITY'
+      | 'FLIP_CAMERA'
+      | 'HANGUP'
+      | 'DISMISS_ERROR';
+  }
+>;
+
+function roomCallReducer(state: RoomState, action: CallAction): AppState {
+  switch (action.type) {
     case 'SUBMIT_PIN': {
       if (state.screen.type !== 'pin-entry') return state;
-
-      // If WS is connected, skip connecting screen → go straight to acquiring-media
       if (state.wsStatus === 'connected') {
-        return {
-          ...state,
-          screen: { type: 'acquiring-media', pin: action.pin },
-        };
+        return { ...state, screen: { type: 'acquiring-media', pin: action.pin } };
       }
-      // WS not ready — wait in connecting (WS_ROOM_CONNECTED will advance it)
-      return {
-        ...state,
-        screen: { type: 'connecting', pin: action.pin },
-      };
+      return { ...state, screen: { type: 'connecting', pin: action.pin } };
     }
 
-    // ===== MEDIA LIFECYCLE =====
     case 'MEDIA_ACQUIRED': {
       if (state.screen.type !== 'acquiring-media') return state;
-
       return {
         ...state,
         screen: {
@@ -311,7 +403,24 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'MEDIA_ERROR':
       return toErrorScreen(state, action.error, true, state.screen);
 
-    // ===== SIGNALING =====
+    case 'PEER_JOINED_CALL': {
+      if (state.screen.type !== 'waiting-for-peer') return state;
+      return {
+        ...state,
+        screen: {
+          type: 'negotiating',
+          pin: state.screen.pin,
+          role: 'caller',
+          muted: state.screen.muted,
+          videoOff: state.screen.videoOff,
+          pipHidden: state.screen.pipHidden,
+        },
+      };
+    }
+
+    case 'PEER_LEFT_CALL':
+      return state;
+
     case 'JOINED_ROOM':
       return {
         ...state,
@@ -321,7 +430,6 @@ function roomReducer(state: RoomState, action: Action): AppState {
 
     case 'RECEIVED_OFFER': {
       if (state.screen.type !== 'waiting-for-peer') return state;
-
       return {
         ...state,
         screen: {
@@ -336,22 +444,16 @@ function roomReducer(state: RoomState, action: Action): AppState {
     }
 
     case 'RECEIVED_ANSWER':
-      return state;
-
     case 'RECEIVED_ICE_CANDIDATE':
+    case 'RTC_TRACK_RECEIVED':
+    case 'RTC_DISCONNECTED':
       return state;
 
     case 'SERVER_ERROR':
       return toErrorScreen(state, action.error, false);
 
-    // ===== WEBRTC LIFECYCLE =====
-    case 'RTC_TRACK_RECEIVED':
-      // Stream stored in ref by dispatch wrapper, not in reducer state
-      return state;
-
     case 'RTC_CONNECTED': {
       if (state.screen.type !== 'negotiating') return state;
-
       return {
         ...state,
         screen: {
@@ -364,49 +466,26 @@ function roomReducer(state: RoomState, action: Action): AppState {
       };
     }
 
-    case 'RTC_DISCONNECTED':
-      return state;
-
     case 'RTC_FAILED':
       return toErrorScreen(state, action.reason, false);
 
-    // ===== IN-CALL ACTIONS =====
     case 'TOGGLE_MUTE':
       return handleToggle(state, 'muted');
-
     case 'TOGGLE_VIDEO':
       return handleToggle(state, 'videoOff');
-
     case 'TOGGLE_PIP_VISIBILITY':
       return handleToggle(state, 'pipHidden');
 
-    case 'FLIP_CAMERA': {
-      if (state.screen.type !== 'call') return state;
+    case 'FLIP_CAMERA':
       return state;
-    }
 
     case 'HANGUP':
-      return {
-        ...state,
-        view: 'chat',
-        screen: { type: 'pin-entry' },
-      };
+      return { ...state, view: 'chat', screen: { type: 'pin-entry' } };
 
-    // ===== ERROR HANDLING =====
     case 'DISMISS_ERROR': {
       if (state.screen.type !== 'error') return state;
-
-      return {
-        ...state,
-        screen: { type: 'pin-entry' },
-      };
+      return { ...state, screen: { type: 'pin-entry' } };
     }
-
-    // Phase transition actions — not applicable in room phase
-    case 'SUBMIT_NICKNAME':
-    case 'NICKNAME_LOADED':
-    case 'SUBMIT_LOGIN':
-      return state;
   }
 }
 

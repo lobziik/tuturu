@@ -354,6 +354,24 @@ describe('reducer', () => {
       expect(room.historyHasMore).toBe(true);
     });
 
+    test('HISTORY_LOADED replayed batch is fully deduplicated', () => {
+      const batch = [
+        chatMessage({ timestamp: 100, uuid: 'r1' }),
+        chatMessage({ timestamp: 200, uuid: 'r2' }),
+      ];
+      const state = roomState(
+        { type: 'pin-entry' },
+        { messages: [...batch], historyCursor: 5, historyHasMore: true },
+      );
+
+      // Replay the exact same batch — nothing should change
+      const room = expectRoom(
+        reducer(state, { type: 'HISTORY_LOADED', messages: batch, cursor: 5, hasMore: true }),
+      );
+      expect(room.messages).toHaveLength(2);
+      expect(room.messages).toBe(state.phase === 'room' ? state.messages : room.messages);
+    });
+
     test('HISTORY_LOADED takes minimum cursor', () => {
       const state = roomState({ type: 'pin-entry' }, { historyCursor: 10, historyHasMore: true });
       const room = expectRoom(
@@ -392,6 +410,29 @@ describe('reducer', () => {
     test('PING_RECEIVED returns state unchanged', () => {
       const state = roomState({ type: 'pin-entry' });
       expect(reducer(state, { type: 'PING_RECEIVED' })).toBe(state);
+    });
+
+    test('HISTORY_LOADED with fromCache only merges messages, does not touch pagination', () => {
+      const state = roomState(
+        { type: 'pin-entry' },
+        { historyCursor: 10, historyHasMore: false, loadingHistory: true },
+      );
+
+      const cached = [chatMessage({ timestamp: 100, uuid: 'x' })];
+      const room = expectRoom(
+        reducer(state, {
+          type: 'HISTORY_LOADED',
+          messages: cached,
+          cursor: null,
+          hasMore: true,
+          fromCache: true,
+        }),
+      );
+      expect(room.messages).toHaveLength(1);
+      // Pagination state untouched
+      expect(room.historyCursor).toBe(10);
+      expect(room.historyHasMore).toBe(false);
+      expect(room.loadingHistory).toBe(true);
     });
   });
 
@@ -432,6 +473,39 @@ describe('reducer', () => {
   // ========================================================================
 
   describe('Signaling messages', () => {
+    test('PEER_JOINED_CALL transitions waiting-for-peer to negotiating as caller', () => {
+      const state = roomState({
+        type: 'waiting-for-peer',
+        pin: '123456',
+        muted: true,
+        videoOff: false,
+        pipHidden: false,
+      });
+      const room = expectRoom(reducer(state, { type: 'PEER_JOINED_CALL', peerId: 'p2' }));
+      expect(room.screen.type).toBe('negotiating');
+      if (room.screen.type === 'negotiating') {
+        expect(room.screen.role).toBe('caller');
+        expect(room.screen.pin).toBe('123456');
+        expect(room.screen.muted).toBe(true);
+      }
+    });
+
+    test('PEER_JOINED_CALL is ignored in non-waiting-for-peer states', () => {
+      const state = roomState({ type: 'pin-entry' });
+      expect(reducer(state, { type: 'PEER_JOINED_CALL', peerId: 'p2' })).toBe(state);
+    });
+
+    test('PEER_LEFT_CALL returns state unchanged', () => {
+      const state = roomState({
+        type: 'call',
+        pin: '123456',
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
+      });
+      expect(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'p2' })).toBe(state);
+    });
+
     test('JOINED_ROOM stores ICE servers and transport policy', () => {
       const state = roomState({ type: 'pin-entry' });
       const mockIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];

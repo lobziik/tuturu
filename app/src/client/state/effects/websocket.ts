@@ -29,6 +29,7 @@ export function handleWebSocketEffects(ctx: EffectContext, args: EffectArgs): vo
         type: 'join',
         v: 1,
         roomId: newState.roomId,
+        // TODO: encrypt with AES-256-GCM (refs.aesKey) — plaintext until crypto integration
         encryptedNickname: newState.nickname,
       });
     }

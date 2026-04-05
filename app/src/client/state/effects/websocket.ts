@@ -22,8 +22,15 @@ export function handleWebSocketEffects(ctx: EffectContext, args: EffectArgs): vo
     refs.ws.current = ws;
   }
 
-  // Media acquired + now waiting → Send join-pin to server
+  // Media acquired + now waiting → Send join to server (v2 protocol)
   if (action.type === 'MEDIA_ACQUIRED' && newScreen?.type === 'waiting-for-peer') {
-    sendMessage(refs.ws.current, { type: 'join-pin', pin: newScreen.pin });
+    if (newState.phase === 'room') {
+      sendMessage(refs.ws.current, {
+        type: 'join',
+        v: 1,
+        roomId: newState.roomId,
+        encryptedNickname: newState.nickname,
+      });
+    }
   }
 }

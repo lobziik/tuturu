@@ -14,6 +14,8 @@ export type {
   ServerToClientMessage,
   HistoryMessage,
   ErrorCode,
+  IceServerConfig,
+  IceTransportPolicy,
 } from './schemas';
 
 // ============================================================================

@@ -41,7 +41,7 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
   // HANGUP → Send leave message and tear down everything
   if (action.type === 'HANGUP') {
     if (refs.ws.current) {
-      sendMessage(refs.ws.current, { type: 'leave' });
+      sendMessage(refs.ws.current, { type: 'leave', v: 1 });
     }
     cleanupResources(refs);
   }

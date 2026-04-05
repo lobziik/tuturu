@@ -5,7 +5,12 @@
  * TURN servers are configured with ephemeral credentials and ordered by networking passing likelihood.
  */
 
-import type { IceServerConfig } from '../types';
+/** ICE server configuration (matches IceServerSchema from shared/schemas) */
+interface IceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
 import { config, isTurnConfigured } from './config';
 import { generateTurnCredentials } from './turn';
 

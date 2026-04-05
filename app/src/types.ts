@@ -1,4 +1,7 @@
 /**
+ * @deprecated v1 types — kept for client compatibility until Session 8 migration.
+ * Use v2 types from `shared/schemas.ts` (Zod-inferred) for all new server code.
+ *
  * WebSocket signaling message types
  * Split into direction-specific unions for strict typing
  */

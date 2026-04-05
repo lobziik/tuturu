@@ -246,7 +246,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     const limit =
       msg.limit !== undefined ? Math.min(msg.limit, historyBatchSize) : historyBatchSize;
-    const history = db.getHistory(msg.roomId, msg.before, limit);
+    const history = db.getHistory(roomId, msg.before, limit);
 
     send(ws, {
       type: 'history',
@@ -287,13 +287,13 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       let relayMsg: ServerToClientMessage;
       switch (msg.type) {
         case 'offer':
-          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, peerId };
           break;
         case 'answer':
-          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, peerId };
           break;
         case 'ice-candidate':
-          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, fromPeerId: peerId };
+          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, peerId };
           break;
       }
 
@@ -306,13 +306,13 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       let relayMsg: ServerToClientMessage;
       switch (msg.type) {
         case 'offer':
-          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, peerId };
           break;
         case 'answer':
-          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, fromPeerId: peerId };
+          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, peerId };
           break;
         case 'ice-candidate':
-          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, fromPeerId: peerId };
+          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, peerId };
           break;
       }
       rooms.broadcast(roomId, relayMsg, peerId);

@@ -354,7 +354,7 @@ describe('ServerToClientMessageSchema', () => {
       type: 'offer',
       v: 1,
       sdp: 'v=0\r\no=...',
-      fromPeerId: 'uuid-123',
+      peerId: 'uuid-123',
     });
     expect(result.success).toBe(true);
   });

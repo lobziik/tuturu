@@ -561,7 +561,7 @@ describe('negative — invalid messages', () => {
 // ============================================================================
 
 describe('relay', () => {
-  test('offer with targetPeerId is delivered with fromPeerId substituted', async () => {
+  test('offer with targetPeerId is delivered with peerId substituted', async () => {
     const roomId = `room-relay-${Date.now()}`;
 
     const { ws: ws1, peersList: pl1 } = await connectAndJoin(roomId, 'Alice');
@@ -585,7 +585,7 @@ describe('relay', () => {
 
     const offer = await offerPromise;
     expect(offer.sdp).toBe('v=0\r\ntest-sdp');
-    expect(offer.fromPeerId).toBe(client1PeerId);
+    expect(offer.peerId).toBe(client1PeerId);
 
     ws1.close();
     ws2.close();

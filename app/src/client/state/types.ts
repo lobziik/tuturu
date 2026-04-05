@@ -22,7 +22,7 @@
  * @module state/types
  */
 
-import type { IceServerConfig, IceTransportPolicy } from '../../types';
+import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
 import type { ChatMessage } from '../../shared/schemas';
 
 // ============================================================================

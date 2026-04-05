@@ -3,7 +3,8 @@
  * Handles RTCPeerConnection lifecycle, offer/answer negotiation, and ICE handling
  */
 
-import type { IceServerConfig, IceTransportPolicy } from '../../types';
+import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
+import type { ClientToServerMessage } from '../../shared/types';
 import type { Action } from '../state/types';
 import { sendMessage } from './websocket';
 
@@ -35,7 +36,7 @@ export function createPeerConnection(
   console.log('[RTC] ICE transport policy:', config.iceTransportPolicy);
 
   const pc = new RTCPeerConnection({
-    iceServers: config.iceServers,
+    iceServers: config.iceServers as RTCIceServer[],
     iceTransportPolicy: config.iceTransportPolicy,
   });
 
@@ -62,7 +63,12 @@ export function createPeerConnection(
   pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
     if (event.candidate) {
       console.log('[RTC] Sending ICE candidate');
-      sendMessage(ws, { type: 'ice-candidate', data: event.candidate });
+      const msg: ClientToServerMessage = {
+        type: 'ice-candidate',
+        v: 1,
+        candidate: event.candidate,
+      };
+      sendMessage(ws, msg);
     } else {
       console.log('[RTC] ICE gathering complete');
     }
@@ -116,7 +122,7 @@ export async function handleOffer(
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    sendMessage(ws, { type: 'answer', data: answer });
+    sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp! });
     console.log('[RTC] Sent answer');
   } catch (error) {
     console.error('[RTC] Failed to handle offer:', error);

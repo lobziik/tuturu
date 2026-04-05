@@ -11,7 +11,7 @@
 
 import type { AppState, Action, Screen } from '../types';
 import type { Dispatch } from '../context';
-import type { IceServerConfig, IceTransportPolicy } from '../../../types';
+import type { IceServerConfig, IceTransportPolicy } from '../../../shared/types';
 
 /**
  * Mutable resource refs that effect handlers read and write.

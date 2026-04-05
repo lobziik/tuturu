@@ -324,3 +324,5 @@ export type ServerToClientMessage = z.infer<typeof ServerToClientMessageSchema>;
 // ============================================================================
 
 export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
+export type IceServerConfig = z.infer<typeof IceServerSchema>;
+export type IceTransportPolicy = z.infer<typeof IceTransportPolicySchema>;

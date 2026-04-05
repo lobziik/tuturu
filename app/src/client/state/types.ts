@@ -22,7 +22,7 @@
  * @module state/types
  */
 
-import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
+import type { IceServerConfig, IceTransportPolicy, PeerState } from '../../shared/types';
 import type { ChatMessage } from '../../shared/schemas';
 
 // ============================================================================
@@ -45,6 +45,13 @@ export type Screen =
     }
   | { type: 'call'; pin: string; muted: boolean; videoOff: boolean; pipHidden: boolean }
   | { type: 'error'; message: string; canRetry: boolean; previousScreen?: Screen };
+
+// ============================================================================
+// WebSocket status
+// ============================================================================
+
+/** Room-level WebSocket connection status */
+export type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
 // ============================================================================
 // AppState — phase-based discriminated union
@@ -76,6 +83,18 @@ export type AppState =
       view: 'chat' | 'call';
       /** Chat messages (sorted by timestamp ascending) */
       messages: ChatMessage[];
+      /** Room-level WebSocket connection status */
+      wsStatus: WsStatus;
+      /** Server-assigned peer ID for this connection */
+      selfPeerId: string | null;
+      /** Connected peers in the room (peerId → PeerState) */
+      peers: Record<string, PeerState>;
+      /** Oldest server-assigned message ID from last history batch (pagination cursor) */
+      historyCursor: number | null;
+      /** Whether server indicated more history is available */
+      historyHasMore: boolean;
+      /** Whether a history request is currently in flight */
+      loadingHistory: boolean;
       /** Video call sub-state machine */
       screen: Screen;
       /** ICE server configuration (STUN/TURN servers) */
@@ -97,11 +116,16 @@ export type RoomState = Extract<AppState, { phase: 'room' }>;
  * @remarks
  * Categories:
  * 1. Phase Transitions (SUBMIT_NICKNAME, NICKNAME_LOADED, SUBMIT_LOGIN)
- * 2. User Interactions (SUBMIT_PIN, TOGGLE_MUTE, etc.)
- * 3. WebSocket Lifecycle (WS_CONNECTED, WS_CLOSED, etc.)
- * 4. Media Lifecycle (MEDIA_ACQUIRED, MEDIA_ERROR)
- * 5. Signaling Messages (PEER_JOINED, RECEIVED_OFFER, etc.)
- * 6. WebRTC Lifecycle (RTC_CONNECTED, RTC_FAILED, etc.)
+ * 2. User Interactions — chat (SWITCH_TO_CALL, SEND_MESSAGE, etc.)
+ * 3. User Interactions — video call (SUBMIT_PIN, TOGGLE_MUTE, etc.)
+ * 4. Room-level WebSocket (WS_ROOM_CONNECTED, WS_ROOM_DISCONNECTED, etc.)
+ * 5. WebSocket close/error (WS_ERROR, WS_CLOSED)
+ * 6. Server responses — peers (PEERS_LIST, PEER_JOINED_ROOM, PEER_LEFT_ROOM)
+ * 7. Server responses — chat (CHAT_RECEIVED, CHAT_ACK, HISTORY_LOADED)
+ * 8. Server responses — signaling (JOINED_ROOM, RECEIVED_OFFER, etc.)
+ * 9. Heartbeat (PING_RECEIVED)
+ * 10. Media Lifecycle (MEDIA_ACQUIRED, MEDIA_ERROR)
+ * 11. WebRTC Lifecycle (RTC_CONNECTED, RTC_FAILED, etc.)
  */
 export type Action =
   // Phase transitions
@@ -112,9 +136,8 @@ export type Action =
   // User interactions (room phase — chat)
   | { type: 'SWITCH_TO_CALL' }
   | { type: 'SWITCH_TO_CHAT' }
-  // TODO(session-8): replace with real chat actions // NOSONAR: placeholder for session-8 real chat actions
-  | { type: 'LOAD_MOCK_MESSAGES'; messages: ChatMessage[] }
-  | { type: 'MOCK_SEND_MESSAGE'; message: ChatMessage }
+  | { type: 'SEND_MESSAGE'; text: string }
+  | { type: 'REQUEST_HISTORY' }
 
   // User interactions (room phase — video call)
   | { type: 'SUBMIT_PIN'; pin: string }
@@ -125,23 +148,42 @@ export type Action =
   | { type: 'HANGUP' }
   | { type: 'DISMISS_ERROR' }
 
-  // WebSocket lifecycle
-  | { type: 'WS_CONNECTED' }
+  // Room-level WebSocket lifecycle
+  | { type: 'WS_ROOM_CONNECTED' }
+  | { type: 'WS_ROOM_DISCONNECTED' }
+  | { type: 'WS_ROOM_RECONNECTING'; attempt: number }
+
+  // WebSocket close/error (from browser callbacks)
   | { type: 'WS_ERROR'; error: string }
   | { type: 'WS_CLOSED'; code: number; reason: string; intentional: boolean }
 
-  // Media lifecycle
-  | { type: 'MEDIA_ACQUIRED'; stream: MediaStream; audioOnly: boolean }
-  | { type: 'MEDIA_ERROR'; error: string }
+  // Server responses — peers
+  | {
+      type: 'PEERS_LIST';
+      peers: Array<{ peerId: string; encryptedNickname: string }>;
+      selfPeerId: string;
+    }
+  | { type: 'PEER_JOINED_ROOM'; peerId: string; encryptedNickname: string; count: number }
+  | { type: 'PEER_LEFT_ROOM'; peerId: string; count: number }
 
-  // Signaling messages
+  // Server responses — chat
+  | { type: 'CHAT_RECEIVED'; message: ChatMessage }
+  | { type: 'CHAT_ACK'; uuid: string }
+  | { type: 'HISTORY_LOADED'; messages: ChatMessage[]; cursor: number | null; hasMore: boolean }
+
+  // Server responses — signaling / ICE
   | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy }
-  | { type: 'PEER_JOINED' }
-  | { type: 'PEER_LEFT' }
   | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit }
   | { type: 'RECEIVED_ANSWER'; answer: RTCSessionDescriptionInit }
   | { type: 'RECEIVED_ICE_CANDIDATE'; candidate: RTCIceCandidateInit }
   | { type: 'SERVER_ERROR'; error: string }
+
+  // Heartbeat
+  | { type: 'PING_RECEIVED' }
+
+  // Media lifecycle
+  | { type: 'MEDIA_ACQUIRED'; stream: MediaStream; audioOnly: boolean }
+  | { type: 'MEDIA_ERROR'; error: string }
 
   // WebRTC lifecycle
   | { type: 'RTC_CONNECTED' }

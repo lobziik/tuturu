@@ -221,6 +221,30 @@ export async function putLastSeenSeq(
 }
 
 // ============================================================================
+// Own Seq Counter (outgoing messages)
+// ============================================================================
+
+/**
+ * Get the outgoing message sequence counter for a device.
+ * Stored in the settings store with key `seq:{deviceId}`.
+ * Returns 0 if no messages have been sent from this device yet.
+ */
+export async function getOwnSeq(db: IDBDatabase, deviceId: string): Promise<number> {
+  const value = await getSetting(db, `seq:${deviceId}`);
+  if (!value) return 0;
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`Corrupt own seq counter for device ${deviceId}: "${value}"`);
+  }
+  return parsed;
+}
+
+/** Persist the outgoing message sequence counter for a device */
+export async function putOwnSeq(db: IDBDatabase, deviceId: string, seq: number): Promise<void> {
+  await putSetting(db, `seq:${deviceId}`, String(seq));
+}
+
+// ============================================================================
 // Atomic compound operations
 // ============================================================================
 

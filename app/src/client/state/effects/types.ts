@@ -24,6 +24,16 @@ export interface ResourceRefs {
   remoteStream: { current: MediaStream | null };
   errorTimeout: { current: number | null };
   aesKey: { current: CryptoKey | null };
+  /** IndexedDB connection for chat protocol operations */
+  db: { current: IDBDatabase | null };
+  /** Timer for 60s dead connection detection (no ping from server) */
+  deadTimer: { current: number | null };
+  /** Timer for reconnect with exponential backoff */
+  reconnectTimer: { current: number | null };
+  /** Current reconnect attempt counter (reset on successful connect) */
+  reconnectAttempt: { current: number };
+  /** Monotonic outgoing message sequence counter (persisted to IDB) */
+  seq: { current: number };
 }
 
 /**

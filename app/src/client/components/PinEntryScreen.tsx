@@ -38,6 +38,9 @@ export function PinEntryScreen({ dispatch }: PinEntryScreenProps) {
         </button>
       </form>
       <p class="hint">Share a 6-digit PIN with someone to start a call</p>
+      <button type="button" class="back-btn" onClick={() => dispatch({ type: 'SWITCH_TO_CHAT' })}>
+        &#x2190; Back to chat
+      </button>
     </div>
   );
 }

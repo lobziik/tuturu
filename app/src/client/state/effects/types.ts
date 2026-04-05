@@ -34,6 +34,8 @@ export interface ResourceRefs {
   reconnectAttempt: { current: number };
   /** Monotonic outgoing message sequence counter (persisted to IDB) */
   seq: { current: number };
+  /** Whether seq counter has been loaded from IDB (guards against sending with seq=0) */
+  seqLoaded: { current: boolean };
 }
 
 /**

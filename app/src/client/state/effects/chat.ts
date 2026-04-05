@@ -32,6 +32,11 @@ export function handleChatEffects(ctx: EffectContext, args: EffectArgs): void {
       return;
     }
 
+    if (!refs.seqLoaded.current) {
+      console.error('[CHAT] Cannot send: seq counter not yet loaded from IDB');
+      return;
+    }
+
     const seq = ++refs.seq.current;
     const uuid = crypto.randomUUID();
     const timestamp = Date.now();

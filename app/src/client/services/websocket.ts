@@ -9,9 +9,11 @@
  */
 
 import type { ClientToServerMessage } from '../../shared/types';
-import { ServerToClientMessageSchema } from '../../shared/schemas';
-import type { ChatMessage } from '../../shared/schemas';
-import { ChatMessageSchema } from '../../shared/schemas';
+import {
+  ServerToClientMessageSchema,
+  ChatMessageSchema,
+  type ChatMessage,
+} from '../../shared/schemas';
 import type { Action } from '../state/types';
 import { handleIncomingMessage } from './chatProtocol';
 import { decryptMessage, fromBase64, encryptMessage, toBase64 } from './crypto';
@@ -93,7 +95,7 @@ export function setupWebSocketHandlers(
   ws.onmessage = (event: MessageEvent<string>) => {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(event.data as string);
+      parsed = JSON.parse(event.data);
     } catch {
       console.warn('[WS] Received invalid JSON, ignoring');
       return;
@@ -112,7 +114,7 @@ export function setupWebSocketHandlers(
 /** Send typed v2 message to server via WebSocket */
 export function sendMessage(ws: WebSocket | null, message: ClientToServerMessage): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
-    console.error('[WS] Cannot send message, WebSocket not connected');
+    console.error(`[WS] Cannot send '${message.type}': WebSocket not connected`);
     return;
   }
   console.log('[WS] Sending:', message.type);
@@ -213,10 +215,16 @@ function handleServerMessage(
       dispatch({ type: 'SERVER_ERROR', error: message.message });
       break;
 
-    // Stubs for call-level messages (wired in session 10)
-    case 'chat-received':
     case 'peer-joined-call':
+      dispatch({ type: 'PEER_JOINED_CALL', peerId: message.peerId });
+      break;
+
     case 'peer-left-call':
+      dispatch({ type: 'PEER_LEFT_CALL', peerId: message.peerId });
+      break;
+
+    // Stubs for call-level messages not yet wired
+    case 'chat-received':
     case 'call-peers':
       console.log('[WS] Received (stub):', message.type);
       break;

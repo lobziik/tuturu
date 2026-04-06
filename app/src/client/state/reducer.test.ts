@@ -35,6 +35,7 @@ function roomState(
     screen,
     iceServers: null,
     iceTransportPolicy: 'all',
+    incomingOffer: null,
     ...overrides,
   };
 }
@@ -115,6 +116,7 @@ describe('reducer', () => {
       expect(room.screen.type).toBe('idle');
       expect(room.iceServers).toBeNull();
       expect(room.iceTransportPolicy).toBe('all');
+      expect(room.incomingOffer).toBeNull();
     });
 
     test('SUBMIT_NICKNAME is ignored in room phase', () => {
@@ -618,6 +620,32 @@ describe('reducer', () => {
       expect(room.screen.type).toBe('acquiring-media');
     });
 
+    test('SWITCH_TO_CALL just switches view when call already in progress', () => {
+      const callScreen = {
+        type: 'call' as const,
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
+      };
+      const state = roomState(callScreen, { view: 'chat', wsStatus: 'connected' });
+      const room = expectRoom(reducer(state, { type: 'SWITCH_TO_CALL' }));
+      expect(room.view).toBe('call');
+      expect(room.screen).toEqual(callScreen);
+    });
+
+    test('SWITCH_TO_CALL just switches view when waiting-for-peer', () => {
+      const screen = {
+        type: 'waiting-for-peer' as const,
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
+      };
+      const state = roomState(screen, { view: 'chat', wsStatus: 'connected' });
+      const room = expectRoom(reducer(state, { type: 'SWITCH_TO_CALL' }));
+      expect(room.view).toBe('call');
+      expect(room.screen).toEqual(screen);
+    });
+
     test('SWITCH_TO_CALL shows error when not connected', () => {
       const state = roomState({ type: 'idle' }, { view: 'chat', wsStatus: 'disconnected' });
       const room = expectRoom(reducer(state, { type: 'SWITCH_TO_CALL' }));
@@ -632,6 +660,137 @@ describe('reducer', () => {
       const state = roomState({ type: 'idle' }, { view: 'call' });
       const room = expectRoom(reducer(state, { type: 'SWITCH_TO_CHAT' }));
       expect(room.view).toBe('chat');
+    });
+  });
+
+  // ========================================================================
+  // CALL_PEERS_RECEIVED
+  // ========================================================================
+
+  describe('CALL_PEERS_RECEIVED', () => {
+    test('transitions waiting-for-peer to negotiating(caller) when peers exist', () => {
+      const state = roomState({
+        type: 'waiting-for-peer',
+        muted: false,
+        videoOff: true,
+        pipHidden: false,
+      });
+      const room = expectRoom(
+        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['peer-1'] }),
+      );
+      expect(room.screen.type).toBe('negotiating');
+      if (room.screen.type === 'negotiating') {
+        expect(room.screen.role).toBe('caller');
+        expect(room.screen.videoOff).toBe(true);
+      }
+    });
+
+    test('no-op when callPeers is empty', () => {
+      const state = roomState({
+        type: 'waiting-for-peer',
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
+      });
+      expect(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: [] })).toBe(state);
+    });
+
+    test('ignored when not in waiting-for-peer', () => {
+      const state = roomState({ type: 'idle' });
+      expect(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['p1'] })).toBe(state);
+    });
+  });
+
+  // ========================================================================
+  // Incoming call (RECEIVED_OFFER on idle, ACCEPT_CALL, DECLINE_CALL)
+  // ========================================================================
+
+  describe('Incoming call', () => {
+    test('RECEIVED_OFFER on idle screen saves incomingOffer', () => {
+      const state = roomState({ type: 'idle' });
+      const offer = { type: 'offer' as const, sdp: 'mock sdp' };
+      const room = expectRoom(
+        reducer(state, { type: 'RECEIVED_OFFER', offer, fromPeerId: 'caller-1' }),
+      );
+      expect(room.screen.type).toBe('idle');
+      expect(room.incomingOffer).toEqual({ fromPeerId: 'caller-1', offer });
+    });
+
+    test('RECEIVED_OFFER on idle is ignored if incomingOffer already set', () => {
+      const existingOffer = {
+        fromPeerId: 'caller-1',
+        offer: { type: 'offer' as const, sdp: 'first' },
+      };
+      const state = roomState({ type: 'idle' }, { incomingOffer: existingOffer });
+      const newOffer = { type: 'offer' as const, sdp: 'second' };
+      expect(
+        reducer(state, { type: 'RECEIVED_OFFER', offer: newOffer, fromPeerId: 'caller-2' }),
+      ).toBe(state);
+    });
+
+    test('RECEIVED_OFFER on call screen is ignored', () => {
+      const state = roomState({
+        type: 'call',
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
+      });
+      const offer = { type: 'offer' as const, sdp: 'mock' };
+      expect(reducer(state, { type: 'RECEIVED_OFFER', offer })).toBe(state);
+    });
+
+    test('ACCEPT_CALL transitions to acquiring-media and clears incomingOffer', () => {
+      const incomingOffer = {
+        fromPeerId: 'caller-1',
+        offer: { type: 'offer' as const, sdp: 'mock' },
+      };
+      const state = roomState({ type: 'idle' }, { incomingOffer });
+      const room = expectRoom(reducer(state, { type: 'ACCEPT_CALL' }));
+      expect(room.view).toBe('call');
+      expect(room.screen.type).toBe('acquiring-media');
+      expect(room.incomingOffer).toBeNull();
+    });
+
+    test('ACCEPT_CALL is no-op when incomingOffer is null', () => {
+      const state = roomState({ type: 'idle' });
+      expect(reducer(state, { type: 'ACCEPT_CALL' })).toBe(state);
+    });
+
+    test('DECLINE_CALL clears incomingOffer without screen change', () => {
+      const incomingOffer = {
+        fromPeerId: 'caller-1',
+        offer: { type: 'offer' as const, sdp: 'mock' },
+      };
+      const state = roomState({ type: 'idle' }, { incomingOffer });
+      const room = expectRoom(reducer(state, { type: 'DECLINE_CALL' }));
+      expect(room.screen.type).toBe('idle');
+      expect(room.incomingOffer).toBeNull();
+    });
+
+    test('HANGUP clears incomingOffer', () => {
+      const incomingOffer = {
+        fromPeerId: 'caller-1',
+        offer: { type: 'offer' as const, sdp: 'mock' },
+      };
+      const state = roomState(
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
+        { incomingOffer },
+      );
+      const room = expectRoom(reducer(state, { type: 'HANGUP' }));
+      expect(room.incomingOffer).toBeNull();
+    });
+
+    test('PEER_LEFT_CALL clears incomingOffer', () => {
+      const incomingOffer = {
+        fromPeerId: 'caller-1',
+        offer: { type: 'offer' as const, sdp: 'mock' },
+      };
+      const state = roomState(
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
+        { incomingOffer },
+      );
+      const room = expectRoom(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'caller-1' }));
+      expect(room.incomingOffer).toBeNull();
     });
   });
 });

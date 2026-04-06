@@ -18,6 +18,7 @@ import { z } from 'zod';
 
 export const ErrorCodeSchema = z.enum([
   'ROOM_FULL',
+  'CALL_FULL',
   'INVALID_MESSAGE',
   'RATE_LIMITED',
   'BLOB_TOO_LARGE',

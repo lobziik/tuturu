@@ -75,6 +75,7 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       screen: { type: 'idle' },
       iceServers: null,
       iceTransportPolicy: 'all',
+      incomingOffer: null,
     };
   }
   return state;
@@ -175,6 +176,14 @@ function roomReducer(state: RoomState, action: Action): AppState {
   switch (action.type) {
     // View switching
     case 'SWITCH_TO_CALL': {
+      // If a call is already in progress, just switch the view back — don't restart
+      if (
+        state.screen.type === 'waiting-for-peer' ||
+        state.screen.type === 'negotiating' ||
+        state.screen.type === 'call'
+      ) {
+        return { ...state, view: 'call' };
+      }
       if (state.wsStatus !== 'connected') {
         return {
           ...state,
@@ -213,6 +222,7 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'MEDIA_ERROR':
     case 'PEER_JOINED_CALL':
     case 'PEER_LEFT_CALL':
+    case 'CALL_PEERS_RECEIVED':
     case 'JOINED_ROOM':
     case 'RECEIVED_OFFER':
     case 'RECEIVED_ANSWER':
@@ -227,6 +237,8 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'TOGGLE_PIP_VISIBILITY':
     case 'FLIP_CAMERA':
     case 'HANGUP':
+    case 'ACCEPT_CALL':
+    case 'DECLINE_CALL':
     case 'DISMISS_ERROR':
       return roomCallReducer(state, action);
 
@@ -359,6 +371,7 @@ type CallAction = Extract<
       | 'MEDIA_ERROR'
       | 'PEER_JOINED_CALL'
       | 'PEER_LEFT_CALL'
+      | 'CALL_PEERS_RECEIVED'
       | 'JOINED_ROOM'
       | 'RECEIVED_OFFER'
       | 'RECEIVED_ANSWER'
@@ -373,6 +386,8 @@ type CallAction = Extract<
       | 'TOGGLE_PIP_VISIBILITY'
       | 'FLIP_CAMERA'
       | 'HANGUP'
+      | 'ACCEPT_CALL'
+      | 'DECLINE_CALL'
       | 'DISMISS_ERROR';
   }
 >;
@@ -406,9 +421,24 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       };
     }
 
+    case 'CALL_PEERS_RECEIVED': {
+      if (state.screen.type !== 'waiting-for-peer') return state;
+      if (action.callPeers.length === 0) return state;
+      return {
+        ...state,
+        screen: {
+          type: 'negotiating',
+          role: 'caller',
+          muted: state.screen.muted,
+          videoOff: state.screen.videoOff,
+          pipHidden: state.screen.pipHidden,
+        },
+      };
+    }
+
     case 'PEER_LEFT_CALL': {
       if (state.screen.type === 'idle') return state;
-      return { ...state, view: 'chat', screen: { type: 'idle' } };
+      return { ...state, view: 'chat', screen: { type: 'idle' }, incomingOffer: null };
     }
 
     case 'JOINED_ROOM':
@@ -419,6 +449,20 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       };
 
     case 'RECEIVED_OFFER': {
+      // Idle: stash as incoming call for user to accept/decline
+      if (state.screen.type === 'idle') {
+        if (state.incomingOffer !== null) return state; // already have an incoming offer
+        return {
+          ...state,
+          incomingOffer: {
+            fromPeerId: action.fromPeerId ?? 'unknown',
+            offer: action.offer,
+          },
+        };
+      }
+      // Already connected: ignore
+      if (state.screen.type === 'call') return state;
+      // Waiting-for-peer: callee negotiation flow
       if (state.screen.type !== 'waiting-for-peer') return state;
       return {
         ...state,
@@ -471,7 +515,20 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       return state;
 
     case 'HANGUP':
-      return { ...state, view: 'chat', screen: { type: 'idle' } };
+      return { ...state, view: 'chat', screen: { type: 'idle' }, incomingOffer: null };
+
+    case 'ACCEPT_CALL': {
+      if (!state.incomingOffer) return state;
+      return {
+        ...state,
+        view: 'call',
+        screen: { type: 'acquiring-media' },
+        incomingOffer: null,
+      };
+    }
+
+    case 'DECLINE_CALL':
+      return { ...state, incomingOffer: null };
 
     case 'DISMISS_ERROR': {
       if (state.screen.type !== 'error') return state;

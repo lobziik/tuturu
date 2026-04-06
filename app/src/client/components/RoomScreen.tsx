@@ -1,18 +1,22 @@
 /**
- * Room screen — main chat view with header, message feed, and input bar.
+ * Room screen — main chat view with header, message feed, input bar,
+ * incoming call banner, and floating call PiP.
  *
  * @module components/RoomScreen
  */
 
 import { useCallback, useRef } from 'preact/hooks';
 import type { ChatMessage } from '../../shared/schemas';
+import type { PeerState } from '../../shared/types';
 import type { Dispatch } from '../state/context';
-import type { WsStatus } from '../state/types';
+import type { WsStatus, Screen } from '../state/types';
 import { useVisualViewport, useTouchMovePrevention } from './roomHooks';
 import { Header } from './Header';
 import { ConnectionStatus } from './ConnectionStatus';
 import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
+import { IncomingCallBanner } from './IncomingCallBanner';
+import { FloatingCallPiP } from './FloatingCallPiP';
 
 interface RoomScreenProps {
   /** Chat messages to display */
@@ -23,6 +27,14 @@ interface RoomScreenProps {
   wsStatus: WsStatus;
   /** Whether server has more history available */
   historyHasMore: boolean;
+  /** Connected peers in the room */
+  peers: Record<string, PeerState>;
+  /** Current call screen state */
+  screen: Screen;
+  /** Stashed incoming offer (when screen is idle) */
+  incomingOffer: { fromPeerId: string; offer: RTCSessionDescriptionInit } | null;
+  /** Remote peer's media stream (for floating PiP) */
+  remoteStream: MediaStream | null;
   /** State dispatch function */
   dispatch: Dispatch;
 }
@@ -33,6 +45,10 @@ export function RoomScreen({
   deviceId,
   wsStatus,
   historyHasMore,
+  peers,
+  screen,
+  incomingOffer,
+  remoteStream,
   dispatch,
 }: Readonly<RoomScreenProps>) {
   const inputRef = useRef<HTMLDivElement>(null);
@@ -61,10 +77,24 @@ export function RoomScreen({
     inputRef.current?.focus();
   }, []);
 
+  const peerCount = Object.keys(peers).length + 1;
+  const callDisabled =
+    screen.type !== 'idle' || wsStatus !== 'connected' || Object.keys(peers).length === 0;
+
+  // Show floating PiP when call is active but view is chat (minimized)
+  const showFloatingPiP =
+    screen.type === 'waiting-for-peer' || screen.type === 'negotiating' || screen.type === 'call';
+
   return (
     <div ref={screenRef} class="room-screen">
-      <Header onCallClick={handleCallClick} />
+      <Header
+        onCallClick={handleCallClick}
+        peerCount={peerCount}
+        callDisabled={callDisabled}
+        inCall={showFloatingPiP}
+      />
       <ConnectionStatus wsStatus={wsStatus} />
+      {incomingOffer !== null && <IncomingCallBanner dispatch={dispatch} />}
       <ChatFeed
         messages={messages}
         selfDeviceId={deviceId}
@@ -72,6 +102,7 @@ export function RoomScreen({
         onRefocusInput={handleRefocusInput}
       />
       <ChatInput onSend={handleSend} inputRef={inputRef} disabled={wsStatus !== 'connected'} />
+      {showFloatingPiP && <FloatingCallPiP remoteStream={remoteStream} dispatch={dispatch} />}
     </div>
   );
 }

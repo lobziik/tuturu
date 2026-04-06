@@ -46,6 +46,10 @@ export function App() {
   const seqLoadedRef = useRef<boolean>(false);
   const makingOfferRef = useRef<boolean>(false);
   const inCallRef = useRef<boolean>(false);
+  const pendingOfferRef = useRef<{
+    offer: RTCSessionDescriptionInit;
+    fromPeerId: string;
+  } | null>(null);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
@@ -64,6 +68,7 @@ export function App() {
       seqLoaded: seqLoadedRef,
       makingOffer: makingOfferRef,
       inCall: inCallRef,
+      pendingOffer: pendingOfferRef,
     }),
     [],
   );
@@ -149,6 +154,10 @@ export function App() {
           deviceId={roomState.deviceId}
           wsStatus={roomState.wsStatus}
           historyHasMore={roomState.historyHasMore}
+          peers={roomState.peers}
+          screen={roomState.screen}
+          incomingOffer={roomState.incomingOffer}
+          remoteStream={refs.remoteStream.current}
           dispatch={dispatch}
         />
       );

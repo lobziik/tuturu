@@ -64,7 +64,10 @@ export interface RoomManager {
   routeToPeer(roomId: string, targetPeerId: string, message: ServerToClientMessage): boolean;
 
   /** Peer joins the video call. Broadcasts peer-joined-call. Returns existing call peers. */
-  joinCall(roomId: string, peerId: string): { callPeers: string[] } | { error: 'not_in_room' };
+  joinCall(
+    roomId: string,
+    peerId: string,
+  ): { callPeers: string[] } | { error: 'not_in_room' | 'call_full' };
 
   /** Peer leaves the video call. Broadcasts peer-left-call. */
   leaveCall(roomId: string, peerId: string): void;
@@ -206,10 +209,15 @@ export function createRoomManager(options: { maxParticipants: number; send: Send
   function joinCall(
     roomId: string,
     peerId: string,
-  ): { callPeers: string[] } | { error: 'not_in_room' } {
+  ): { callPeers: string[] } | { error: 'not_in_room' | 'call_full' } {
     const room = rooms.get(roomId);
     if (!room?.peers.has(peerId)) {
       return { error: 'not_in_room' };
+    }
+
+    // 1-to-1 guard: reject if call already has 2 participants
+    if (room.callPeers.size >= 2) {
+      return { error: 'call_full' };
     }
 
     // Collect existing call peers BEFORE adding the new one

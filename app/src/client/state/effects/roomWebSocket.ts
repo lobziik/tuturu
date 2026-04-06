@@ -71,17 +71,21 @@ function handleRoomEntry(
   }
 
   connectWebSocket(ctx, { roomId, nickname, aesKey });
-  loadCachedMessages(refs.db.current, dispatch);
-  initSeqCounter(refs, refs.db.current, deviceId);
+  loadCachedMessages(refs.db.current, roomId, dispatch);
+  initSeqCounter(refs, refs.db.current, roomId, deviceId);
 }
 
 /** Load cached messages from IndexedDB for instant display */
-function loadCachedMessages(db: IDBDatabase | null, dispatch: EffectContext['dispatch']): void {
+function loadCachedMessages(
+  db: IDBDatabase | null,
+  roomId: string,
+  dispatch: EffectContext['dispatch'],
+): void {
   if (!db) return;
 
   void (async () => {
     try {
-      const cached = await getMessagesByTimestamp(db, Date.now() + 1, 200);
+      const cached = await getMessagesByTimestamp(db, roomId, Date.now() + 1, 200);
       if (cached.length > 0) {
         dispatch({
           type: 'HISTORY_LOADED',
@@ -101,6 +105,7 @@ function loadCachedMessages(db: IDBDatabase | null, dispatch: EffectContext['dis
 function initSeqCounter(
   refs: EffectContext['refs'],
   db: IDBDatabase | null,
+  roomId: string,
   deviceId: string,
 ): void {
   refs.seqLoaded.current = false;
@@ -113,7 +118,7 @@ function initSeqCounter(
   void (async () => {
     try {
       const { getOwnSeq } = await import('../../services/db');
-      const ownSeq = await getOwnSeq(db, deviceId);
+      const ownSeq = await getOwnSeq(db, roomId, deviceId);
       refs.seq.current = ownSeq;
     } catch (err) {
       console.error('[ROOM_WS] Failed to load seq counter:', err);

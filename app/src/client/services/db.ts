@@ -3,9 +3,9 @@
  *
  * @remarks
  * Stores:
- * - `messages` — decrypted chat messages (keyPath: uuid)
+ * - `messages` — decrypted chat messages with roomId (keyPath: uuid)
  * - `settings` — key-value pairs: nickname, deviceId (keyPath: key)
- * - `seq` — per-deviceId sequence tracking (keyPath: deviceId)
+ * - `seq` — per-roomId+deviceId sequence tracking (compound keyPath: [roomId, deviceId])
  *
  * All public functions take an IDBDatabase instance for testability.
  * Use {@link openDB} for the singleton connection in production.
@@ -32,6 +32,19 @@ const migrations: Record<number, (db: IDBDatabase) => void> = {
 
     db.createObjectStore('settings', { keyPath: 'key' });
     db.createObjectStore('seq', { keyPath: 'deviceId' });
+  },
+  2: (db) => {
+    // Clean break: delete v1 stores without roomId, recreate with roomId support.
+    // v2 is pre-production so no data migration is needed.
+    db.deleteObjectStore('messages');
+    db.deleteObjectStore('seq');
+
+    const messages = db.createObjectStore('messages', { keyPath: 'uuid' });
+    messages.createIndex('by_timestamp', 'timestamp');
+    messages.createIndex('by_deviceId', 'deviceId');
+    messages.createIndex('by_roomId_timestamp', ['roomId', 'timestamp']);
+
+    db.createObjectStore('seq', { keyPath: ['roomId', 'deviceId'] });
   },
 };
 
@@ -108,10 +121,14 @@ function promisifyTransaction(tx: IDBTransaction): Promise<void> {
 // Messages Store
 // ============================================================================
 
-/** Store a decrypted chat message */
-export async function putMessage(db: IDBDatabase, message: ChatMessage): Promise<void> {
+/** Store a decrypted chat message scoped to a room */
+export async function putMessage(
+  db: IDBDatabase,
+  roomId: string,
+  message: ChatMessage,
+): Promise<void> {
   const tx = db.transaction('messages', 'readwrite');
-  tx.objectStore('messages').put(message);
+  tx.objectStore('messages').put({ ...message, roomId });
   await promisifyTransaction(tx);
 }
 
@@ -123,23 +140,26 @@ export async function getMessage(db: IDBDatabase, uuid: string): Promise<ChatMes
 }
 
 /**
- * Retrieve messages ordered by timestamp (newest first), with cursor-based pagination.
+ * Retrieve messages for a room ordered by timestamp (newest first), with cursor-based pagination.
  *
  * @param db - IndexedDB database connection
+ * @param roomId - Room to retrieve messages for
  * @param before - Only return messages with timestamp < before (unix ms). Omit for latest.
  * @param limit - Maximum number of messages to return
  */
 export async function getMessagesByTimestamp(
   db: IDBDatabase,
+  roomId: string,
   before: number,
   limit: number,
 ): Promise<ChatMessage[]> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('messages', 'readonly');
-    const index = tx.objectStore('messages').index('by_timestamp');
+    const index = tx.objectStore('messages').index('by_roomId_timestamp');
 
-    // Open cursor from (before - 1) going backwards (prev = descending)
-    const range = IDBKeyRange.upperBound(before, true); // exclusive upper bound
+    // Compound index [roomId, timestamp]: lower bound is [roomId] (min timestamp),
+    // upper bound is [roomId, before) (exclusive on timestamp)
+    const range = IDBKeyRange.bound([roomId], [roomId, before], false, true);
     const request = index.openCursor(range, 'prev');
 
     const results: ChatMessage[] = [];
@@ -200,21 +220,29 @@ export async function getOrCreateDeviceId(db: IDBDatabase): Promise<string> {
 // Seq Store
 // ============================================================================
 
-/** Get the last seen sequence number for a deviceId. Returns 0 for unknown devices. */
-export async function getLastSeenSeq(db: IDBDatabase, deviceId: string): Promise<number> {
+/**
+ * Get the last seen sequence number for a deviceId in a room.
+ * Returns 0 for unknown devices.
+ */
+export async function getLastSeenSeq(
+  db: IDBDatabase,
+  roomId: string,
+  deviceId: string,
+): Promise<number> {
   const tx = db.transaction('seq', 'readonly');
-  const result = await promisifyRequest(tx.objectStore('seq').get(deviceId));
+  const result = await promisifyRequest(tx.objectStore('seq').get([roomId, deviceId]));
   if (!result) return 0;
   return (result as SeqRecord).lastSeenSeq;
 }
 
-/** Update the last seen sequence number for a deviceId */
+/** Update the last seen sequence number for a deviceId in a room */
 export async function putLastSeenSeq(
   db: IDBDatabase,
+  roomId: string,
   deviceId: string,
   seq: number,
 ): Promise<void> {
-  const record: SeqRecord = { deviceId, lastSeenSeq: seq };
+  const record: SeqRecord = { roomId, deviceId, lastSeenSeq: seq };
   const tx = db.transaction('seq', 'readwrite');
   tx.objectStore('seq').put(record);
   await promisifyTransaction(tx);
@@ -225,23 +253,34 @@ export async function putLastSeenSeq(
 // ============================================================================
 
 /**
- * Get the outgoing message sequence counter for a device.
- * Stored in the settings store with key `seq:{deviceId}`.
- * Returns 0 if no messages have been sent from this device yet.
+ * Get the outgoing message sequence counter for a device in a room.
+ * Stored in the settings store with key `seq:{roomId}:{deviceId}`.
+ * Returns 0 if no messages have been sent from this device in this room yet.
  */
-export async function getOwnSeq(db: IDBDatabase, deviceId: string): Promise<number> {
-  const value = await getSetting(db, `seq:${deviceId}`);
+export async function getOwnSeq(
+  db: IDBDatabase,
+  roomId: string,
+  deviceId: string,
+): Promise<number> {
+  const value = await getSetting(db, `seq:${roomId}:${deviceId}`);
   if (!value) return 0;
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed)) {
-    throw new TypeError(`Corrupt own seq counter for device ${deviceId}: "${value}"`);
+    throw new TypeError(
+      `Corrupt own seq counter for device ${deviceId} in room ${roomId}: "${value}"`,
+    );
   }
   return parsed;
 }
 
-/** Persist the outgoing message sequence counter for a device */
-export async function putOwnSeq(db: IDBDatabase, deviceId: string, seq: number): Promise<void> {
-  await putSetting(db, `seq:${deviceId}`, String(seq));
+/** Persist the outgoing message sequence counter for a device in a room */
+export async function putOwnSeq(
+  db: IDBDatabase,
+  roomId: string,
+  deviceId: string,
+  seq: number,
+): Promise<void> {
+  await putSetting(db, `seq:${roomId}:${deviceId}`, String(seq));
 }
 
 // ============================================================================
@@ -255,20 +294,24 @@ export type StoreResult = { stored: true } | { stored: false; reason: 'replay' |
  * Atomically check replay/dedup guards and store a message in a single readwrite transaction.
  *
  * Performs in one IDB transaction:
- * 1. Read lastSeenSeq for message.deviceId — reject if message.seq ≤ lastSeenSeq
+ * 1. Read lastSeenSeq for message.deviceId in roomId — reject if message.seq <= lastSeenSeq
  * 2. Read messages store by UUID — reject if already exists
- * 3. Write message + update lastSeenSeq
+ * 3. Write message (with roomId) + update lastSeenSeq
  *
  * This eliminates TOCTOU races when multiple messages are processed concurrently.
  */
-export function checkAndStoreMessage(db: IDBDatabase, message: ChatMessage): Promise<StoreResult> {
+export function checkAndStoreMessage(
+  db: IDBDatabase,
+  roomId: string,
+  message: ChatMessage,
+): Promise<StoreResult> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(['messages', 'seq'], 'readwrite');
     const seqStore = tx.objectStore('seq');
     const messagesStore = tx.objectStore('messages');
 
-    // Step 1: Read lastSeenSeq
-    const seqReq = seqStore.get(message.deviceId);
+    // Step 1: Read lastSeenSeq (compound key: [roomId, deviceId])
+    const seqReq = seqStore.get([roomId, message.deviceId]);
     seqReq.onsuccess = () => {
       const record = seqReq.result as SeqRecord | undefined;
       const lastSeenSeq = record?.lastSeenSeq ?? 0;
@@ -288,9 +331,10 @@ export function checkAndStoreMessage(db: IDBDatabase, message: ChatMessage): Pro
           return;
         }
 
-        // Step 3: Write message + update seq
-        messagesStore.put(message);
+        // Step 3: Write message (with roomId) + update seq
+        messagesStore.put({ ...message, roomId });
         seqStore.put({
+          roomId,
           deviceId: message.deviceId,
           lastSeenSeq: message.seq,
         } satisfies SeqRecord);

@@ -940,3 +940,139 @@ footer a:hover {
 .load-more-sentinel {
   height: 1px;
 }
+
+/* ─── Header: left group + online indicator ─── */
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.online-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.online-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.online-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-header-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.chat-header-btn:disabled:hover {
+  background: transparent;
+}
+
+.chat-header-btn.in-call {
+  background: #22c55e;
+  border-color: #22c55e;
+  color: white;
+  animation: pulse-call 2s ease-in-out infinite;
+}
+
+.chat-header-btn.in-call:hover {
+  background: #16a34a;
+}
+
+@keyframes pulse-call {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(34 197 94 / 40%);
+  }
+
+  50% {
+    box-shadow: 0 0 0 6px rgb(34 197 94 / 0%);
+  }
+}
+
+/* ─── Incoming Call Banner ─── */
+
+.incoming-call-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #1e3a5f;
+  border-bottom: 1px solid #2563eb;
+  flex-shrink: 0;
+  gap: 1rem;
+}
+
+.incoming-call-text {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #e0f2fe;
+}
+
+.incoming-call-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.incoming-call-btn {
+  padding: 0.375rem 1rem;
+  border: none;
+  border-radius: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.incoming-call-btn:hover {
+  opacity: 0.85;
+}
+
+.incoming-call-btn.accept {
+  background: #22c55e;
+  color: white;
+}
+
+.incoming-call-btn.decline {
+  background: #ef4444;
+  color: white;
+}
+
+/* ─── Floating Call PiP (minimized call overlay) ─── */
+
+.floating-call-pip {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  width: 120px;
+  height: 90px;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--bg-dark, #1a1a2e);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 40%);
+  z-index: 1000;
+  touch-action: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floating-pip-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.floating-pip-icon {
+  font-size: 1.5rem;
+}

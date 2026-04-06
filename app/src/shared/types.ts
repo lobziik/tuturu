@@ -37,10 +37,12 @@ export interface SettingRecord {
   value: string;
 }
 
-/** IndexedDB `seq` store record shape — tracks last seen sequence per sender */
+/** IndexedDB `seq` store record shape — tracks last seen sequence per sender per room */
 export interface SeqRecord {
+  /** Room this seq record belongs to */
+  roomId: string;
   /** Sender's device identifier */
   deviceId: string;
-  /** Highest seq number received from this deviceId */
+  /** Highest seq number received from this deviceId in this room */
   lastSeenSeq: number;
 }

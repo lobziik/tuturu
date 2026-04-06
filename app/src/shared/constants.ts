@@ -30,4 +30,4 @@ export const MAX_ROOM_PARTICIPANTS = 6;
 export const DB_NAME = 'tuturu';
 
 /** IndexedDB schema version — increment when adding migrations */
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;

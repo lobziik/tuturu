@@ -309,6 +309,7 @@ export function checkAndStoreMessage(
     const tx = db.transaction(['messages', 'seq'], 'readwrite');
     const seqStore = tx.objectStore('seq');
     const messagesStore = tx.objectStore('messages');
+    let intentionalAbort = false;
 
     // Step 1: Read lastSeenSeq (compound key: [roomId, deviceId])
     const seqReq = seqStore.get([roomId, message.deviceId]);
@@ -317,6 +318,7 @@ export function checkAndStoreMessage(
       const lastSeenSeq = record?.lastSeenSeq ?? 0;
 
       if (message.seq <= lastSeenSeq) {
+        intentionalAbort = true;
         tx.abort();
         resolve({ stored: false, reason: 'replay' });
         return;
@@ -326,6 +328,7 @@ export function checkAndStoreMessage(
       const msgReq = messagesStore.get(message.uuid);
       msgReq.onsuccess = () => {
         if (msgReq.result !== undefined) {
+          intentionalAbort = true;
           tx.abort();
           resolve({ stored: false, reason: 'duplicate' });
           return;
@@ -346,10 +349,8 @@ export function checkAndStoreMessage(
 
     tx.oncomplete = () => resolve({ stored: true });
     tx.onerror = () => reject(tx.error ?? new DOMException('Transaction failed'));
-    // onabort fires for our intentional aborts — already resolved above
     tx.onabort = () => {
-      // Intentional aborts (replay/duplicate) already resolved — this is a no-op for those.
-      // For unexpected aborts (e.g. QuotaExceededError), this rejects the promise.
+      if (intentionalAbort) return;
       reject(tx.error ?? new DOMException('Transaction aborted'));
     };
   });

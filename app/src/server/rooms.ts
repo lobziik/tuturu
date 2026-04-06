@@ -63,13 +63,13 @@ export interface RoomManager {
   /** Send message to a specific peer. Returns false if peer not found. */
   routeToPeer(roomId: string, targetPeerId: string, message: ServerToClientMessage): boolean;
 
-  /** Peer joins the video call. Broadcasts peer-joined-call. Returns existing call peers. */
+  /** Peer joins the video call. Broadcasts call-peers to all room members. Returns existing call peers. */
   joinCall(
     roomId: string,
     peerId: string,
   ): { callPeers: string[] } | { error: 'not_in_room' | 'call_full' };
 
-  /** Peer leaves the video call. Broadcasts peer-left-call. */
+  /** Peer leaves the video call. Broadcasts call-peers to all room members. */
   leaveCall(roomId: string, peerId: string): void;
 
   /** Get all peers currently in a video call */
@@ -220,21 +220,19 @@ export function createRoomManager(options: { maxParticipants: number; send: Send
       return { error: 'call_full' };
     }
 
-    // Collect existing call peers BEFORE adding the new one
-    const existingCallPeers = Array.from(room.callPeers);
-
     room.callPeers.add(peerId);
 
-    // Broadcast peer-joined-call to existing call peers
-    for (const existingPeerId of existingCallPeers) {
-      const peer = room.peers.get(existingPeerId);
-      if (peer) {
-        send(peer.ws, { type: 'peer-joined-call', v: 1, peerId });
+    // Broadcast updated call peer list to ALL room peers (except the joiner)
+    const updatedCallPeers = Array.from(room.callPeers);
+    for (const [existingPeerId, peer] of room.peers) {
+      if (existingPeerId !== peerId) {
+        send(peer.ws, { type: 'call-peers', v: 1, callPeers: updatedCallPeers });
       }
     }
 
     console.log(`[CALL] Peer ${peerId} joined call in room ${roomId}`);
-    return { callPeers: existingCallPeers };
+    // Return peers excluding self (joiner already knows they joined)
+    return { callPeers: updatedCallPeers.filter((id) => id !== peerId) };
   }
 
   function leaveCall(roomId: string, peerId: string): void {
@@ -243,11 +241,11 @@ export function createRoomManager(options: { maxParticipants: number; send: Send
 
     room.callPeers.delete(peerId);
 
-    // Broadcast peer-left-call to remaining call peers
-    for (const remainingPeerId of room.callPeers) {
-      const peer = room.peers.get(remainingPeerId);
-      if (peer) {
-        send(peer.ws, { type: 'peer-left-call', v: 1, peerId });
+    // Broadcast updated call peer list to ALL room peers (except the leaver)
+    const updatedCallPeers = Array.from(room.callPeers);
+    for (const [existingPeerId, peer] of room.peers) {
+      if (existingPeerId !== peerId) {
+        send(peer.ws, { type: 'call-peers', v: 1, callPeers: updatedCallPeers });
       }
     }
 

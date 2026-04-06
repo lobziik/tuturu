@@ -694,7 +694,7 @@ describe('heartbeat', () => {
 // ============================================================================
 
 describe('call', () => {
-  test('join-call returns call-peers and broadcasts peer-joined-call', async () => {
+  test('join-call returns call-peers to joiner and broadcasts to all room peers', async () => {
     const roomId = `room-call-${Date.now()}`;
 
     const { ws: ws1 } = await connectAndJoin(roomId, 'Alice');
@@ -704,25 +704,57 @@ describe('call', () => {
     const { ws: ws2 } = await connectAndJoin(roomId, 'Bob');
     await peerJoinedPromise;
 
-    // Client 1 joins call
+    // Client 1 joins call — gets call-peers response (empty, first to join)
     const callPeersPromise = waitForMessage(ws1, 'call-peers');
     sendMsg(ws1, { type: 'join-call', v: 1 });
     const callPeers = await callPeersPromise;
     expect(callPeers.callPeers).toHaveLength(0);
 
-    // Client 2 joins call — Client 1 should get peer-joined-call
-    const peerJoinedCallPromise = waitForMessage(ws1, 'peer-joined-call');
+    // Client 2 joins call — Client 1 should get updated call-peers list
+    const updatedPeersPromise = waitForMessage(ws1, 'call-peers');
     sendMsg(ws2, { type: 'join-call', v: 1 });
-    const peerJoinedCall = await peerJoinedCallPromise;
-    expect(peerJoinedCall.type).toBe('peer-joined-call');
+    const updatedPeers = await updatedPeersPromise;
+    expect(updatedPeers.type).toBe('call-peers');
+    expect(updatedPeers.callPeers).toHaveLength(2);
 
-    // Client 2 leaves call — Client 1 should get peer-left-call
-    const peerLeftCallPromise = waitForMessage(ws1, 'peer-left-call');
+    // Client 2 leaves call — Client 1 should get updated call-peers (only 1 left)
+    const afterLeavePromise = waitForMessage(ws1, 'call-peers');
     sendMsg(ws2, { type: 'leave-call', v: 1 });
-    const peerLeftCall = await peerLeftCallPromise;
-    expect(peerLeftCall.type).toBe('peer-left-call');
+    const afterLeave = await afterLeavePromise;
+    expect(afterLeave.type).toBe('call-peers');
+    expect(afterLeave.callPeers).toHaveLength(1);
 
     ws1.close();
     ws2.close();
+  });
+
+  test('non-participant receives call-peers broadcasts', async () => {
+    const roomId = `room-call-${Date.now()}`;
+
+    const { ws: ws1 } = await connectAndJoin(roomId, 'Alice');
+    const peerJoinedPromise1 = waitForMessage(ws1, 'peer-joined');
+    const { ws: ws2 } = await connectAndJoin(roomId, 'Bob');
+    await peerJoinedPromise1;
+
+    // Third peer joins room (observer, not in call)
+    const peerJoinedPromise2 = waitForMessage(ws1, 'peer-joined');
+    const { ws: ws3 } = await connectAndJoin(roomId, 'Charlie');
+    await peerJoinedPromise2;
+
+    // Client 1 joins call — observer (ws3) should get call-peers broadcast
+    const observerCallPeersPromise = waitForMessage(ws3, 'call-peers');
+    sendMsg(ws1, { type: 'join-call', v: 1 });
+    const observerCallPeers = await observerCallPeersPromise;
+    expect(observerCallPeers.callPeers).toHaveLength(1);
+
+    // Client 1 leaves call — observer should see empty call-peers
+    const observerLeavePromise = waitForMessage(ws3, 'call-peers');
+    sendMsg(ws1, { type: 'leave-call', v: 1 });
+    const afterLeave = await observerLeavePromise;
+    expect(afterLeave.callPeers).toHaveLength(0);
+
+    ws1.close();
+    ws2.close();
+    ws3.close();
   });
 });

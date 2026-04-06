@@ -75,6 +75,7 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       screen: { type: 'idle' },
       iceServers: null,
       iceTransportPolicy: 'all',
+      callActive: false,
       incomingOffer: null,
     };
   }
@@ -220,8 +221,6 @@ function roomReducer(state: RoomState, action: Action): AppState {
     // Video call sub-machine
     case 'MEDIA_ACQUIRED':
     case 'MEDIA_ERROR':
-    case 'PEER_JOINED_CALL':
-    case 'PEER_LEFT_CALL':
     case 'CALL_PEERS_RECEIVED':
     case 'JOINED_ROOM':
     case 'RECEIVED_OFFER':
@@ -311,11 +310,12 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
       return { ...state, wsStatus: 'connected' };
 
     case 'WS_ROOM_DISCONNECTED': {
-      const callActive = ['call', 'negotiating', 'waiting-for-peer'].includes(state.screen.type);
+      const inLocalCall = ['call', 'negotiating', 'waiting-for-peer'].includes(state.screen.type);
       return {
         ...state,
         wsStatus: 'disconnected',
-        screen: callActive
+        callActive: false,
+        screen: inLocalCall
           ? {
               type: 'error',
               message: 'Connection lost',
@@ -334,9 +334,15 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
 
     case 'WS_CLOSED':
       if (action.intentional) {
-        return { ...state, wsStatus: 'disconnected', view: 'chat', screen: { type: 'idle' } };
+        return {
+          ...state,
+          wsStatus: 'disconnected',
+          callActive: false,
+          view: 'chat',
+          screen: { type: 'idle' },
+        };
       }
-      return { ...state, wsStatus: 'disconnected' };
+      return { ...state, wsStatus: 'disconnected', callActive: false };
 
     case 'PEERS_LIST': {
       const peers: Record<string, { peerId: string }> = {};
@@ -369,8 +375,6 @@ type CallAction = Extract<
     type:
       | 'MEDIA_ACQUIRED'
       | 'MEDIA_ERROR'
-      | 'PEER_JOINED_CALL'
-      | 'PEER_LEFT_CALL'
       | 'CALL_PEERS_RECEIVED'
       | 'JOINED_ROOM'
       | 'RECEIVED_OFFER'
@@ -407,38 +411,43 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       return toErrorScreen(state, action.error, true, state.screen);
     }
 
-    case 'PEER_JOINED_CALL': {
-      if (state.screen.type !== 'waiting-for-peer') return state;
-      return {
-        ...state,
-        screen: {
-          type: 'negotiating',
-          role: 'caller',
-          muted: state.screen.muted,
-          videoOff: state.screen.videoOff,
-          pipHidden: state.screen.pipHidden,
-        },
-      };
-    }
-
     case 'CALL_PEERS_RECEIVED': {
-      if (state.screen.type !== 'waiting-for-peer') return state;
-      if (action.callPeers.length === 0) return state;
-      return {
-        ...state,
-        screen: {
-          type: 'negotiating',
-          role: 'caller',
-          muted: state.screen.muted,
-          videoOff: state.screen.videoOff,
-          pipHidden: state.screen.pipHidden,
-        },
-      };
-    }
+      const remotePeers = action.callPeers.filter((id) => id !== state.selfPeerId);
+      const callActive = action.callPeers.length > 0;
 
-    case 'PEER_LEFT_CALL': {
-      if (state.screen.type === 'idle') return state;
-      return { ...state, view: 'chat', screen: { type: 'idle' }, incomingOffer: null };
+      // Waiting for someone to negotiate with
+      if (state.screen.type === 'waiting-for-peer' && remotePeers.length > 0) {
+        return {
+          ...state,
+          callActive,
+          screen: {
+            type: 'negotiating',
+            role: 'caller',
+            muted: state.screen.muted,
+            videoOff: state.screen.videoOff,
+            pipHidden: state.screen.pipHidden,
+          },
+        };
+      }
+
+      // Remote peer left during active call or negotiation — call is over.
+      // Force callActive=false because cleanup will send leave-call, but
+      // the server broadcasts call-peers:[] to everyone EXCEPT us.
+      if (
+        (state.screen.type === 'call' || state.screen.type === 'negotiating') &&
+        remotePeers.length === 0
+      ) {
+        return {
+          ...state,
+          callActive: false,
+          view: 'chat',
+          screen: { type: 'idle' },
+          incomingOffer: null,
+        };
+      }
+
+      // All other cases: just update callActive
+      return { ...state, callActive };
     }
 
     case 'JOINED_ROOM':
@@ -515,7 +524,13 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       return state;
 
     case 'HANGUP':
-      return { ...state, view: 'chat', screen: { type: 'idle' }, incomingOffer: null };
+      return {
+        ...state,
+        view: 'chat',
+        screen: { type: 'idle' },
+        callActive: false,
+        incomingOffer: null,
+      };
 
     case 'ACCEPT_CALL': {
       if (!state.incomingOffer) return state;

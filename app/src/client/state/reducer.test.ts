@@ -35,6 +35,7 @@ function roomState(
     screen,
     iceServers: null,
     iceTransportPolicy: 'all',
+    callActive: false,
     incomingOffer: null,
     ...overrides,
   };
@@ -116,6 +117,7 @@ describe('reducer', () => {
       expect(room.screen.type).toBe('idle');
       expect(room.iceServers).toBeNull();
       expect(room.iceTransportPolicy).toBe('all');
+      expect(room.callActive).toBe(false);
       expect(room.incomingOffer).toBeNull();
     });
 
@@ -422,52 +424,97 @@ describe('reducer', () => {
   // ========================================================================
 
   describe('Signaling messages', () => {
-    test('PEER_JOINED_CALL transitions waiting-for-peer to negotiating as caller', () => {
-      const state = roomState({
-        type: 'waiting-for-peer',
-        muted: true,
-        videoOff: false,
-        pipHidden: false,
-      });
-      const room = expectRoom(reducer(state, { type: 'PEER_JOINED_CALL', peerId: 'p2' }));
+    test('CALL_PEERS_RECEIVED with remote peer transitions waiting-for-peer to negotiating', () => {
+      const state = roomState(
+        {
+          type: 'waiting-for-peer',
+          muted: true,
+          videoOff: false,
+          pipHidden: false,
+        },
+        { selfPeerId: 'self-peer' },
+      );
+      const room = expectRoom(
+        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['self-peer', 'p2'] }),
+      );
       expect(room.screen.type).toBe('negotiating');
       if (room.screen.type === 'negotiating') {
         expect(room.screen.role).toBe('caller');
         expect(room.screen.muted).toBe(true);
       }
+      expect(room.callActive).toBe(true);
     });
 
-    test('PEER_JOINED_CALL is ignored in non-waiting-for-peer states', () => {
-      const state = roomState({ type: 'idle' });
-      expect(reducer(state, { type: 'PEER_JOINED_CALL', peerId: 'p2' })).toBe(state);
+    test('CALL_PEERS_RECEIVED with only self does not transition waiting-for-peer', () => {
+      const state = roomState(
+        {
+          type: 'waiting-for-peer',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
+        { selfPeerId: 'self-peer' },
+      );
+      const room = expectRoom(
+        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['self-peer'] }),
+      );
+      expect(room.screen.type).toBe('waiting-for-peer');
+      expect(room.callActive).toBe(true);
     });
 
-    test('PEER_LEFT_CALL during call returns to chat and idle', () => {
+    test('CALL_PEERS_RECEIVED with empty list during call returns to idle', () => {
       const state = roomState({
         type: 'call',
         muted: false,
         videoOff: false,
         pipHidden: false,
       });
-      const room = expectRoom(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'p2' }));
+      const room = expectRoom(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: [] }));
       expect(room.screen.type).toBe('idle');
       expect(room.view).toBe('chat');
+      expect(room.callActive).toBe(false);
     });
 
-    test('PEER_LEFT_CALL during error returns to chat and idle', () => {
+    test('CALL_PEERS_RECEIVED with only self during call returns to idle with callActive false', () => {
+      const state = roomState(
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
+        { selfPeerId: 'self-peer' },
+      );
+      const room = expectRoom(
+        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['self-peer'] }),
+      );
+      expect(room.screen.type).toBe('idle');
+      expect(room.view).toBe('chat');
+      expect(room.callActive).toBe(false);
+    });
+
+    test('CALL_PEERS_RECEIVED with empty list during negotiation returns to idle', () => {
       const state = roomState({
-        type: 'error',
-        message: 'Connection failed',
-        canRetry: false,
+        type: 'negotiating',
+        role: 'caller',
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
       });
-      const room = expectRoom(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'p2' }));
+      const room = expectRoom(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: [] }));
       expect(room.screen.type).toBe('idle');
       expect(room.view).toBe('chat');
+      expect(room.callActive).toBe(false);
     });
 
-    test('PEER_LEFT_CALL is ignored in idle state', () => {
+    test('CALL_PEERS_RECEIVED updates callActive for non-participant', () => {
       const state = roomState({ type: 'idle' });
-      expect(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'p2' })).toBe(state);
+      const room = expectRoom(
+        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['p1', 'p2'] }),
+      );
+      expect(room.screen.type).toBe('idle');
+      expect(room.callActive).toBe(true);
+    });
+
+    test('CALL_PEERS_RECEIVED clears callActive when call ends', () => {
+      const state = roomState({ type: 'idle' }, { callActive: true });
+      const room = expectRoom(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: [] }));
+      expect(room.callActive).toBe(false);
     });
 
     test('JOINED_ROOM stores ICE servers and transport policy', () => {
@@ -664,44 +711,6 @@ describe('reducer', () => {
   });
 
   // ========================================================================
-  // CALL_PEERS_RECEIVED
-  // ========================================================================
-
-  describe('CALL_PEERS_RECEIVED', () => {
-    test('transitions waiting-for-peer to negotiating(caller) when peers exist', () => {
-      const state = roomState({
-        type: 'waiting-for-peer',
-        muted: false,
-        videoOff: true,
-        pipHidden: false,
-      });
-      const room = expectRoom(
-        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['peer-1'] }),
-      );
-      expect(room.screen.type).toBe('negotiating');
-      if (room.screen.type === 'negotiating') {
-        expect(room.screen.role).toBe('caller');
-        expect(room.screen.videoOff).toBe(true);
-      }
-    });
-
-    test('no-op when callPeers is empty', () => {
-      const state = roomState({
-        type: 'waiting-for-peer',
-        muted: false,
-        videoOff: false,
-        pipHidden: false,
-      });
-      expect(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: [] })).toBe(state);
-    });
-
-    test('ignored when not in waiting-for-peer', () => {
-      const state = roomState({ type: 'idle' });
-      expect(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['p1'] })).toBe(state);
-    });
-  });
-
-  // ========================================================================
   // Incoming call (RECEIVED_OFFER on idle, ACCEPT_CALL, DECLINE_CALL)
   // ========================================================================
 
@@ -780,7 +789,7 @@ describe('reducer', () => {
       expect(room.incomingOffer).toBeNull();
     });
 
-    test('PEER_LEFT_CALL clears incomingOffer', () => {
+    test('CALL_PEERS_RECEIVED with empty list clears incomingOffer during call', () => {
       const incomingOffer = {
         fromPeerId: 'caller-1',
         offer: { type: 'offer' as const, sdp: 'mock' },
@@ -789,7 +798,7 @@ describe('reducer', () => {
         { type: 'call', muted: false, videoOff: false, pipHidden: false },
         { incomingOffer },
       );
-      const room = expectRoom(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'caller-1' }));
+      const room = expectRoom(reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: [] }));
       expect(room.incomingOffer).toBeNull();
     });
   });

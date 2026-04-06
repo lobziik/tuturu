@@ -157,6 +157,7 @@ export function App() {
           peers={roomState.peers}
           screen={roomState.screen}
           incomingOffer={roomState.incomingOffer}
+          callActive={roomState.callActive}
           remoteStream={refs.remoteStream.current}
           dispatch={dispatch}
         />

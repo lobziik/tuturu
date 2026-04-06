@@ -99,6 +99,8 @@ export type AppState =
       iceServers: IceServerConfig[] | null;
       /** ICE transport policy: 'all' (default) or 'relay' (force TURN) */
       iceTransportPolicy: IceTransportPolicy;
+      /** Whether a call is currently active in the room (from server call-peers broadcast) */
+      callActive: boolean;
       /** Stashed incoming offer for incoming call UI when screen is idle */
       incomingOffer: {
         fromPeerId: string;
@@ -183,8 +185,6 @@ export type Action =
     }
 
   // Server responses — call signaling
-  | { type: 'PEER_JOINED_CALL'; peerId: string }
-  | { type: 'PEER_LEFT_CALL'; peerId: string }
   | { type: 'CALL_PEERS_RECEIVED'; callPeers: string[] }
 
   // Server responses — signaling / ICE

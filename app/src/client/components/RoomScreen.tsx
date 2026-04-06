@@ -24,6 +24,8 @@ interface RoomScreenProps {
   deviceId: string;
   /** WebSocket connection status */
   wsStatus: WsStatus;
+  /** Current reconnect attempt number (0 = not reconnecting) */
+  reconnectAttempt: number;
   /** Whether server has more history available */
   historyHasMore: boolean;
   /** Connected peers in the room */
@@ -43,6 +45,7 @@ export function RoomScreen({
   messages,
   deviceId,
   wsStatus,
+  reconnectAttempt,
   historyHasMore,
   peers,
   screen,
@@ -92,7 +95,11 @@ export function RoomScreen({
         callDisabled={callDisabled}
         inCall={showFloatingPiP || callActive}
       />
-      <ConnectionStatus wsStatus={wsStatus} />
+      <ConnectionStatus
+        wsStatus={wsStatus}
+        reconnectAttempt={reconnectAttempt}
+        dispatch={dispatch}
+      />
       <ChatFeed
         messages={messages}
         selfDeviceId={deviceId}

@@ -83,6 +83,8 @@ export type AppState =
       messages: ChatMessage[];
       /** Room-level WebSocket connection status */
       wsStatus: WsStatus;
+      /** Current reconnect attempt number (0 = not reconnecting) */
+      reconnectAttempt: number;
       /** Server-assigned peer ID for this connection */
       selfPeerId: string | null;
       /** Connected peers in the room (peerId → PeerState) */
@@ -151,6 +153,8 @@ export type Action =
   | { type: 'WS_ROOM_CONNECTED' }
   | { type: 'WS_ROOM_DISCONNECTED' }
   | { type: 'WS_ROOM_RECONNECTING'; attempt: number }
+  | { type: 'WS_RECONNECT_EXHAUSTED' }
+  | { type: 'RECONNECT_REQUESTED' }
 
   // WebSocket close/error (from browser callbacks)
   | { type: 'WS_ERROR'; error: string }

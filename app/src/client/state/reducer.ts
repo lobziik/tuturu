@@ -67,6 +67,7 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       view: 'chat',
       messages: [],
       wsStatus: 'connecting',
+      reconnectAttempt: 0,
       selfPeerId: null,
       peers: {},
       historyCursor: null,
@@ -210,6 +211,8 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'WS_ROOM_CONNECTED':
     case 'WS_ROOM_DISCONNECTED':
     case 'WS_ROOM_RECONNECTING':
+    case 'WS_RECONNECT_EXHAUSTED':
+    case 'RECONNECT_REQUESTED':
     case 'WS_ERROR':
     case 'WS_CLOSED':
     case 'PEERS_LIST':
@@ -293,6 +296,8 @@ type ConnectionAction = Extract<
       | 'WS_ROOM_CONNECTED'
       | 'WS_ROOM_DISCONNECTED'
       | 'WS_ROOM_RECONNECTING'
+      | 'WS_RECONNECT_EXHAUSTED'
+      | 'RECONNECT_REQUESTED'
       | 'WS_ERROR'
       | 'WS_CLOSED'
       | 'PEERS_LIST'
@@ -304,13 +309,15 @@ type ConnectionAction = Extract<
 function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppState {
   switch (action.type) {
     case 'WS_ROOM_CONNECTED':
-      return { ...state, wsStatus: 'connected' };
+      return { ...state, wsStatus: 'connected', reconnectAttempt: 0 };
 
-    case 'WS_ROOM_DISCONNECTED': {
+    case 'WS_ROOM_DISCONNECTED':
+    case 'WS_RECONNECT_EXHAUSTED': {
       const inLocalCall = ['call', 'negotiating', 'waiting-for-peer'].includes(state.screen.type);
       return {
         ...state,
         wsStatus: 'disconnected',
+        reconnectAttempt: 0,
         callActive: false,
         screen: inLocalCall
           ? {
@@ -324,9 +331,14 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
     }
 
     case 'WS_ROOM_RECONNECTING':
-      return { ...state, wsStatus: 'reconnecting' };
+      return { ...state, wsStatus: 'reconnecting', reconnectAttempt: action.attempt };
+
+    case 'RECONNECT_REQUESTED':
+      return { ...state, wsStatus: 'reconnecting', reconnectAttempt: 0 };
 
     case 'WS_ERROR':
+      // Don't overwrite 'reconnecting' — reconnect cycle already in progress
+      if (state.wsStatus === 'reconnecting') return state;
       return { ...state, wsStatus: 'disconnected' };
 
     case 'WS_CLOSED':
@@ -334,11 +346,15 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
         return {
           ...state,
           wsStatus: 'disconnected',
+          reconnectAttempt: 0,
           callActive: false,
           view: 'chat',
           screen: { type: 'idle' },
         };
       }
+      // Don't overwrite 'reconnecting' — browser fires onclose after onerror,
+      // but the reconnect cycle is already running from the WS_ERROR handler
+      if (state.wsStatus === 'reconnecting') return state;
       return { ...state, wsStatus: 'disconnected', callActive: false };
 
     case 'PEERS_LIST': {

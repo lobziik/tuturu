@@ -224,9 +224,18 @@ function handleServerMessage(
       dispatch({ type: 'PEER_LEFT_CALL', peerId: message.peerId });
       break;
 
+    case 'call-peers':
+      // Server sends the list of peers already in the call when we join.
+      // Dispatch PEER_JOINED_CALL for each so the caller flow can start.
+      // If peer-joined-call already arrived first, the reducer ignores
+      // duplicates (only transitions from waiting-for-peer).
+      for (const peerId of message.callPeers) {
+        dispatch({ type: 'PEER_JOINED_CALL', peerId });
+      }
+      break;
+
     // Stubs for call-level messages not yet wired
     case 'chat-received':
-    case 'call-peers':
       console.log('[WS] Received (stub):', message.type);
       break;
   }

@@ -21,5 +21,6 @@ export function handleWebSocketEffects(ctx: EffectContext, args: EffectArgs): vo
   // Media acquired + now waiting → Send join-call to server
   if (action.type === 'MEDIA_ACQUIRED' && newScreen?.type === 'waiting-for-peer') {
     sendMessage(refs.ws.current, { type: 'join-call', v: 1 });
+    refs.inCall.current = true;
   }
 }

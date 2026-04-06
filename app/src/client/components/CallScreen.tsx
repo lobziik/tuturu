@@ -117,7 +117,6 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
     <div id="call-interface" class={layoutClass}>
       <div class="status-bar" id="status-bar" ref={statusBarRef}>
         <span id="status-text">{statusText}</span>
-        <span id="pin-display">PIN: {screen.pin}</span>
       </div>
 
       <div class="video-container">
@@ -184,6 +183,15 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
             <span class="label">Flip</span>
           </button>
         )}
+
+        <button
+          class="control-btn"
+          title="Minimize to chat"
+          onClick={() => dispatch({ type: 'SWITCH_TO_CHAT' })}
+        >
+          <span class="icon">{'\u2B07'}</span>
+          <span class="label">Minimize</span>
+        </button>
 
         <button
           id="hangup-btn"

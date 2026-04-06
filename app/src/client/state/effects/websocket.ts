@@ -1,26 +1,26 @@
 /**
- * WebSocket side effects — connection creation and message sending.
+ * Video-call WebSocket side effects — call-level signaling only.
+ *
+ * Room-level WS lifecycle (connect, heartbeat, reconnect) is handled by
+ * roomWebSocket.ts. This module only handles call-specific messages:
+ * sending join-call when media is acquired.
  *
  * @module state/effects/websocket
  */
 
-import { createWebSocket, setupWebSocketHandlers, sendMessage } from '../../services/websocket';
+import { sendMessage } from '../../services/websocket';
 import type { EffectContext, EffectArgs } from './types';
+import { getScreen } from './types';
 
-/** Handle WebSocket-related side effects */
+/** Handle video-call WebSocket side effects */
 export function handleWebSocketEffects(ctx: EffectContext, args: EffectArgs): void {
-  const { refs, dispatch } = ctx;
-  const { action, prevState, newState } = args;
+  const { refs } = ctx;
+  const { action, newState } = args;
+  const newScreen = getScreen(newState);
 
-  // Entering connecting → Create WebSocket and wire up handlers
-  if (newState.screen.type === 'connecting' && prevState.screen.type !== 'connecting') {
-    const ws = createWebSocket();
-    setupWebSocketHandlers(dispatch, ws);
-    refs.ws.current = ws;
-  }
-
-  // Media acquired + now waiting → Send join-pin to server
-  if (action.type === 'MEDIA_ACQUIRED' && newState.screen.type === 'waiting-for-peer') {
-    sendMessage(refs.ws.current, { type: 'join-pin', pin: newState.screen.pin });
+  // Media acquired + now waiting → Send join-call to server
+  if (action.type === 'MEDIA_ACQUIRED' && newScreen?.type === 'waiting-for-peer') {
+    sendMessage(refs.ws.current, { type: 'join-call', v: 1 });
+    refs.inCall.current = true;
   }
 }

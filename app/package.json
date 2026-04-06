@@ -4,35 +4,44 @@
   "description": "WebRTC signaling server for tuturu video calling app",
   "type": "module",
   "scripts": {
-    "build": "bun build src/client/index.tsx --minify --outdir public --target browser --sourcemap=inline",
-    "build:watch": "bun build src/client/index.tsx --outdir public --target browser --sourcemap=inline --watch",
+    "build": "bun run build.ts --minify",
+    "build:watch": "bun run --watch build.ts",
     "build:server": "bun build --compile --minify --sourcemap ./src/server/index.ts --outfile ./dist/server",
     "build:prod": "bun run build && bun run build:server",
-    "dev": "bun run --hot src/server/index.ts",
+    "dev": "bun run --hot src/server/index.ts ",
     "start": "bun run src/server/index.ts",
     "start:prod": "./dist/server",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
+    "test": "bun test --randomize",
+    "test:coverage": "bun test --randomize --coverage --coverage-reporter=lcov --coverage-dir=coverage",
+    "test:watch": "bun test --randomize --watch",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "lint": "bunx eslint . --ext .ts,.tsx --max-warnings=0",
     "lint:fix": "bunx eslint . --ext .ts,.tsx --fix",
+    "lint:css": "bunx stylelint 'public/**/*.css'",
     "format": "bunx prettier . --write",
     "format:check": "bunx prettier . --check",
-    "check": "bun run lint && bun run format:check && bun run typecheck"
+    "lint:dead": "bunx knip",
+    "check": "bun run lint && bun run format:check && bun run typecheck && bun run lint:css && bun run lint:dead"
   },
   "dependencies": {
-    "bun": "^1.3.11",
-    "preact": "^10.29.0",
-    "zod": "^4.3.6"
+    "bun": "1.3.11",
+    "hash-wasm": "4.12.0",
+    "preact": "10.29.0",
+    "virtua": "0.49.0",
+    "zod": "4.3.6"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
-    "bun-types": "latest",
-    "eslint": "^9.39.4",
-    "eslint-plugin-unused-imports": "^4.4.1",
-    "globals": "^15.15.0",
-    "prettier": "^3.8.1",
-    "typescript": "^5.9.3"
+    "@typescript-eslint/eslint-plugin": "8.57.2",
+    "@typescript-eslint/parser": "8.57.2",
+    "bun-types": "1.3.11",
+    "eslint": "9.39.4",
+    "eslint-plugin-unused-imports": "4.4.1",
+    "fake-indexeddb": "6.2.5",
+    "globals": "15.15.0",
+    "knip": "6.2.0",
+    "prettier": "3.8.1",
+    "stylelint": "17.6.0",
+    "stylelint-config-standard": "40.0.0",
+    "typescript": "5.9.3"
   }
 }

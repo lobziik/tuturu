@@ -12,16 +12,18 @@
 
 import { useReducer, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import { reducer } from '../state/reducer';
-import { initialState, type AppState, type Action } from '../state/types';
+import { initialState, type AppState, type Action, type RoomState } from '../state/types';
 import { AppContext, createDebugReducer } from '../state/context';
 import type { Dispatch } from '../state/context';
-import { runEffects, cleanupResources, type ResourceRefs } from '../state/effects';
+import { runEffects, cleanupRoomResources, type ResourceRefs } from '../state/effects';
+import { openDB, getSetting } from '../services/db';
 
-import { PinEntryScreen } from './PinEntryScreen';
-import { ConnectingScreen } from './ConnectingScreen';
+import { NicknameScreen } from './NicknameScreen';
+import { LoginScreen } from './LoginScreen';
 import { AcquiringMediaScreen } from './AcquiringMediaScreen';
 import { CallScreen } from './CallScreen';
 import { ErrorBanner } from './ErrorBanner';
+import { RoomScreen } from './RoomScreen';
 
 const debugReducer = createDebugReducer(reducer);
 
@@ -35,6 +37,15 @@ export function App() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const errorTimeoutRef = useRef<number | null>(null);
+  const aesKeyRef = useRef<CryptoKey | null>(null);
+  const dbRef = useRef<IDBDatabase | null>(null);
+  const deadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef<number>(0);
+  const seqRef = useRef<number>(0);
+  const seqLoadedRef = useRef<boolean>(false);
+  const makingOfferRef = useRef<boolean>(false);
+  const inCallRef = useRef<boolean>(false);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
@@ -44,6 +55,15 @@ export function App() {
       localStream: localStreamRef,
       remoteStream: remoteStreamRef,
       errorTimeout: errorTimeoutRef,
+      aesKey: aesKeyRef,
+      db: dbRef,
+      deadTimer: deadTimerRef,
+      reconnectTimer: reconnectTimerRef,
+      reconnectAttempt: reconnectAttemptRef,
+      seq: seqRef,
+      seqLoaded: seqLoadedRef,
+      makingOffer: makingOfferRef,
+      inCall: inCallRef,
     }),
     [],
   );
@@ -70,6 +90,9 @@ export function App() {
     if (action.type === 'RTC_TRACK_RECEIVED') {
       refs.remoteStream.current = action.stream;
     }
+    if (action.type === 'SUBMIT_LOGIN') {
+      refs.aesKey.current = action.aesKey;
+    }
 
     // Side effects — synchronous, before re-render
     runEffects({ refs, dispatch }, { prevState, newState, action });
@@ -80,19 +103,67 @@ export function App() {
 
   // Page unload cleanup
   useEffect(() => {
-    const handleUnload = () => cleanupResources(refs);
+    const handleUnload = () => cleanupRoomResources(refs);
     window.addEventListener('beforeunload', handleUnload);
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  // Screen routing
-  const renderScreen = () => {
-    switch (state.screen.type) {
-      case 'pin-entry':
-        return <PinEntryScreen dispatch={dispatch} />;
+  // Startup: open IndexedDB, cache ref, check for saved nickname
+  useEffect(() => {
+    openDB()
+      .then((db) => {
+        refs.db.current = db;
+        return getSetting(db, 'nickname');
+      })
+      .then((nickname) => {
+        if (nickname) {
+          dispatch({ type: 'NICKNAME_LOADED', nickname });
+        }
+      })
+      .catch((err: unknown) => {
+        console.error('[App] IndexedDB startup check failed:', err);
+      });
+  }, []);
 
-      case 'connecting':
-        return <ConnectingScreen />;
+  // Phase-level routing
+  const renderPhase = () => {
+    switch (state.phase) {
+      case 'nickname':
+        return <NicknameScreen dispatch={dispatch} />;
+
+      case 'login':
+        return <LoginScreen nickname={state.nickname} dispatch={dispatch} />;
+
+      case 'room':
+        return renderRoomScreen(state);
+    }
+  };
+
+  // Screen routing within room phase — view-based: chat or call
+  const renderRoomScreen = (roomState: RoomState) => {
+    // Chat view — default home screen
+    if (roomState.view === 'chat') {
+      return (
+        <RoomScreen
+          messages={roomState.messages}
+          deviceId={roomState.deviceId}
+          wsStatus={roomState.wsStatus}
+          reconnectAttempt={roomState.reconnectAttempt}
+          historyHasMore={roomState.historyHasMore}
+          peers={roomState.peers}
+          screen={roomState.screen}
+          callActive={roomState.callActive}
+          remoteStream={refs.remoteStream.current}
+          dispatch={dispatch}
+        />
+      );
+    }
+
+    // Call view — video call sub-state machine
+    switch (roomState.screen.type) {
+      case 'idle':
+        // Safety fallback — idle screen shouldn't render in call view
+        return null;
 
       case 'acquiring-media':
         return <AcquiringMediaScreen />;
@@ -102,7 +173,7 @@ export function App() {
       case 'call':
         return (
           <CallScreen
-            screen={state.screen}
+            screen={roomState.screen}
             localStream={refs.localStream.current}
             remoteStream={refs.remoteStream.current}
             dispatch={dispatch}
@@ -110,15 +181,9 @@ export function App() {
         );
 
       case 'error':
-        return (
-          <ErrorBanner
-            message={state.screen.message}
-            canRetry={state.screen.canRetry}
-            dispatch={dispatch}
-          />
-        );
+        return <ErrorBanner message={roomState.screen.message} dispatch={dispatch} />;
     }
   };
 
-  return <AppContext.Provider value={{ state, dispatch }}>{renderScreen()}</AppContext.Provider>;
+  return <AppContext.Provider value={{ state, dispatch }}>{renderPhase()}</AppContext.Provider>;
 }

@@ -14,7 +14,7 @@ const TURN_CREDENTIAL_TTL_SECONDS = 4 * 60 * 60;
 /**
  * Ephemeral TURN credentials with expiry tracking
  */
-export interface TurnCredentials {
+interface TurnCredentials {
   /** Username in format "expiryTimestamp:clientId" */
   username: string;
   /** HMAC-SHA1 signature encoded as base64 */
@@ -47,11 +47,4 @@ export function generateTurnCredentials(clientId: string): TurnCredentials {
   const credential = hasher.digest('base64');
 
   return { username, credential, expiresAt };
-}
-
-/**
- * Get TURN credential TTL in seconds.
- */
-export function getTurnCredentialTtlSeconds(): number {
-  return TURN_CREDENTIAL_TTL_SECONDS;
 }

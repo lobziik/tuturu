@@ -53,6 +53,18 @@ const configSchema = z.object({
   // Force relay mode (for TURN server validation)
   // When true, clients will ONLY use TURN relay candidates (no direct P2P or STUN)
   forceRelay: z.coerce.boolean().default(false),
+
+  // v2: Chat persistence and rooms
+  retentionDays: z.coerce.number().int().min(1).default(7),
+  historyBatchSize: z.coerce.number().int().min(1).default(100),
+  blobMaxBytes: z.coerce.number().int().min(1).default(15_728_640),
+  blobUploadToken: z
+    .string()
+    .min(16, 'BLOB_UPLOAD_TOKEN must be at least 16 characters')
+    .optional(),
+  blobDir: z.string().default('./blobs'),
+  dbPath: z.string().default('./messages.db'),
+  maxParticipants: z.coerce.number().int().min(2).max(10).default(6),
 });
 
 /**
@@ -68,6 +80,13 @@ function loadConfig() {
     domain: process.env.DOMAIN,
     externalIp: process.env.EXTERNAL_IP,
     forceRelay: process.env.FORCE_RELAY,
+    retentionDays: process.env.RETENTION_DAYS,
+    historyBatchSize: process.env.HISTORY_BATCH_SIZE,
+    blobMaxBytes: process.env.BLOB_MAX_BYTES,
+    blobUploadToken: process.env.BLOB_UPLOAD_TOKEN,
+    blobDir: process.env.BLOB_DIR,
+    dbPath: process.env.DB_PATH,
+    maxParticipants: process.env.MAX_PARTICIPANTS,
   });
 
   if (!parseResult.success) {
@@ -107,11 +126,17 @@ function loadConfig() {
  */
 export const config = loadConfig();
 
-/**
- * TypeScript type inferred from Zod schema
- * No duplication needed!
- */
-export type Config = z.infer<typeof configSchema>;
+/** Retention period in milliseconds (derived from retentionDays) */
+export const retentionMs = config.retentionDays * 86_400_000;
+
+/** Server→client ping interval (ms) */
+export const pingIntervalMs = 30_000;
+
+/** Close connection if no pong received within this period (ms) */
+export const pongTimeoutMs = 90_000;
+
+/** Interval between cleanup runs for expired messages and blobs (ms) */
+export const cleanupIntervalMs = 3_600_000;
 
 /**
  * Check if TURN server is configured

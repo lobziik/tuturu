@@ -12,7 +12,7 @@ RUN bun install --frozen-lockfile --production
 # Copy source and build
 COPY app/src ./src
 COPY app/public ./public
-COPY app/bunfig.toml ./
+COPY app/bunfig.toml app/build.ts app/tsconfig.json ./
 
 # Docker provides TARGETARCH automatically (amd64, arm64)
 ARG TARGETARCH
@@ -31,7 +31,7 @@ RUN BUN_TARGET="bun-linux-x64" && \
 FROM redhat/ubi10-init:10.1-1774254118
 
 LABEL org.opencontainers.image.title="tuturu" \
-      org.opencontainers.image.description="WebRTC 1 to 1 video calling" \
+      org.opencontainers.image.description="WebRTC video calling and messaging" \
       org.opencontainers.image.licenses="AGPL-3.0"
 
 # Install EPEL repository and required packages

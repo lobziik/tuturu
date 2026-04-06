@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# tuturu - WebRTC video calling CLI
+# tuturu - WebRTC video calling and messaging CLI
 # =============================================================================
 
 VERSION="dev"
@@ -524,7 +524,7 @@ cmd_install() {
 
 cmd_help() {
     cat << 'EOF'
-tuturu - WebRTC video calling for restrictive networks
+tuturu - WebRTC video calling and messaging for restrictive networks
 
 Usage: ./tuturu <command>
 

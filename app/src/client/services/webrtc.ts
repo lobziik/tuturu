@@ -3,11 +3,49 @@
  * Handles RTCPeerConnection lifecycle, offer/answer negotiation, and ICE handling
  */
 
-import type { IceServerConfig, IceTransportPolicy } from '../../types';
+import type {
+  IceServerConfig,
+  IceTransportPolicy,
+  ClientToServerMessage,
+} from '../../shared/types';
 import type { Action } from '../state/types';
 import { sendMessage } from './websocket';
 
 type Dispatch = (action: Action) => void;
+
+/**
+ * ICE candidates that arrived before setRemoteDescription completed.
+ * Keyed by RTCPeerConnection so buffers are automatically eligible for GC
+ * when the connection is discarded.
+ */
+const pendingCandidates = new WeakMap<RTCPeerConnection, RTCIceCandidateInit[]>();
+
+/** Apply buffered ICE candidates after remote description has been set */
+async function flushPendingCandidates(pc: RTCPeerConnection, pcRef: PcRef): Promise<void> {
+  const candidates = pendingCandidates.get(pc);
+  if (!candidates || candidates.length === 0) return;
+  pendingCandidates.delete(pc);
+
+  for (const candidate of candidates) {
+    if (pcRef.current !== pc) return;
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log('[RTC] Buffered ICE candidate added');
+    } catch (error) {
+      if (pcRef.current !== pc) return;
+      console.warn('[RTC] Failed to add buffered ICE candidate (non-fatal):', error);
+    }
+  }
+}
+
+/**
+ * Mutable ref to the active peer connection.
+ * Used by async operations to detect staleness: if `pcRef.current !== pc`,
+ * the call session changed during an await and the operation should abort.
+ * This eliminates the entire class of race conditions where async WebRTC
+ * operations from call N dispatch actions into call N+1.
+ */
+type PcRef = { current: RTCPeerConnection | null };
 
 /** Configuration for creating a peer connection */
 interface PeerConnectionConfig {
@@ -35,7 +73,11 @@ export function createPeerConnection(
   console.log('[RTC] ICE transport policy:', config.iceTransportPolicy);
 
   const pc = new RTCPeerConnection({
-    iceServers: config.iceServers,
+    iceServers: config.iceServers.map((s) => ({
+      urls: s.urls,
+      ...(s.username !== undefined && { username: s.username }),
+      ...(s.credential !== undefined && { credential: s.credential }),
+    })),
     iceTransportPolicy: config.iceTransportPolicy,
   });
 
@@ -62,7 +104,12 @@ export function createPeerConnection(
   pc.onicecandidate = (event: RTCPeerConnectionIceEvent) => {
     if (event.candidate) {
       console.log('[RTC] Sending ICE candidate');
-      sendMessage(ws, { type: 'ice-candidate', data: event.candidate });
+      const msg: ClientToServerMessage = {
+        type: 'ice-candidate',
+        v: 1,
+        candidate: event.candidate,
+      };
+      sendMessage(ws, msg);
     } else {
       console.log('[RTC] ICE gathering complete');
     }
@@ -83,6 +130,11 @@ export function createPeerConnection(
           reason: 'Connection failed. Please check your network and try again.',
         });
         break;
+      case 'new':
+      case 'connecting':
+      case 'closed':
+        // Transient/terminal states — no action needed
+        break;
     }
   };
 
@@ -100,25 +152,77 @@ export function createPeerConnection(
   return pc;
 }
 
-/** Handle incoming offer (callee side) */
-export async function handleOffer(
-  pc: RTCPeerConnection | null,
-  offer: RTCSessionDescriptionInit,
-  ws: WebSocket | null,
+/**
+ * Resolve glare collision using the "perfect negotiation" pattern.
+ *
+ * **Glare** occurs when both peers send offers simultaneously. Resolution:
+ * - **Polite** peer (lower peerId): rolls back own offer (if set), yields to remote.
+ *   Also cancels any in-flight createOffer chain via `makingOfferRef`.
+ * - **Impolite** peer (higher peerId): ignores remote offer, waits for answer.
+ *
+ * @returns `true` if offer processing should continue, `false` to abort
+ */
+async function resolveGlareCollision(
+  pc: RTCPeerConnection,
+  pcRef: PcRef,
   dispatch: Dispatch,
-): Promise<void> {
-  if (!pc) {
-    console.error('[RTC] No peer connection to handle offer');
-    return;
+  isPolite: boolean,
+  makingOfferRef: { current: boolean },
+): Promise<boolean> {
+  if (!isPolite) {
+    console.log('[RTC] Glare: impolite peer ignoring remote offer, waiting for answer');
+    return false;
   }
 
+  // Polite peer: cancel pending offer chain and yield to remote offer
+  console.log('[RTC] Glare: polite peer yielding to remote offer');
+  makingOfferRef.current = false;
+
+  if (pc.signalingState === 'have-local-offer') {
+    try {
+      await pc.setLocalDescription({ type: 'rollback' });
+      if (pcRef.current !== pc) return false;
+    } catch (error) {
+      if (pcRef.current !== pc) return false;
+      console.error('[RTC] Failed to rollback during glare:', error);
+      dispatch({
+        type: 'RTC_FAILED',
+        reason: `Glare rollback failed: ${(error as Error).message}`,
+      });
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Accept a remote offer and send an answer back.
+ * Handles setRemoteDescription → flush ICE → createAnswer → setLocalDescription → send.
+ */
+async function acceptOfferAndAnswer(
+  pc: RTCPeerConnection,
+  offer: RTCSessionDescriptionInit,
+  ws: WebSocket | null,
+  pcRef: PcRef,
+  dispatch: Dispatch,
+): Promise<void> {
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    if (pcRef.current !== pc) return;
+    await flushPendingCandidates(pc, pcRef);
+    if (pcRef.current !== pc) return;
     const answer = await pc.createAnswer();
+    if (pcRef.current !== pc) return;
     await pc.setLocalDescription(answer);
-    sendMessage(ws, { type: 'answer', data: answer });
+    if (pcRef.current !== pc) return;
+    if (!answer.sdp) {
+      throw new Error('Created answer has no SDP');
+    }
+    sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp });
     console.log('[RTC] Sent answer');
   } catch (error) {
+    if (pcRef.current !== pc) return;
     console.error('[RTC] Failed to handle offer:', error);
     dispatch({
       type: 'RTC_FAILED',
@@ -127,21 +231,71 @@ export async function handleOffer(
   }
 }
 
+/**
+ * Handle incoming offer (callee side), with glare resolution.
+ *
+ * Collision is detected by `makingOffer || signalingState !== 'stable'`.
+ * The `makingOffer` flag catches the race where createOffer() is pending but
+ * setLocalDescription hasn't run yet (signalingState is still 'stable').
+ *
+ * @param isPolite - Whether this peer yields during glare (true = rollback own offer)
+ * @param makingOfferRef - Ref tracking in-flight offer creation; cleared by polite peer to abort the offer chain
+ */
+export async function handleOffer(
+  pc: RTCPeerConnection | null,
+  offer: RTCSessionDescriptionInit,
+  ws: WebSocket | null,
+  pcRef: PcRef,
+  dispatch: Dispatch,
+  isPolite: boolean,
+  makingOfferRef: { current: boolean },
+): Promise<void> {
+  if (!pc || pcRef.current !== pc) return;
+
+  // Collision = we're creating or have created our own offer
+  const offerCollision = makingOfferRef.current || pc.signalingState !== 'stable';
+
+  if (offerCollision) {
+    const shouldProceed = await resolveGlareCollision(
+      pc,
+      pcRef,
+      dispatch,
+      isPolite,
+      makingOfferRef,
+    );
+    if (!shouldProceed || pcRef.current !== pc) return;
+  }
+
+  if (pc.signalingState !== 'stable') {
+    console.warn('[RTC] Ignoring offer: expected stable, got', pc.signalingState);
+    return;
+  }
+
+  await acceptOfferAndAnswer(pc, offer, ws, pcRef, dispatch);
+}
+
 /** Handle incoming answer (caller side) */
 export async function handleAnswer(
   pc: RTCPeerConnection | null,
   answer: RTCSessionDescriptionInit,
+  pcRef: PcRef,
   dispatch: Dispatch,
 ): Promise<void> {
-  if (!pc) {
-    console.error('[RTC] No peer connection to handle answer');
+  if (!pc || pcRef.current !== pc) return;
+
+  if (pc.signalingState !== 'have-local-offer') {
+    console.warn('[RTC] Ignoring stale answer: expected have-local-offer, got', pc.signalingState);
     return;
   }
 
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    if (pcRef.current !== pc) return;
+    await flushPendingCandidates(pc, pcRef);
+    if (pcRef.current !== pc) return;
     console.log('[RTC] Answer received and set');
   } catch (error) {
+    if (pcRef.current !== pc) return;
     console.error('[RTC] Failed to handle answer:', error);
     dispatch({
       type: 'RTC_FAILED',
@@ -150,14 +304,22 @@ export async function handleAnswer(
   }
 }
 
-/** Handle incoming ICE candidate */
+/** Handle incoming ICE candidate, buffering if remote description is not yet set */
 export async function handleIceCandidate(
   pc: RTCPeerConnection | null,
   candidate: RTCIceCandidateInit,
-  _dispatch: Dispatch,
+  pcRef: PcRef,
 ): Promise<void> {
-  if (!pc) {
-    console.error('[RTC] No peer connection for ICE candidate');
+  if (!pc || pcRef.current !== pc) return;
+
+  if (!pc.remoteDescription) {
+    let queue = pendingCandidates.get(pc);
+    if (!queue) {
+      queue = [];
+      pendingCandidates.set(pc, queue);
+    }
+    queue.push(candidate);
+    console.log('[RTC] Buffered ICE candidate (remote description not set yet)');
     return;
   }
 
@@ -165,14 +327,26 @@ export async function handleIceCandidate(
     await pc.addIceCandidate(new RTCIceCandidate(candidate));
     console.log('[RTC] ICE candidate added');
   } catch (error) {
+    if (pcRef.current !== pc) return;
     console.warn('[RTC] Failed to add ICE candidate (non-fatal):', error);
   }
 }
 
-/** Close peer connection and release resources */
+/**
+ * Close peer connection and release resources.
+ * Nulls all event handlers BEFORE close() to prevent callbacks from
+ * in-flight async operations (handleAnswer, ICE gathering) from
+ * dispatching actions after cleanup.
+ */
 export function closePeerConnection(pc: RTCPeerConnection): void {
+  pendingCandidates.delete(pc);
+  pc.ontrack = null;
+  pc.onicecandidate = null;
+  pc.onconnectionstatechange = null;
+  pc.oniceconnectionstatechange = null;
+
   if (pc.connectionState !== 'closed') {
     pc.close();
-    console.log('[RTC] Peer connection closed');
   }
+  console.log('[RTC] Peer connection closed');
 }

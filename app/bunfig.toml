@@ -11,3 +11,6 @@ hot = true
 [install]
 # Package installation settings
 registry = "https://registry.npmjs.org/"
+
+[test]
+coverageSkipTestFiles = true

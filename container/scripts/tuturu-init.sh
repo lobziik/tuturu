@@ -70,6 +70,13 @@ log "  INTERNAL_IP: ${INTERNAL_IP}"
 log "  TURN_SECRET: [set, ${#TURN_SECRET} chars]"
 log "  TURN_PORT_RANGE: ${TURN_MIN_PORT}-${TURN_MAX_PORT}"
 log "  STUN_SERVERS: ${STUN_SERVERS}"
+log "  DB_PATH: ${DB_PATH:-./messages.db}"
+log "  BLOB_DIR: ${BLOB_DIR:-./blobs}"
+log "  BLOB_MAX_BYTES: ${BLOB_MAX_BYTES:-15728640}"
+log "  RETENTION_DAYS: ${RETENTION_DAYS:-7}"
+log "  HISTORY_BATCH_SIZE: ${HISTORY_BATCH_SIZE:-100}"
+log "  MAX_PARTICIPANTS: ${MAX_PARTICIPANTS:-6}"
+log "  BLOB_UPLOAD_TOKEN: ${BLOB_UPLOAD_TOKEN:+[set, ${#BLOB_UPLOAD_TOKEN} chars]}"
 
 # =============================================================================
 # Generate nginx configuration
@@ -120,6 +127,13 @@ TURN_MIN_PORT=${TURN_MIN_PORT}
 TURN_MAX_PORT=${TURN_MAX_PORT}
 STUN_SERVERS=${STUN_SERVERS}
 FORCE_RELAY=${FORCE_RELAY:-false}
+DB_PATH=${DB_PATH:-./messages.db}
+BLOB_DIR=${BLOB_DIR:-./blobs}
+BLOB_MAX_BYTES=${BLOB_MAX_BYTES:-15728640}
+RETENTION_DAYS=${RETENTION_DAYS:-7}
+HISTORY_BATCH_SIZE=${HISTORY_BATCH_SIZE:-100}
+MAX_PARTICIPANTS=${MAX_PARTICIPANTS:-6}
+${BLOB_UPLOAD_TOKEN:+BLOB_UPLOAD_TOKEN=${BLOB_UPLOAD_TOKEN}}
 EOF
 
 chmod 600 /etc/tuturu/env
@@ -131,5 +145,6 @@ log "Creating required directories..."
 
 mkdir -p /var/www/acme/.well-known/acme-challenge
 mkdir -p /var/lib/tuturu
+mkdir -p "${BLOB_DIR:-./blobs}"
 
 log "Initialization complete"

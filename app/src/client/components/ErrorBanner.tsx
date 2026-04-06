@@ -1,20 +1,18 @@
 import type { Dispatch } from '../state/context';
-import { PinEntryScreen } from './PinEntryScreen';
 
 interface ErrorBannerProps {
   message: string;
-  canRetry: boolean;
   dispatch: Dispatch;
 }
 
-/** Error banner — shows error message with optional retry via PinEntryScreen */
-export function ErrorBanner({ message, canRetry, dispatch }: ErrorBannerProps) {
+/** Error banner — shows error message with dismiss button that returns to chat */
+export function ErrorBanner({ message, dispatch }: Readonly<ErrorBannerProps>) {
   return (
-    <>
-      <div id="error-display" class="error">
-        <strong>Error:</strong> <span id="error-message">{message}</span>
-      </div>
-      {canRetry && <PinEntryScreen dispatch={dispatch} />}
-    </>
+    <div id="error-display" class="error">
+      <strong>Error:</strong> <span id="error-message">{message}</span>
+      <button type="button" class="back-btn" onClick={() => dispatch({ type: 'DISMISS_ERROR' })}>
+        Back to chat
+      </button>
+    </div>
   );
 }

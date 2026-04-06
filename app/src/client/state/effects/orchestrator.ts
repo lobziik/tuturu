@@ -4,13 +4,15 @@
  * @remarks
  * Called synchronously from the dispatch wrapper in App.tsx.
  * Order: cleanup first (teardown before creating new resources),
- * then ws → media → webrtc → error.
+ * then room WS → chat → call WS → media → webrtc → error.
  *
  * @module state/effects/orchestrator
  */
 
 import type { EffectContext, EffectArgs } from './types';
 import { handleCleanupEffects } from './cleanup';
+import { handleRoomWebSocketEffects } from './roomWebSocket';
+import { handleChatEffects } from './chat';
 import { handleWebSocketEffects } from './websocket';
 import { handleMediaEffects } from './media';
 import { handleWebRTCEffects } from './webrtc';
@@ -22,6 +24,8 @@ import { handleErrorEffects } from './error';
  */
 export function runEffects(ctx: EffectContext, args: EffectArgs): void {
   handleCleanupEffects(ctx, args);
+  handleRoomWebSocketEffects(ctx, args);
+  handleChatEffects(ctx, args);
   handleWebSocketEffects(ctx, args);
   handleMediaEffects(ctx, args);
   handleWebRTCEffects(ctx, args);

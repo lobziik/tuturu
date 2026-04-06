@@ -9,7 +9,7 @@ import globals from 'globals';
 export default [
   // Ignore patterns (replaces .eslintignore)
   {
-    ignores: ['**/node_modules/**', 'public/**', 'dist/**', '*.log', 'bun.lock'],
+    ignores: ['**/node_modules/**', 'public/**', 'dist/**', '*.log', 'bun.lock', 'build.ts'],
   },
 
   // Base TypeScript config for all TS files
@@ -57,12 +57,18 @@ export default [
         'error',
         { allowNumber: true, allowBoolean: true },
       ],
+
+      // Ensure switch statements over discriminated unions handle all cases
+      '@typescript-eslint/switch-exhaustiveness-check': [
+        'error',
+        { allowDefaultCaseForExhaustiveSwitch: true },
+      ],
     },
   },
 
   // Browser globals for client
   {
-    files: ['src/client.ts'],
+    files: ['src/client/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
         ...globals.browser,

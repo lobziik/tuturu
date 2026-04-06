@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 at 6.4.2026
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2 at 6.4.2026
         with:
           bun-version: latest
 
@@ -32,18 +32,28 @@ jobs:
         working-directory: app
         run: bun run lint
 
+      - name: Stylelint
+        working-directory: app
+        run: bun run lint:css
+
       - name: Prettier check
         working-directory: app
         run: bun run format:check
+
+      - name: Dead code check
+        working-directory: app
+        run: bun run lint:dead
 
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 at 6.4.2026
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2 at 6.4.2026
         with:
           bun-version: latest
 
@@ -51,6 +61,23 @@ jobs:
         working-directory: app
         run: bun install
 
-      - name: Run tests
+      - name: Build client
         working-directory: app
-        run: bun run test
+        run: bun run build
+
+      - name: Run tests with coverage
+        working-directory: app
+        run: bun run test:coverage
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          files: app/coverage/lcov.info
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

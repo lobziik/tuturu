@@ -137,13 +137,16 @@ Press Ctrl+C to stop
 `);
 
   // Graceful shutdown
-  process.on('SIGINT', () => {
+  function shutdown(): void {
     console.log('\nShutting down server...');
     clearInterval(cleanupTimer);
     db.close();
     void server.stop();
     process.exit(0);
-  });
+  }
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 // Start the server

@@ -1,6 +1,6 @@
 /**
  * Room screen — main chat view with header, message feed, input bar,
- * incoming call banner, and floating call PiP.
+ * and floating call PiP.
  *
  * @module components/RoomScreen
  */
@@ -15,7 +15,6 @@ import { Header } from './Header';
 import { ConnectionStatus } from './ConnectionStatus';
 import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
-import { IncomingCallBanner } from './IncomingCallBanner';
 import { FloatingCallPiP } from './FloatingCallPiP';
 
 interface RoomScreenProps {
@@ -31,8 +30,6 @@ interface RoomScreenProps {
   peers: Record<string, PeerState>;
   /** Current call screen state */
   screen: Screen;
-  /** Stashed incoming offer (when screen is idle) */
-  incomingOffer: { fromPeerId: string; offer: RTCSessionDescriptionInit } | null;
   /** Whether a call is active in the room (from server broadcast) */
   callActive: boolean;
   /** Remote peer's media stream (for floating PiP) */
@@ -49,7 +46,6 @@ export function RoomScreen({
   historyHasMore,
   peers,
   screen,
-  incomingOffer,
   callActive,
   remoteStream,
   dispatch,
@@ -97,7 +93,6 @@ export function RoomScreen({
         inCall={showFloatingPiP || callActive}
       />
       <ConnectionStatus wsStatus={wsStatus} />
-      {incomingOffer !== null && <IncomingCallBanner dispatch={dispatch} />}
       <ChatFeed
         messages={messages}
         selfDeviceId={deviceId}

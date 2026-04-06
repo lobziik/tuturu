@@ -101,11 +101,6 @@ export type AppState =
       iceTransportPolicy: IceTransportPolicy;
       /** Whether a call is currently active in the room (from server call-peers broadcast) */
       callActive: boolean;
-      /** Stashed incoming offer for incoming call UI when screen is idle */
-      incomingOffer: {
-        fromPeerId: string;
-        offer: RTCSessionDescriptionInit;
-      } | null;
     };
 
 /** Extract the room-phase state for components that only operate in room phase */
@@ -150,8 +145,6 @@ export type Action =
   | { type: 'TOGGLE_PIP_VISIBILITY' }
   | { type: 'FLIP_CAMERA' }
   | { type: 'HANGUP' }
-  | { type: 'ACCEPT_CALL' }
-  | { type: 'DECLINE_CALL' }
   | { type: 'DISMISS_ERROR' }
 
   // Room-level WebSocket lifecycle

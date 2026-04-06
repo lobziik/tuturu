@@ -39,8 +39,8 @@ export function App() {
   const errorTimeoutRef = useRef<number | null>(null);
   const aesKeyRef = useRef<CryptoKey | null>(null);
   const dbRef = useRef<IDBDatabase | null>(null);
-  const deadTimerRef = useRef<number | null>(null);
-  const reconnectTimerRef = useRef<number | null>(null);
+  const deadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
   const seqLoadedRef = useRef<boolean>(false);

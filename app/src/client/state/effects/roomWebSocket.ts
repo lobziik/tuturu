@@ -194,7 +194,7 @@ function resetDeadTimer(ctx: EffectContext): void {
     clearTimeout(refs.deadTimer.current);
   }
 
-  refs.deadTimer.current = window.setTimeout(() => {
+  refs.deadTimer.current = globalThis.setTimeout(() => {
     console.warn('[ROOM_WS] No ping received within deadline — connection dead');
     refs.deadTimer.current = null;
     dispatch({ type: 'WS_ROOM_DISCONNECTED' });
@@ -247,7 +247,7 @@ function startReconnect(ctx: EffectContext, roomId: string, nickname: string): v
 
   refs.reconnectAttempt.current = attempt + 1;
 
-  refs.reconnectTimer.current = window.setTimeout(() => {
+  refs.reconnectTimer.current = globalThis.setTimeout(() => {
     refs.reconnectTimer.current = null;
 
     const aesKey = refs.aesKey.current;

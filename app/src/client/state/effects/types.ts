@@ -27,9 +27,9 @@ export interface ResourceRefs {
   /** IndexedDB connection for chat protocol operations */
   db: { current: IDBDatabase | null };
   /** Timer for 60s dead connection detection (no ping from server) */
-  deadTimer: { current: number | null };
+  deadTimer: { current: ReturnType<typeof setTimeout> | null };
   /** Timer for reconnect with exponential backoff */
-  reconnectTimer: { current: number | null };
+  reconnectTimer: { current: ReturnType<typeof setTimeout> | null };
   /** Current reconnect attempt counter (reset on successful connect) */
   reconnectAttempt: { current: number };
   /** Monotonic outgoing message sequence counter (persisted to IDB) */

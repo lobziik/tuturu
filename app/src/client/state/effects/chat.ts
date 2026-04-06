@@ -71,9 +71,20 @@ export function handleChatEffects(ctx: EffectContext, args: EffectArgs): void {
         });
 
         await putMessage(db, roomId, message);
-        await putOwnSeq(db, roomId, deviceId, seq);
       } catch (err) {
         console.error('[CHAT] Send failed:', err);
+        return;
+      }
+
+      try {
+        await putOwnSeq(db, roomId, deviceId, seq);
+      } catch (err) {
+        console.error(
+          '[CHAT] CRITICAL: Failed to persist seq counter to IDB (seq=%d). ' +
+            'After page reload, outgoing messages may be rejected as replays.',
+          seq,
+          err,
+        );
       }
     })();
   }

@@ -85,6 +85,7 @@ async function main(): Promise<void> {
     blobStore,
     blobMaxBytes: config.blobMaxBytes,
     blobRateLimitMs: 1_000,
+    blobUploadToken: config.blobUploadToken,
     getRoomCount: () => rooms.getRoomCount(),
   });
 

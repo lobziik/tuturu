@@ -31,6 +31,7 @@ let tempBlobDir: string;
 
 const BLOB_MAX_BYTES = 1024 * 1024; // 1 MB for tests
 const RATE_LIMIT_MS = 100; // Short for tests
+const TEST_UPLOAD_TOKEN = 'test-blob-upload-token';
 
 beforeAll(async () => {
   tempBlobDir = mkdtempSync(join(tmpdir(), 'tuturu-integration-'));
@@ -69,6 +70,7 @@ beforeAll(async () => {
     blobStore,
     blobMaxBytes: BLOB_MAX_BYTES,
     blobRateLimitMs: RATE_LIMIT_MS,
+    blobUploadToken: TEST_UPLOAD_TOKEN,
     getRoomCount: () => rooms.getRoomCount(),
   });
 
@@ -603,7 +605,10 @@ describe('blob HTTP endpoints', () => {
     const postRes = await fetch(`http://127.0.0.1:${port}/api/blob/${blobId}`, {
       method: 'POST',
       body: data,
-      headers: { 'X-Forwarded-For': `roundtrip-${Date.now()}` },
+      headers: {
+        Authorization: `Bearer ${TEST_UPLOAD_TOKEN}`,
+        'X-Forwarded-For': `roundtrip-${Date.now()}`,
+      },
     });
     expect(postRes.status).toBe(201);
 
@@ -627,6 +632,7 @@ describe('blob HTTP endpoints', () => {
       method: 'POST',
       body: data,
       headers: {
+        Authorization: `Bearer ${TEST_UPLOAD_TOKEN}`,
         'Content-Length': String(data.byteLength),
         'X-Forwarded-For': `oversize-${Date.now()}`,
       },
@@ -643,7 +649,7 @@ describe('blob HTTP endpoints', () => {
     const res1 = await fetch(`http://127.0.0.1:${port}/api/blob/${blobId1}`, {
       method: 'POST',
       body: new Uint8Array([1]),
-      headers: { 'X-Forwarded-For': testIp },
+      headers: { Authorization: `Bearer ${TEST_UPLOAD_TOKEN}`, 'X-Forwarded-For': testIp },
     });
     expect(res1.status).toBe(201);
 
@@ -651,7 +657,7 @@ describe('blob HTTP endpoints', () => {
     const res2 = await fetch(`http://127.0.0.1:${port}/api/blob/${blobId2}`, {
       method: 'POST',
       body: new Uint8Array([2]),
-      headers: { 'X-Forwarded-For': testIp },
+      headers: { Authorization: `Bearer ${TEST_UPLOAD_TOKEN}`, 'X-Forwarded-For': testIp },
     });
     expect(res2.status).toBe(429);
   });

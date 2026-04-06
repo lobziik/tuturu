@@ -19,6 +19,8 @@ interface HttpDeps {
   blobStore: BlobStore;
   blobMaxBytes: number;
   blobRateLimitMs: number;
+  /** Optional bearer token for blob uploads. When absent, uploads are disabled. */
+  blobUploadToken: string | undefined;
   getRoomCount: () => number;
 }
 
@@ -31,7 +33,7 @@ const BLOB_PATTERN = /^\/api\/blob\/([^/]+)$/;
  * @returns Fetch handler function for Bun.serve
  */
 export function createFetchHandler(deps: HttpDeps) {
-  const { assets, blobStore, blobMaxBytes, blobRateLimitMs, getRoomCount } = deps;
+  const { assets, blobStore, blobMaxBytes, blobRateLimitMs, blobUploadToken, getRoomCount } = deps;
   const { text, binary, etags } = assets;
 
   /** Rate limiter: IP → last upload timestamp */
@@ -92,6 +94,7 @@ export function createFetchHandler(deps: HttpDeps) {
           blobMaxBytes,
           blobRateLimitMs,
           blobStore,
+          blobUploadToken,
           uploadTimestamps,
         );
       }
@@ -198,18 +201,34 @@ function serveStaticAsset(
   });
 }
 
-/** Handle blob upload with rate limiting and size validation */
+/** Handle blob upload with token auth, rate limiting, and size validation */
 async function handleBlobUpload(
   req: Request,
   blobId: string,
   blobMaxBytes: number,
   blobRateLimitMs: number,
   blobStore: BlobStore,
+  uploadToken: string | undefined,
   uploadTimestamps: Map<string, number>,
 ): Promise<Response> {
   // Always consume the request body — Bun keeps connections alive, and an
   // unconsumed body on a keep-alive connection corrupts subsequent requests.
   const buffer = await req.arrayBuffer();
+
+  if (!uploadToken) {
+    return new Response(JSON.stringify({ error: 'Blob upload is disabled' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const authHeader = req.headers.get('Authorization');
+  if (authHeader !== `Bearer ${uploadToken}`) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
   if (buffer.byteLength > blobMaxBytes) {
     return new Response(JSON.stringify({ error: 'Blob too large' }), {

@@ -58,6 +58,10 @@ const configSchema = z.object({
   retentionDays: z.coerce.number().int().min(1).default(7),
   historyBatchSize: z.coerce.number().int().min(1).default(100),
   blobMaxBytes: z.coerce.number().int().min(1).default(15_728_640),
+  blobUploadToken: z
+    .string()
+    .min(16, 'BLOB_UPLOAD_TOKEN must be at least 16 characters')
+    .optional(),
   blobDir: z.string().default('./blobs'),
   dbPath: z.string().default('./messages.db'),
   maxParticipants: z.coerce.number().int().min(2).max(10).default(6),
@@ -79,6 +83,7 @@ function loadConfig() {
     retentionDays: process.env.RETENTION_DAYS,
     historyBatchSize: process.env.HISTORY_BATCH_SIZE,
     blobMaxBytes: process.env.BLOB_MAX_BYTES,
+    blobUploadToken: process.env.BLOB_UPLOAD_TOKEN,
     blobDir: process.env.BLOB_DIR,
     dbPath: process.env.DB_PATH,
     maxParticipants: process.env.MAX_PARTICIPANTS,

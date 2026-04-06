@@ -45,10 +45,25 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
     );
     refs.pc.current = pc;
 
+    // makingOffer guards against glare: if RECEIVED_OFFER arrives while
+    // createOffer is in flight (signalingState still 'stable'), handleOffer
+    // can detect the collision via this flag.
+    refs.makingOffer.current = true;
     pc.createOffer()
-      .then((offer) => pc.setLocalDescription(offer))
-      .then(() => {
+      .then((offer) => {
         if (refs.pc.current !== pc) return;
+        // Polite glare resolution may have cleared makingOffer → abort
+        if (!refs.makingOffer.current) {
+          console.log('[RTC] Offer creation aborted (glare resolution yielded)');
+          return;
+        }
+        return pc.setLocalDescription(offer);
+      })
+      .then(() => {
+        refs.makingOffer.current = false;
+        if (refs.pc.current !== pc) return;
+        // After polite glare rollback, signalingState won't be have-local-offer
+        if (pc.signalingState !== 'have-local-offer') return;
         const sdp = pc.localDescription?.sdp;
         if (!sdp) {
           throw new Error('localDescription has no SDP after setLocalDescription');
@@ -57,6 +72,7 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
         console.log('[RTC] Sent offer');
       })
       .catch((error: Error) => {
+        refs.makingOffer.current = false;
         if (refs.pc.current !== pc) return;
         console.error('[RTC] Failed to create offer:', error);
         dispatch({
@@ -66,7 +82,9 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
       });
   }
 
-  // Received offer → Create peer connection (if needed) and handle as callee
+  // Received offer → Create peer connection (if needed) and handle as callee.
+  // Includes glare resolution: if both peers sent offers simultaneously,
+  // the polite peer (lower peerId) rolls back its own offer and accepts.
   if (action.type === 'RECEIVED_OFFER' && iceConfig) {
     if (!refs.pc.current) {
       const pc = createPeerConnection(
@@ -80,7 +98,20 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
       );
       refs.pc.current = pc;
     }
-    void handleOffer(refs.pc.current, action.offer, refs.ws.current, refs.pc, dispatch);
+
+    const selfPeerId = newState.phase === 'room' ? newState.selfPeerId : null;
+    const isPolite =
+      selfPeerId != null && action.fromPeerId != null && selfPeerId < action.fromPeerId;
+
+    void handleOffer(
+      refs.pc.current,
+      action.offer,
+      refs.ws.current,
+      refs.pc,
+      dispatch,
+      isPolite,
+      refs.makingOffer,
+    );
   }
 
   // Received answer → Set remote description (only during active negotiation)

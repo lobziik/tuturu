@@ -122,18 +122,67 @@ export function createPeerConnection(
   return pc;
 }
 
-/** Handle incoming offer (callee side) */
+/**
+ * Handle incoming offer (callee side), with glare resolution.
+ *
+ * **Glare** occurs when both peers send offers simultaneously (both clicked call
+ * at the same time). Resolution uses the "perfect negotiation" pattern:
+ * - **Polite** peer (lower peerId): rolls back own offer (if set), accepts
+ *   remote offer, creates and sends answer. Also cancels any in-flight
+ *   createOffer chain via `makingOfferRef`.
+ * - **Impolite** peer (higher peerId): ignores the remote offer, waits for an
+ *   answer to its own offer.
+ *
+ * Collision is detected by `makingOffer || signalingState !== 'stable'`.
+ * The `makingOffer` flag catches the race where createOffer() is pending but
+ * setLocalDescription hasn't run yet (signalingState is still 'stable').
+ *
+ * @param isPolite - Whether this peer yields during glare (true = rollback own offer)
+ * @param makingOfferRef - Ref tracking in-flight offer creation; cleared by polite peer to abort the offer chain
+ */
 export async function handleOffer(
   pc: RTCPeerConnection | null,
   offer: RTCSessionDescriptionInit,
   ws: WebSocket | null,
   pcRef: PcRef,
   dispatch: Dispatch,
+  isPolite: boolean,
+  makingOfferRef: { current: boolean },
 ): Promise<void> {
   if (!pc || pcRef.current !== pc) return;
 
+  // Collision = we're creating or have created our own offer
+  const offerCollision = makingOfferRef.current || pc.signalingState !== 'stable';
+
+  if (offerCollision) {
+    if (!isPolite) {
+      console.log('[RTC] Glare: impolite peer ignoring remote offer, waiting for answer');
+      return;
+    }
+
+    // Polite peer: cancel pending offer chain and yield to remote offer
+    console.log('[RTC] Glare: polite peer yielding to remote offer');
+    makingOfferRef.current = false;
+
+    if (pc.signalingState === 'have-local-offer') {
+      try {
+        await pc.setLocalDescription({ type: 'rollback' });
+        if (pcRef.current !== pc) return;
+      } catch (error) {
+        if (pcRef.current !== pc) return;
+        console.error('[RTC] Failed to rollback during glare:', error);
+        dispatch({
+          type: 'RTC_FAILED',
+          reason: `Glare rollback failed: ${(error as Error).message}`,
+        });
+        return;
+      }
+    }
+    // Fall through to normal offer handling (now in stable state)
+  }
+
   if (pc.signalingState !== 'stable') {
-    console.warn('[RTC] Ignoring stale offer: expected stable, got', pc.signalingState);
+    console.warn('[RTC] Ignoring offer: expected stable, got', pc.signalingState);
     return;
   }
 

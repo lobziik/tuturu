@@ -44,6 +44,7 @@ export function App() {
   const reconnectAttemptRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
   const seqLoadedRef = useRef<boolean>(false);
+  const makingOfferRef = useRef<boolean>(false);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
@@ -60,6 +61,7 @@ export function App() {
       reconnectAttempt: reconnectAttemptRef,
       seq: seqRef,
       seqLoaded: seqLoadedRef,
+      makingOffer: makingOfferRef,
     }),
     [],
   );

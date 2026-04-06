@@ -194,6 +194,7 @@ function handleServerMessage(
       dispatch({
         type: 'RECEIVED_OFFER',
         offer: { type: 'offer', sdp: message.sdp },
+        ...(message.peerId != null && { fromPeerId: message.peerId }),
       });
       break;
 

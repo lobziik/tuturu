@@ -181,7 +181,7 @@ export type Action =
 
   // Server responses — signaling / ICE
   | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy }
-  | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit }
+  | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit; fromPeerId?: string }
   | { type: 'RECEIVED_ANSWER'; answer: RTCSessionDescriptionInit }
   | { type: 'RECEIVED_ICE_CANDIDATE'; candidate: RTCIceCandidateInit }
   | { type: 'SERVER_ERROR'; error: string }

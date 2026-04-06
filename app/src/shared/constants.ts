@@ -24,6 +24,9 @@ export const WS_PONG_TIMEOUT_MS = 90_000;
  *  Must exceed WS_PONG_TIMEOUT_MS to avoid premature reconnects on jittery networks. */
 export const WS_DEAD_DETECTION_MS = 100_000;
 
+/** Maximum number of WebSocket reconnect attempts before giving up */
+export const MAX_RECONNECT_ATTEMPTS = 20;
+
 /** Maximum participants per room (video mesh limit) */
 export const MAX_ROOM_PARTICIPANTS = 6;
 

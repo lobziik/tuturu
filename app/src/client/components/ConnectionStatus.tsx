@@ -10,9 +10,7 @@
 import { useCallback } from 'preact/hooks';
 import type { WsStatus } from '../state/types';
 import type { Dispatch } from '../state/context';
-
-/** Maximum reconnect attempts — matches roomWebSocket.ts constant */
-const MAX_RECONNECT_ATTEMPTS = 20;
+import { MAX_RECONNECT_ATTEMPTS } from '../../shared/constants';
 
 interface ConnectionStatusProps {
   /** Current WebSocket connection status */

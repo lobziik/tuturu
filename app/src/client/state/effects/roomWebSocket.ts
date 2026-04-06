@@ -7,7 +7,7 @@
  * @module state/effects/roomWebSocket
  */
 
-import { WS_DEAD_DETECTION_MS } from '../../../shared/constants';
+import { WS_DEAD_DETECTION_MS, MAX_RECONNECT_ATTEMPTS } from '../../../shared/constants';
 import {
   createWebSocket,
   setupWebSocketHandlers,
@@ -23,9 +23,6 @@ const MAX_RECONNECT_DELAY_MS = 30_000;
 
 /** Base reconnect delay in milliseconds */
 const BASE_RECONNECT_DELAY_MS = 1_000;
-
-/** Maximum number of reconnect attempts before giving up */
-const MAX_RECONNECT_ATTEMPTS = 20;
 
 /** Handle room-level WebSocket side effects */
 export function handleRoomWebSocketEffects(ctx: EffectContext, args: EffectArgs): void {

@@ -66,6 +66,7 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       nickname: state.nickname,
       view: 'chat',
       messages: [],
+      messageUuids: new Set(),
       wsStatus: 'connecting',
       reconnectAttempt: 0,
       selfPeerId: null,
@@ -119,16 +120,14 @@ function toErrorScreen(
 
 /**
  * Insert a message into a sorted array by timestamp, deduplicating by uuid.
- * Returns a new array (no mutation).
- *
- * TODO: dedup check is O(N) linear scan — consider Set<uuid> cache when message
- * counts exceed ~1000 (batch history loads make this O(N×M)).
+ * Returns null if the message is a duplicate, otherwise a new array (no mutation).
  */
-function insertMessageSorted(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
-  // Dedup check — skip if uuid already exists
-  if (messages.some((m) => m.uuid === msg.uuid)) {
-    return messages;
-  }
+function insertMessageSorted(
+  messages: ChatMessage[],
+  uuids: Set<string>,
+  msg: ChatMessage,
+): ChatMessage[] | null {
+  if (uuids.has(msg.uuid)) return null;
 
   // Binary search for insertion point (sorted ascending by timestamp)
   let lo = 0;
@@ -159,12 +158,16 @@ function resolveHistoryCursor(existing: number | null, incoming: number | null):
 
 /**
  * Merge history messages with existing messages.
- * Deduplicates by uuid, sorts by timestamp ascending.
+ * Deduplicates by uuid using the Set index, sorts by timestamp ascending.
+ * Returns null if no new messages were added.
  */
-function mergeHistory(existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
-  const existingUuids = new Set(existing.map((m) => m.uuid));
-  const newMessages = incoming.filter((m) => !existingUuids.has(m.uuid));
-  if (newMessages.length === 0) return existing;
+function mergeHistory(
+  existing: ChatMessage[],
+  uuids: Set<string>,
+  incoming: ChatMessage[],
+): ChatMessage[] | null {
+  const newMessages = incoming.filter((m) => !uuids.has(m.uuid));
+  if (newMessages.length === 0) return null;
 
   return [...newMessages, ...existing].sort((a, b) => a.timestamp - b.timestamp);
 }
@@ -261,22 +264,30 @@ function roomChatReducer(state: RoomState, action: ChatAction): AppState {
       if (!state.historyHasMore || state.loadingHistory) return state;
       return { ...state, loadingHistory: true };
 
-    case 'CHAT_RECEIVED':
+    case 'CHAT_RECEIVED': {
+      const inserted = insertMessageSorted(state.messages, state.messageUuids, action.message);
+      if (!inserted) return state;
       return {
         ...state,
-        messages: insertMessageSorted(state.messages, action.message),
+        messages: inserted,
+        messageUuids: new Set([...state.messageUuids, action.message.uuid]),
       };
+    }
 
     case 'HISTORY_LOADED': {
+      const merged = mergeHistory(state.messages, state.messageUuids, action.messages);
       if (action.fromCache) {
+        if (!merged) return state;
         return {
           ...state,
-          messages: mergeHistory(state.messages, action.messages),
+          messages: merged,
+          messageUuids: new Set(merged.map((m) => m.uuid)),
         };
       }
       return {
         ...state,
-        messages: mergeHistory(state.messages, action.messages),
+        messages: merged ?? state.messages,
+        messageUuids: merged ? new Set(merged.map((m) => m.uuid)) : state.messageUuids,
         historyCursor: resolveHistoryCursor(state.historyCursor, action.cursor),
         historyHasMore: action.hasMore,
         loadingHistory: false,

@@ -81,6 +81,8 @@ export type AppState =
       view: 'chat' | 'call';
       /** Chat messages (sorted by timestamp ascending) */
       messages: ChatMessage[];
+      /** O(1) dedup index — tracks UUIDs present in messages array */
+      messageUuids: Set<string>;
       /** Room-level WebSocket connection status */
       wsStatus: WsStatus;
       /** Current reconnect attempt number (0 = not reconnecting) */

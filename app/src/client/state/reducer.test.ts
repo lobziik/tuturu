@@ -19,13 +19,14 @@ function roomState(
   screen: Screen,
   overrides?: Partial<Omit<RoomState, 'phase' | 'screen'>>,
 ): RoomState {
-  return {
+  const base: RoomState = {
     phase: 'room',
     roomId: 'test-room-id',
     deviceId: 'test-device-id',
     nickname: 'TestUser',
     view: 'chat',
     messages: [],
+    messageUuids: new Set<string>(),
     wsStatus: 'connected',
     reconnectAttempt: 0,
     selfPeerId: null,
@@ -39,6 +40,11 @@ function roomState(
     callActive: false,
     ...overrides,
   };
+  // Keep messageUuids in sync with messages unless explicitly overridden
+  if (overrides?.messages && !overrides.messageUuids) {
+    base.messageUuids = new Set(base.messages.map((m) => m.uuid));
+  }
+  return base;
 }
 
 /** Assert state is in room phase and return narrowed type */

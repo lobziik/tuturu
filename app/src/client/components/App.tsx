@@ -20,8 +20,6 @@ import { openDB, getSetting } from '../services/db';
 
 import { NicknameScreen } from './NicknameScreen';
 import { LoginScreen } from './LoginScreen';
-import { PinEntryScreen } from './PinEntryScreen';
-import { ConnectingScreen } from './ConnectingScreen';
 import { AcquiringMediaScreen } from './AcquiringMediaScreen';
 import { CallScreen } from './CallScreen';
 import { ErrorBanner } from './ErrorBanner';
@@ -154,11 +152,9 @@ export function App() {
 
     // Call view — video call sub-state machine
     switch (roomState.screen.type) {
-      case 'pin-entry':
-        return <PinEntryScreen dispatch={dispatch} />;
-
-      case 'connecting':
-        return <ConnectingScreen />;
+      case 'idle':
+        // Safety fallback — idle screen shouldn't render in call view
+        return null;
 
       case 'acquiring-media':
         return <AcquiringMediaScreen />;
@@ -176,13 +172,7 @@ export function App() {
         );
 
       case 'error':
-        return (
-          <ErrorBanner
-            message={roomState.screen.message}
-            canRetry={roomState.screen.canRetry}
-            dispatch={dispatch}
-          />
-        );
+        return <ErrorBanner message={roomState.screen.message} dispatch={dispatch} />;
     }
   };
 

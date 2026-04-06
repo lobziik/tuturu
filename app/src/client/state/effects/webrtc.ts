@@ -76,13 +76,13 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
     void handleOffer(refs.pc.current, action.offer, refs.ws.current, dispatch);
   }
 
-  // Received answer → Set remote description
-  if (action.type === 'RECEIVED_ANSWER') {
+  // Received answer → Set remote description (only during active negotiation)
+  if (action.type === 'RECEIVED_ANSWER' && newScreen?.type === 'negotiating') {
     void handleAnswer(refs.pc.current, action.answer, dispatch);
   }
 
-  // Received ICE candidate → Add to peer connection
-  if (action.type === 'RECEIVED_ICE_CANDIDATE') {
+  // Received ICE candidate → Add to peer connection (only during call-related screens)
+  if (action.type === 'RECEIVED_ICE_CANDIDATE' && newScreen && 'muted' in newScreen) {
     void handleIceCandidate(refs.pc.current, action.candidate, dispatch);
   }
 }

@@ -117,7 +117,6 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
     <div id="call-interface" class={layoutClass}>
       <div class="status-bar" id="status-bar" ref={statusBarRef}>
         <span id="status-text">{statusText}</span>
-        <span id="pin-display">PIN: {screen.pin}</span>
       </div>
 
       <div class="video-container">

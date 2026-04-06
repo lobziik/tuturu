@@ -68,8 +68,18 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
     cleanupCallResources(refs);
   }
 
-  // Entering non-retryable error → Cleanup call resources so nothing lingers
-  if (newScreen?.type === 'error' && !newScreen.canRetry && prevScreen?.type !== 'error') {
+  // PEER_LEFT_CALL → Remote peer left, tear down call resources (no leave-call needed)
+  if (action.type === 'PEER_LEFT_CALL') {
+    cleanupCallResources(refs);
+  }
+
+  // Entering error screen → Cleanup call resources so nothing lingers
+  if (newScreen?.type === 'error' && prevScreen?.type !== 'error') {
+    cleanupCallResources(refs);
+  }
+
+  // DISMISS_ERROR → Cleanup any lingering call resources (e.g. retryable media errors)
+  if (action.type === 'DISMISS_ERROR' && prevScreen?.type === 'error') {
     cleanupCallResources(refs);
   }
 }

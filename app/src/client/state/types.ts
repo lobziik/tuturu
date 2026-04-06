@@ -11,13 +11,13 @@
  *
  * Screen Transition Flow (Happy Path):
  * ```
- * pin-entry -> connecting -> acquiring-media -> waiting-for-peer ->
- * negotiating -> call
+ * idle -> (SWITCH_TO_CALL) -> acquiring-media -> waiting-for-peer ->
+ * negotiating -> call -> (HANGUP) -> idle
  * ```
  *
  * Error States:
  * - Any screen can transition to `error`
- * - Error screen can return to `pin-entry` (if canRetry=true)
+ * - Error screen dismisses back to idle + chat view
  *
  * @module state/types
  */
@@ -31,19 +31,17 @@ import type { ChatMessage } from '../../shared/schemas';
 
 /** Screen types - discriminated union for type-safe state transitions */
 export type Screen =
-  | { type: 'pin-entry' }
-  | { type: 'connecting'; pin: string }
-  | { type: 'acquiring-media'; pin: string }
-  | { type: 'waiting-for-peer'; pin: string; muted: boolean; videoOff: boolean; pipHidden: boolean }
+  | { type: 'idle' }
+  | { type: 'acquiring-media' }
+  | { type: 'waiting-for-peer'; muted: boolean; videoOff: boolean; pipHidden: boolean }
   | {
       type: 'negotiating';
-      pin: string;
       role: 'caller' | 'callee';
       muted: boolean;
       videoOff: boolean;
       pipHidden: boolean;
     }
-  | { type: 'call'; pin: string; muted: boolean; videoOff: boolean; pipHidden: boolean }
+  | { type: 'call'; muted: boolean; videoOff: boolean; pipHidden: boolean }
   | { type: 'error'; message: string; canRetry: boolean; previousScreen?: Screen };
 
 // ============================================================================
@@ -117,7 +115,7 @@ export type RoomState = Extract<AppState, { phase: 'room' }>;
  * Categories:
  * 1. Phase Transitions (SUBMIT_NICKNAME, NICKNAME_LOADED, SUBMIT_LOGIN)
  * 2. User Interactions — chat (SWITCH_TO_CALL, SEND_MESSAGE, etc.)
- * 3. User Interactions — video call (SUBMIT_PIN, TOGGLE_MUTE, etc.)
+ * 3. User Interactions — video call (TOGGLE_MUTE, HANGUP, etc.)
  * 4. Room-level WebSocket (WS_ROOM_CONNECTED, WS_ROOM_DISCONNECTED, etc.)
  * 5. WebSocket close/error (WS_ERROR, WS_CLOSED)
  * 6. Server responses — peers (PEERS_LIST, PEER_JOINED_ROOM, PEER_LEFT_ROOM)
@@ -140,7 +138,6 @@ export type Action =
   | { type: 'REQUEST_HISTORY' }
 
   // User interactions (room phase — video call)
-  | { type: 'SUBMIT_PIN'; pin: string }
   | { type: 'TOGGLE_MUTE' }
   | { type: 'TOGGLE_VIDEO' }
   | { type: 'TOGGLE_PIP_VISIBILITY' }

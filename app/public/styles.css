@@ -249,12 +249,6 @@ button {
   font-weight: 600;
 }
 
-#pin-display {
-  font-family: 'Courier New', monospace;
-  font-weight: 600;
-  color: var(--primary);
-}
-
 /* Video Container */
 .video-container {
   position: relative;
@@ -593,14 +587,6 @@ footer a:hover {
   .mobile-call .status-bar.hidden-overlay {
     opacity: 0;
     pointer-events: none;
-  }
-
-  .mobile-call .status-bar #pin-display {
-    font-size: 1.25rem;
-  }
-
-  .mobile-call .status-bar #status-text {
-    display: none; /* Show only PIN on mobile during call */
   }
 
   /* Circular overlay controls at bottom */

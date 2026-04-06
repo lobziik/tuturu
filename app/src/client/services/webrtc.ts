@@ -125,6 +125,11 @@ export async function handleOffer(
     return;
   }
 
+  if (pc.signalingState !== 'stable') {
+    console.warn('[RTC] Ignoring stale offer: expected stable, got', pc.signalingState);
+    return;
+  }
+
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await pc.createAnswer();
@@ -151,6 +156,11 @@ export async function handleAnswer(
 ): Promise<void> {
   if (!pc) {
     console.error('[RTC] No peer connection to handle answer');
+    return;
+  }
+
+  if (pc.signalingState !== 'have-local-offer') {
+    console.warn('[RTC] Ignoring stale answer: expected have-local-offer, got', pc.signalingState);
     return;
   }
 
@@ -185,10 +195,20 @@ export async function handleIceCandidate(
   }
 }
 
-/** Close peer connection and release resources */
+/**
+ * Close peer connection and release resources.
+ * Nulls all event handlers BEFORE close() to prevent callbacks from
+ * in-flight async operations (handleAnswer, ICE gathering) from
+ * dispatching actions after cleanup.
+ */
 export function closePeerConnection(pc: RTCPeerConnection): void {
+  pc.ontrack = null;
+  pc.onicecandidate = null;
+  pc.onconnectionstatechange = null;
+  pc.oniceconnectionstatechange = null;
+
   if (pc.connectionState !== 'closed') {
     pc.close();
-    console.log('[RTC] Peer connection closed');
   }
+  console.log('[RTC] Peer connection closed');
 }

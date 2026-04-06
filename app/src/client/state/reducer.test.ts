@@ -112,19 +112,19 @@ describe('reducer', () => {
       expect(room.historyCursor).toBeNull();
       expect(room.historyHasMore).toBe(false);
       expect(room.loadingHistory).toBe(false);
-      expect(room.screen.type).toBe('pin-entry');
+      expect(room.screen.type).toBe('idle');
       expect(room.iceServers).toBeNull();
       expect(room.iceTransportPolicy).toBe('all');
     });
 
     test('SUBMIT_NICKNAME is ignored in room phase', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       const action: Action = { type: 'SUBMIT_NICKNAME', nickname: 'test' };
       expect(reducer(state, action)).toBe(state);
     });
 
     test('SUBMIT_LOGIN is ignored in room phase', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       const mockAesKey = {} as CryptoKey;
       const action: Action = {
         type: 'SUBMIT_LOGIN',
@@ -142,24 +142,14 @@ describe('reducer', () => {
 
   describe('Room-level WebSocket lifecycle', () => {
     test('WS_ROOM_CONNECTED sets wsStatus to connected', () => {
-      const state = roomState({ type: 'pin-entry' }, { wsStatus: 'connecting' });
+      const state = roomState({ type: 'idle' }, { wsStatus: 'connecting' });
       const room = expectRoom(reducer(state, { type: 'WS_ROOM_CONNECTED' }));
       expect(room.wsStatus).toBe('connected');
-    });
-
-    test('WS_ROOM_CONNECTED advances connecting screen to acquiring-media', () => {
-      const state = roomState({ type: 'connecting', pin: '123456' }, { wsStatus: 'connecting' });
-      const room = expectRoom(reducer(state, { type: 'WS_ROOM_CONNECTED' }));
-      expect(room.wsStatus).toBe('connected');
-      expect(room.screen.type).toBe('acquiring-media');
-      if (room.screen.type === 'acquiring-media') {
-        expect(room.screen.pin).toBe('123456');
-      }
     });
 
     test('WS_ROOM_DISCONNECTED sets wsStatus and errors active call', () => {
       const state = roomState(
-        { type: 'call', pin: '123456', muted: false, videoOff: false, pipHidden: false },
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
         { wsStatus: 'connected' },
       );
       const room = expectRoom(reducer(state, { type: 'WS_ROOM_DISCONNECTED' }));
@@ -168,22 +158,21 @@ describe('reducer', () => {
     });
 
     test('WS_ROOM_DISCONNECTED does not affect chat view screen', () => {
-      const state = roomState({ type: 'pin-entry' }, { wsStatus: 'connected' });
+      const state = roomState({ type: 'idle' }, { wsStatus: 'connected' });
       const room = expectRoom(reducer(state, { type: 'WS_ROOM_DISCONNECTED' }));
       expect(room.wsStatus).toBe('disconnected');
-      expect(room.screen.type).toBe('pin-entry');
+      expect(room.screen.type).toBe('idle');
     });
 
     test('WS_ROOM_RECONNECTING sets wsStatus', () => {
-      const state = roomState({ type: 'pin-entry' }, { wsStatus: 'disconnected' });
+      const state = roomState({ type: 'idle' }, { wsStatus: 'disconnected' });
       const room = expectRoom(reducer(state, { type: 'WS_ROOM_RECONNECTING', attempt: 1 }));
       expect(room.wsStatus).toBe('reconnecting');
     });
 
-    test('WS_CLOSED intentional goes to pin-entry', () => {
+    test('WS_CLOSED intentional goes to idle and chat view', () => {
       const state = roomState({
         type: 'call',
-        pin: '123456',
         muted: false,
         videoOff: false,
         pipHidden: false,
@@ -196,14 +185,14 @@ describe('reducer', () => {
           intentional: true,
         }),
       );
-      expect(room.screen.type).toBe('pin-entry');
+      expect(room.screen.type).toBe('idle');
+      expect(room.view).toBe('chat');
       expect(room.wsStatus).toBe('disconnected');
     });
 
     test('WS_CLOSED unintentional sets wsStatus to disconnected', () => {
       const state = roomState({
         type: 'call',
-        pin: '123456',
         muted: false,
         videoOff: false,
         pipHidden: false,
@@ -215,44 +204,9 @@ describe('reducer', () => {
     });
 
     test('WS_ERROR sets wsStatus to disconnected', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       const room = expectRoom(reducer(state, { type: 'WS_ERROR', error: 'Connection failed' }));
       expect(room.wsStatus).toBe('disconnected');
-    });
-  });
-
-  // ========================================================================
-  // PIN submission flow (simplified — WS already at room level)
-  // ========================================================================
-
-  describe('PIN submission flow', () => {
-    test('SUBMIT_PIN skips to acquiring-media when WS connected', () => {
-      const state = roomState({ type: 'pin-entry' }, { wsStatus: 'connected' });
-      const room = expectRoom(reducer(state, { type: 'SUBMIT_PIN', pin: '123456' }));
-      expect(room.screen.type).toBe('acquiring-media');
-      if (room.screen.type === 'acquiring-media') {
-        expect(room.screen.pin).toBe('123456');
-      }
-    });
-
-    test('SUBMIT_PIN falls back to connecting when WS not connected', () => {
-      const state = roomState({ type: 'pin-entry' }, { wsStatus: 'reconnecting' });
-      const room = expectRoom(reducer(state, { type: 'SUBMIT_PIN', pin: '123456' }));
-      expect(room.screen.type).toBe('connecting');
-      if (room.screen.type === 'connecting') {
-        expect(room.screen.pin).toBe('123456');
-      }
-    });
-
-    test('SUBMIT_PIN is ignored in non-pin-entry states', () => {
-      const state = roomState({
-        type: 'call',
-        pin: '111111',
-        muted: false,
-        videoOff: false,
-        pipHidden: false,
-      });
-      expect(reducer(state, { type: 'SUBMIT_PIN', pin: '999999' })).toBe(state);
     });
   });
 
@@ -262,7 +216,7 @@ describe('reducer', () => {
 
   describe('Peer tracking', () => {
     test('PEERS_LIST populates peers and selfPeerId', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       const room = expectRoom(
         reducer(state, {
           type: 'PEERS_LIST',
@@ -280,7 +234,7 @@ describe('reducer', () => {
     });
 
     test('PEER_JOINED_ROOM adds peer', () => {
-      const state = roomState({ type: 'pin-entry' }, { peers: { p1: { peerId: 'p1' } } });
+      const state = roomState({ type: 'idle' }, { peers: { p1: { peerId: 'p1' } } });
       const room = expectRoom(
         reducer(state, {
           type: 'PEER_JOINED_ROOM',
@@ -295,7 +249,7 @@ describe('reducer', () => {
 
     test('PEER_LEFT_ROOM removes peer', () => {
       const state = roomState(
-        { type: 'pin-entry' },
+        { type: 'idle' },
         { peers: { p1: { peerId: 'p1' }, p2: { peerId: 'p2' } } },
       );
       const room = expectRoom(reducer(state, { type: 'PEER_LEFT_ROOM', peerId: 'p1', count: 1 }));
@@ -313,7 +267,7 @@ describe('reducer', () => {
     test('CHAT_RECEIVED inserts message sorted by timestamp', () => {
       const msg1 = chatMessage({ timestamp: 100, uuid: 'a' });
       const msg3 = chatMessage({ timestamp: 300, uuid: 'c' });
-      const state = roomState({ type: 'pin-entry' }, { messages: [msg1, msg3] });
+      const state = roomState({ type: 'idle' }, { messages: [msg1, msg3] });
 
       const msg2 = chatMessage({ timestamp: 200, uuid: 'b' });
       const room = expectRoom(reducer(state, { type: 'CHAT_RECEIVED', message: msg2 }));
@@ -325,7 +279,7 @@ describe('reducer', () => {
 
     test('CHAT_RECEIVED deduplicates by uuid', () => {
       const msg = chatMessage({ uuid: 'dup' });
-      const state = roomState({ type: 'pin-entry' }, { messages: [msg] });
+      const state = roomState({ type: 'idle' }, { messages: [msg] });
       const room = expectRoom(reducer(state, { type: 'CHAT_RECEIVED', message: msg }));
       expect(room.messages).toHaveLength(1);
     });
@@ -333,7 +287,7 @@ describe('reducer', () => {
     test('HISTORY_LOADED merges and deduplicates messages', () => {
       const existing = chatMessage({ timestamp: 300, uuid: 'c' });
       const state = roomState(
-        { type: 'pin-entry' },
+        { type: 'idle' },
         { messages: [existing], historyHasMore: false, historyCursor: null },
       );
 
@@ -360,7 +314,7 @@ describe('reducer', () => {
         chatMessage({ timestamp: 200, uuid: 'r2' }),
       ];
       const state = roomState(
-        { type: 'pin-entry' },
+        { type: 'idle' },
         { messages: [...batch], historyCursor: 5, historyHasMore: true },
       );
 
@@ -373,7 +327,7 @@ describe('reducer', () => {
     });
 
     test('HISTORY_LOADED takes minimum cursor', () => {
-      const state = roomState({ type: 'pin-entry' }, { historyCursor: 10, historyHasMore: true });
+      const state = roomState({ type: 'idle' }, { historyCursor: 10, historyHasMore: true });
       const room = expectRoom(
         reducer(state, { type: 'HISTORY_LOADED', messages: [], cursor: 5, hasMore: true }),
       );
@@ -381,40 +335,34 @@ describe('reducer', () => {
     });
 
     test('REQUEST_HISTORY sets loadingHistory', () => {
-      const state = roomState(
-        { type: 'pin-entry' },
-        { historyHasMore: true, loadingHistory: false },
-      );
+      const state = roomState({ type: 'idle' }, { historyHasMore: true, loadingHistory: false });
       const room = expectRoom(reducer(state, { type: 'REQUEST_HISTORY' }));
       expect(room.loadingHistory).toBe(true);
     });
 
     test('REQUEST_HISTORY is ignored when no more history', () => {
-      const state = roomState(
-        { type: 'pin-entry' },
-        { historyHasMore: false, loadingHistory: false },
-      );
+      const state = roomState({ type: 'idle' }, { historyHasMore: false, loadingHistory: false });
       expect(reducer(state, { type: 'REQUEST_HISTORY' })).toBe(state);
     });
 
     test('SEND_MESSAGE returns state unchanged (effects handle it)', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       expect(reducer(state, { type: 'SEND_MESSAGE', text: 'hello' })).toBe(state);
     });
 
     test('CHAT_ACK returns state unchanged', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       expect(reducer(state, { type: 'CHAT_ACK', uuid: 'test' })).toBe(state);
     });
 
     test('PING_RECEIVED returns state unchanged', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       expect(reducer(state, { type: 'PING_RECEIVED' })).toBe(state);
     });
 
     test('HISTORY_LOADED with fromCache only merges messages, does not touch pagination', () => {
       const state = roomState(
-        { type: 'pin-entry' },
+        { type: 'idle' },
         { historyCursor: 10, historyHasMore: false, loadingHistory: true },
       );
 
@@ -442,21 +390,20 @@ describe('reducer', () => {
 
   describe('Media lifecycle', () => {
     test('MEDIA_ACQUIRED transitions to waiting-for-peer', () => {
-      const state = roomState({ type: 'acquiring-media', pin: '123456' });
+      const state = roomState({ type: 'acquiring-media' });
       const mockStream = {} as MediaStream;
       const room = expectRoom(
         reducer(state, { type: 'MEDIA_ACQUIRED', stream: mockStream, audioOnly: false }),
       );
       expect(room.screen.type).toBe('waiting-for-peer');
       if (room.screen.type === 'waiting-for-peer') {
-        expect(room.screen.pin).toBe('123456');
         expect(room.screen.muted).toBe(false);
         expect(room.screen.videoOff).toBe(false);
       }
     });
 
     test('MEDIA_ERROR transitions to error state', () => {
-      const state = roomState({ type: 'acquiring-media', pin: '123456' });
+      const state = roomState({ type: 'acquiring-media' });
       const room = expectRoom(
         reducer(state, { type: 'MEDIA_ERROR', error: 'Microphone permission denied' }),
       );
@@ -476,7 +423,6 @@ describe('reducer', () => {
     test('PEER_JOINED_CALL transitions waiting-for-peer to negotiating as caller', () => {
       const state = roomState({
         type: 'waiting-for-peer',
-        pin: '123456',
         muted: true,
         videoOff: false,
         pipHidden: false,
@@ -485,29 +431,45 @@ describe('reducer', () => {
       expect(room.screen.type).toBe('negotiating');
       if (room.screen.type === 'negotiating') {
         expect(room.screen.role).toBe('caller');
-        expect(room.screen.pin).toBe('123456');
         expect(room.screen.muted).toBe(true);
       }
     });
 
     test('PEER_JOINED_CALL is ignored in non-waiting-for-peer states', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       expect(reducer(state, { type: 'PEER_JOINED_CALL', peerId: 'p2' })).toBe(state);
     });
 
-    test('PEER_LEFT_CALL returns state unchanged', () => {
+    test('PEER_LEFT_CALL during call returns to chat and idle', () => {
       const state = roomState({
         type: 'call',
-        pin: '123456',
         muted: false,
         videoOff: false,
         pipHidden: false,
       });
+      const room = expectRoom(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'p2' }));
+      expect(room.screen.type).toBe('idle');
+      expect(room.view).toBe('chat');
+    });
+
+    test('PEER_LEFT_CALL during error returns to chat and idle', () => {
+      const state = roomState({
+        type: 'error',
+        message: 'Connection failed',
+        canRetry: false,
+      });
+      const room = expectRoom(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'p2' }));
+      expect(room.screen.type).toBe('idle');
+      expect(room.view).toBe('chat');
+    });
+
+    test('PEER_LEFT_CALL is ignored in idle state', () => {
+      const state = roomState({ type: 'idle' });
       expect(reducer(state, { type: 'PEER_LEFT_CALL', peerId: 'p2' })).toBe(state);
     });
 
     test('JOINED_ROOM stores ICE servers and transport policy', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       const mockIceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
       const room = expectRoom(
         reducer(state, {
@@ -523,7 +485,6 @@ describe('reducer', () => {
     test('RECEIVED_OFFER transitions to negotiating as callee', () => {
       const state = roomState({
         type: 'waiting-for-peer',
-        pin: '123456',
         muted: false,
         videoOff: false,
         pipHidden: false,
@@ -541,7 +502,7 @@ describe('reducer', () => {
     });
 
     test('SERVER_ERROR shows non-retryable error', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       const room = expectRoom(reducer(state, { type: 'SERVER_ERROR', error: 'Room is full' }));
       expect(room.screen.type).toBe('error');
       if (room.screen.type === 'error') {
@@ -559,7 +520,6 @@ describe('reducer', () => {
     test('RTC_CONNECTED transitions negotiating to call', () => {
       const state = roomState({
         type: 'negotiating',
-        pin: '123456',
         role: 'caller',
         muted: false,
         videoOff: false,
@@ -567,21 +527,28 @@ describe('reducer', () => {
       });
       const room = expectRoom(reducer(state, { type: 'RTC_CONNECTED' }));
       expect(room.screen.type).toBe('call');
-      if (room.screen.type === 'call') {
-        expect(room.screen.pin).toBe('123456');
-      }
     });
 
-    test('RTC_FAILED shows error', () => {
-      const state = roomState({ type: 'pin-entry' });
+    test('RTC_FAILED shows error during active call', () => {
+      const state = roomState({
+        type: 'call',
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
+      });
       const room = expectRoom(
         reducer(state, { type: 'RTC_FAILED', reason: 'ICE connection failed' }),
       );
       expect(room.screen.type).toBe('error');
     });
 
+    test('RTC_FAILED is ignored in idle state', () => {
+      const state = roomState({ type: 'idle' });
+      expect(reducer(state, { type: 'RTC_FAILED', reason: 'stale failure' })).toBe(state);
+    });
+
     test('RTC_TRACK_RECEIVED returns state unchanged (stream in ref)', () => {
-      const state = roomState({ type: 'pin-entry' });
+      const state = roomState({ type: 'idle' });
       expect(reducer(state, { type: 'RTC_TRACK_RECEIVED', stream: {} as MediaStream })).toBe(state);
     });
   });
@@ -594,7 +561,6 @@ describe('reducer', () => {
     test('TOGGLE_MUTE flips muted flag in call state', () => {
       const state = roomState({
         type: 'call',
-        pin: '123456',
         muted: false,
         videoOff: false,
         pipHidden: false,
@@ -605,21 +571,20 @@ describe('reducer', () => {
       }
     });
 
-    test('TOGGLE_MUTE is ignored in pin-entry state', () => {
-      const state = roomState({ type: 'pin-entry' });
+    test('TOGGLE_MUTE is ignored in idle state', () => {
+      const state = roomState({ type: 'idle' });
       expect(reducer(state, { type: 'TOGGLE_MUTE' })).toBe(state);
     });
 
-    test('HANGUP returns to chat view and pin-entry', () => {
+    test('HANGUP returns to chat view and idle screen', () => {
       const state = roomState({
         type: 'call',
-        pin: '123456',
         muted: false,
         videoOff: false,
         pipHidden: false,
       });
       const room = expectRoom(reducer(state, { type: 'HANGUP' }));
-      expect(room.screen.type).toBe('pin-entry');
+      expect(room.screen.type).toBe('idle');
       expect(room.view).toBe('chat');
     });
   });
@@ -629,14 +594,15 @@ describe('reducer', () => {
   // ========================================================================
 
   describe('Error handling', () => {
-    test('DISMISS_ERROR returns to pin-entry', () => {
+    test('DISMISS_ERROR returns to idle and chat view', () => {
       const state = roomState({
         type: 'error',
         message: 'Something went wrong',
         canRetry: true,
       });
       const room = expectRoom(reducer(state, { type: 'DISMISS_ERROR' }));
-      expect(room.screen.type).toBe('pin-entry');
+      expect(room.screen.type).toBe('idle');
+      expect(room.view).toBe('chat');
     });
   });
 
@@ -645,14 +611,25 @@ describe('reducer', () => {
   // ========================================================================
 
   describe('View switching', () => {
-    test('SWITCH_TO_CALL changes view', () => {
-      const state = roomState({ type: 'pin-entry' }, { view: 'chat' });
+    test('SWITCH_TO_CALL transitions to acquiring-media when connected', () => {
+      const state = roomState({ type: 'idle' }, { view: 'chat', wsStatus: 'connected' });
       const room = expectRoom(reducer(state, { type: 'SWITCH_TO_CALL' }));
       expect(room.view).toBe('call');
+      expect(room.screen.type).toBe('acquiring-media');
+    });
+
+    test('SWITCH_TO_CALL shows error when not connected', () => {
+      const state = roomState({ type: 'idle' }, { view: 'chat', wsStatus: 'disconnected' });
+      const room = expectRoom(reducer(state, { type: 'SWITCH_TO_CALL' }));
+      expect(room.view).toBe('call');
+      expect(room.screen.type).toBe('error');
+      if (room.screen.type === 'error') {
+        expect(room.screen.canRetry).toBe(false);
+      }
     });
 
     test('SWITCH_TO_CHAT changes view', () => {
-      const state = roomState({ type: 'pin-entry' }, { view: 'call' });
+      const state = roomState({ type: 'idle' }, { view: 'call' });
       const room = expectRoom(reducer(state, { type: 'SWITCH_TO_CHAT' }));
       expect(room.view).toBe('chat');
     });

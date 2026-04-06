@@ -72,7 +72,7 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       historyCursor: null,
       historyHasMore: false,
       loadingHistory: false,
-      screen: { type: 'pin-entry' },
+      screen: { type: 'idle' },
       iceServers: null,
       iceTransportPolicy: 'all',
     };
@@ -174,8 +174,16 @@ function mergeHistory(existing: ChatMessage[], incoming: ChatMessage[]): ChatMes
 function roomReducer(state: RoomState, action: Action): AppState {
   switch (action.type) {
     // View switching
-    case 'SWITCH_TO_CALL':
-      return { ...state, view: 'call' };
+    case 'SWITCH_TO_CALL': {
+      if (state.wsStatus !== 'connected') {
+        return {
+          ...state,
+          view: 'call',
+          screen: { type: 'error', message: 'Not connected to server', canRetry: false },
+        };
+      }
+      return { ...state, view: 'call', screen: { type: 'acquiring-media' } };
+    }
     case 'SWITCH_TO_CHAT':
       return { ...state, view: 'chat' };
 
@@ -201,7 +209,6 @@ function roomReducer(state: RoomState, action: Action): AppState {
       return roomConnectionReducer(state, action);
 
     // Video call sub-machine
-    case 'SUBMIT_PIN':
     case 'MEDIA_ACQUIRED':
     case 'MEDIA_ERROR':
     case 'PEER_JOINED_CALL':
@@ -288,13 +295,8 @@ type ConnectionAction = Extract<
 
 function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppState {
   switch (action.type) {
-    case 'WS_ROOM_CONNECTED': {
-      const newScreen =
-        state.screen.type === 'connecting'
-          ? ({ type: 'acquiring-media', pin: state.screen.pin } as const)
-          : state.screen;
-      return { ...state, wsStatus: 'connected', screen: newScreen };
-    }
+    case 'WS_ROOM_CONNECTED':
+      return { ...state, wsStatus: 'connected' };
 
     case 'WS_ROOM_DISCONNECTED': {
       const callActive = ['call', 'negotiating', 'waiting-for-peer'].includes(state.screen.type);
@@ -320,7 +322,7 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
 
     case 'WS_CLOSED':
       if (action.intentional) {
-        return { ...state, wsStatus: 'disconnected', screen: { type: 'pin-entry' } };
+        return { ...state, wsStatus: 'disconnected', view: 'chat', screen: { type: 'idle' } };
       }
       return { ...state, wsStatus: 'disconnected' };
 
@@ -353,7 +355,6 @@ type CallAction = Extract<
   Action,
   {
     type:
-      | 'SUBMIT_PIN'
       | 'MEDIA_ACQUIRED'
       | 'MEDIA_ERROR'
       | 'PEER_JOINED_CALL'
@@ -378,30 +379,18 @@ type CallAction = Extract<
 
 function roomCallReducer(state: RoomState, action: CallAction): AppState {
   switch (action.type) {
-    case 'SUBMIT_PIN': {
-      if (state.screen.type !== 'pin-entry') return state;
-      if (state.wsStatus === 'connected') {
-        return { ...state, screen: { type: 'acquiring-media', pin: action.pin } };
-      }
-      return { ...state, screen: { type: 'connecting', pin: action.pin } };
-    }
-
     case 'MEDIA_ACQUIRED': {
       if (state.screen.type !== 'acquiring-media') return state;
       return {
         ...state,
-        screen: {
-          type: 'waiting-for-peer',
-          pin: state.screen.pin,
-          muted: false,
-          videoOff: false,
-          pipHidden: false,
-        },
+        screen: { type: 'waiting-for-peer', muted: false, videoOff: false, pipHidden: false },
       };
     }
 
-    case 'MEDIA_ERROR':
+    case 'MEDIA_ERROR': {
+      if (state.screen.type !== 'acquiring-media') return state;
       return toErrorScreen(state, action.error, true, state.screen);
+    }
 
     case 'PEER_JOINED_CALL': {
       if (state.screen.type !== 'waiting-for-peer') return state;
@@ -409,7 +398,6 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         ...state,
         screen: {
           type: 'negotiating',
-          pin: state.screen.pin,
           role: 'caller',
           muted: state.screen.muted,
           videoOff: state.screen.videoOff,
@@ -418,8 +406,10 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       };
     }
 
-    case 'PEER_LEFT_CALL':
-      return state;
+    case 'PEER_LEFT_CALL': {
+      if (state.screen.type === 'idle') return state;
+      return { ...state, view: 'chat', screen: { type: 'idle' } };
+    }
 
     case 'JOINED_ROOM':
       return {
@@ -434,7 +424,6 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         ...state,
         screen: {
           type: 'negotiating',
-          pin: state.screen.pin,
           role: 'callee',
           muted: state.screen.muted,
           videoOff: state.screen.videoOff,
@@ -458,7 +447,6 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         ...state,
         screen: {
           type: 'call',
-          pin: state.screen.pin,
           muted: state.screen.muted,
           videoOff: state.screen.videoOff,
           pipHidden: state.screen.pipHidden,
@@ -466,8 +454,11 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       };
     }
 
-    case 'RTC_FAILED':
+    case 'RTC_FAILED': {
+      const activeCallScreens = ['acquiring-media', 'waiting-for-peer', 'negotiating', 'call'];
+      if (!activeCallScreens.includes(state.screen.type)) return state;
       return toErrorScreen(state, action.reason, false);
+    }
 
     case 'TOGGLE_MUTE':
       return handleToggle(state, 'muted');
@@ -480,11 +471,11 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       return state;
 
     case 'HANGUP':
-      return { ...state, view: 'chat', screen: { type: 'pin-entry' } };
+      return { ...state, view: 'chat', screen: { type: 'idle' } };
 
     case 'DISMISS_ERROR': {
       if (state.screen.type !== 'error') return state;
-      return { ...state, screen: { type: 'pin-entry' } };
+      return { ...state, view: 'chat', screen: { type: 'idle' } };
     }
   }
 }

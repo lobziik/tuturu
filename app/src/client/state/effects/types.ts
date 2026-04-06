@@ -43,6 +43,12 @@ export interface ResourceRefs {
    * must treat incoming offers as collisions (perfect negotiation pattern).
    */
   makingOffer: { current: boolean };
+  /**
+   * True after join-call is sent to the server, false after leave-call
+   * is sent or WS disconnects. Guards against sending leave-call when
+   * we never joined (e.g. media error before waiting-for-peer).
+   */
+  inCall: { current: boolean };
 }
 
 /**

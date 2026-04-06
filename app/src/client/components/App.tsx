@@ -45,6 +45,7 @@ export function App() {
   const seqRef = useRef<number>(0);
   const seqLoadedRef = useRef<boolean>(false);
   const makingOfferRef = useRef<boolean>(false);
+  const inCallRef = useRef<boolean>(false);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
@@ -62,6 +63,7 @@ export function App() {
       seq: seqRef,
       seqLoaded: seqLoadedRef,
       makingOffer: makingOfferRef,
+      inCall: inCallRef,
     }),
     [],
   );

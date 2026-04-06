@@ -85,7 +85,11 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
   // Received offer → Create peer connection (if needed) and handle as callee.
   // Includes glare resolution: if both peers sent offers simultaneously,
   // the polite peer (lower peerId) rolls back its own offer and accepts.
-  if (action.type === 'RECEIVED_OFFER' && iceConfig) {
+  // Guard: only process during call-related screens (waiting-for-peer, negotiating).
+  // Without this, a stale offer on idle screen would create an orphaned PC.
+  const offerScreenValid =
+    newScreen?.type === 'waiting-for-peer' || newScreen?.type === 'negotiating';
+  if (action.type === 'RECEIVED_OFFER' && iceConfig && offerScreenValid) {
     if (!refs.pc.current) {
       const pc = createPeerConnection(
         {

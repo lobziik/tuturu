@@ -16,11 +16,21 @@ import { getScreen } from './types';
 
 /**
  * Release video call resources (peer connection, media streams).
+ * Also notifies the server via leave-call if we previously joined.
  * Does NOT close the room-level WebSocket — chat stays alive.
  */
 export function cleanupCallResources(refs: ResourceRefs): void {
   console.log('[CLEANUP] Cleaning up call resources');
   refs.makingOffer.current = false;
+
+  // Notify server so it removes us from callPeers.
+  // Without this, the server would still consider us in-call,
+  // causing peer-joined-call to be sent to us on the next join.
+  if (refs.inCall.current && refs.ws.current) {
+    sendMessage(refs.ws.current, { type: 'leave-call', v: 1 });
+  }
+  refs.inCall.current = false;
+
   if (refs.pc.current) {
     closePeerConnection(refs.pc.current);
     refs.pc.current = null;
@@ -61,15 +71,12 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
   const newScreen = getScreen(newState);
   const prevScreen = getScreen(prevState);
 
-  // HANGUP → Tear down call resources, send leave-call, keep WS alive
+  // HANGUP → Tear down call resources (leave-call sent by cleanupCallResources)
   if (action.type === 'HANGUP') {
-    if (refs.ws.current) {
-      sendMessage(refs.ws.current, { type: 'leave-call', v: 1 });
-    }
     cleanupCallResources(refs);
   }
 
-  // PEER_LEFT_CALL → Remote peer left, tear down call resources (no leave-call needed)
+  // PEER_LEFT_CALL → Remote peer left, tear down call resources + leave server call
   if (action.type === 'PEER_LEFT_CALL') {
     cleanupCallResources(refs);
   }

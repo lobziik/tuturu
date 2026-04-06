@@ -148,15 +148,86 @@ export function createPeerConnection(
 }
 
 /**
- * Handle incoming offer (callee side), with glare resolution.
+ * Resolve glare collision using the "perfect negotiation" pattern.
  *
- * **Glare** occurs when both peers send offers simultaneously (both clicked call
- * at the same time). Resolution uses the "perfect negotiation" pattern:
- * - **Polite** peer (lower peerId): rolls back own offer (if set), accepts
- *   remote offer, creates and sends answer. Also cancels any in-flight
- *   createOffer chain via `makingOfferRef`.
- * - **Impolite** peer (higher peerId): ignores the remote offer, waits for an
- *   answer to its own offer.
+ * **Glare** occurs when both peers send offers simultaneously. Resolution:
+ * - **Polite** peer (lower peerId): rolls back own offer (if set), yields to remote.
+ *   Also cancels any in-flight createOffer chain via `makingOfferRef`.
+ * - **Impolite** peer (higher peerId): ignores remote offer, waits for answer.
+ *
+ * @returns `true` if offer processing should continue, `false` to abort
+ */
+async function resolveGlareCollision(
+  pc: RTCPeerConnection,
+  pcRef: PcRef,
+  dispatch: Dispatch,
+  isPolite: boolean,
+  makingOfferRef: { current: boolean },
+): Promise<boolean> {
+  if (!isPolite) {
+    console.log('[RTC] Glare: impolite peer ignoring remote offer, waiting for answer');
+    return false;
+  }
+
+  // Polite peer: cancel pending offer chain and yield to remote offer
+  console.log('[RTC] Glare: polite peer yielding to remote offer');
+  makingOfferRef.current = false;
+
+  if (pc.signalingState === 'have-local-offer') {
+    try {
+      await pc.setLocalDescription({ type: 'rollback' });
+      if (pcRef.current !== pc) return false;
+    } catch (error) {
+      if (pcRef.current !== pc) return false;
+      console.error('[RTC] Failed to rollback during glare:', error);
+      dispatch({
+        type: 'RTC_FAILED',
+        reason: `Glare rollback failed: ${(error as Error).message}`,
+      });
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Accept a remote offer and send an answer back.
+ * Handles setRemoteDescription → flush ICE → createAnswer → setLocalDescription → send.
+ */
+async function acceptOfferAndAnswer(
+  pc: RTCPeerConnection,
+  offer: RTCSessionDescriptionInit,
+  ws: WebSocket | null,
+  pcRef: PcRef,
+  dispatch: Dispatch,
+): Promise<void> {
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    if (pcRef.current !== pc) return;
+    await flushPendingCandidates(pc, pcRef);
+    if (pcRef.current !== pc) return;
+    const answer = await pc.createAnswer();
+    if (pcRef.current !== pc) return;
+    await pc.setLocalDescription(answer);
+    if (pcRef.current !== pc) return;
+    if (!answer.sdp) {
+      throw new Error('Created answer has no SDP');
+    }
+    sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp });
+    console.log('[RTC] Sent answer');
+  } catch (error) {
+    if (pcRef.current !== pc) return;
+    console.error('[RTC] Failed to handle offer:', error);
+    dispatch({
+      type: 'RTC_FAILED',
+      reason: `Failed to answer call: ${(error as Error).message}`,
+    });
+  }
+}
+
+/**
+ * Handle incoming offer (callee side), with glare resolution.
  *
  * Collision is detected by `makingOffer || signalingState !== 'stable'`.
  * The `makingOffer` flag catches the race where createOffer() is pending but
@@ -180,30 +251,14 @@ export async function handleOffer(
   const offerCollision = makingOfferRef.current || pc.signalingState !== 'stable';
 
   if (offerCollision) {
-    if (!isPolite) {
-      console.log('[RTC] Glare: impolite peer ignoring remote offer, waiting for answer');
-      return;
-    }
-
-    // Polite peer: cancel pending offer chain and yield to remote offer
-    console.log('[RTC] Glare: polite peer yielding to remote offer');
-    makingOfferRef.current = false;
-
-    if (pc.signalingState === 'have-local-offer') {
-      try {
-        await pc.setLocalDescription({ type: 'rollback' });
-        if (pcRef.current !== pc) return;
-      } catch (error) {
-        if (pcRef.current !== pc) return;
-        console.error('[RTC] Failed to rollback during glare:', error);
-        dispatch({
-          type: 'RTC_FAILED',
-          reason: `Glare rollback failed: ${(error as Error).message}`,
-        });
-        return;
-      }
-    }
-    // Fall through to normal offer handling (now in stable state)
+    const shouldProceed = await resolveGlareCollision(
+      pc,
+      pcRef,
+      dispatch,
+      isPolite,
+      makingOfferRef,
+    );
+    if (!shouldProceed || pcRef.current !== pc) return;
   }
 
   if (pc.signalingState !== 'stable') {
@@ -211,28 +266,7 @@ export async function handleOffer(
     return;
   }
 
-  try {
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    if (pcRef.current !== pc) return;
-    await flushPendingCandidates(pc, pcRef);
-    if (pcRef.current !== pc) return;
-    const answer = await pc.createAnswer();
-    if (pcRef.current !== pc) return;
-    await pc.setLocalDescription(answer);
-    if (pcRef.current !== pc) return;
-    if (!answer.sdp) {
-      throw new Error('Created answer has no SDP');
-    }
-    sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp });
-    console.log('[RTC] Sent answer');
-  } catch (error) {
-    if (pcRef.current !== pc) return;
-    console.error('[RTC] Failed to handle offer:', error);
-    dispatch({
-      type: 'RTC_FAILED',
-      reason: `Failed to answer call: ${(error as Error).message}`,
-    });
-  }
+  await acceptOfferAndAnswer(pc, offer, ws, pcRef, dispatch);
 }
 
 /** Handle incoming answer (caller side) */

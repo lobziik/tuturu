@@ -391,6 +391,64 @@ type CallAction = Extract<
   }
 >;
 
+/** Handle CALL_PEERS_RECEIVED: update callActive + screen transitions based on remote peer list */
+function handleCallPeersReceived(
+  state: RoomState,
+  action: Extract<CallAction, { type: 'CALL_PEERS_RECEIVED' }>,
+): AppState {
+  const remotePeers = action.callPeers.filter((id) => id !== state.selfPeerId);
+  const callActive = action.callPeers.length > 0;
+
+  // Waiting for someone to negotiate with
+  if (state.screen.type === 'waiting-for-peer' && remotePeers.length > 0) {
+    return {
+      ...state,
+      callActive,
+      screen: {
+        type: 'negotiating',
+        role: 'caller',
+        muted: state.screen.muted,
+        videoOff: state.screen.videoOff,
+        pipHidden: state.screen.pipHidden,
+      },
+    };
+  }
+
+  // Remote peer left during active call or negotiation — call is over.
+  // Force callActive=false because cleanup will send leave-call, but
+  // the server broadcasts call-peers:[] to everyone EXCEPT us.
+  if (
+    (state.screen.type === 'call' || state.screen.type === 'negotiating') &&
+    remotePeers.length === 0
+  ) {
+    return {
+      ...state,
+      callActive: false,
+      view: 'chat',
+      screen: { type: 'idle' },
+    };
+  }
+
+  // All other cases: just update callActive
+  return { ...state, callActive };
+}
+
+/** Handle RECEIVED_OFFER: only transition to callee negotiation from waiting-for-peer */
+function handleReceivedOffer(state: RoomState): AppState {
+  // Only waiting-for-peer transitions to callee negotiation
+  if (state.screen.type !== 'waiting-for-peer') return state;
+  return {
+    ...state,
+    screen: {
+      type: 'negotiating',
+      role: 'callee',
+      muted: state.screen.muted,
+      videoOff: state.screen.videoOff,
+      pipHidden: state.screen.pipHidden,
+    },
+  };
+}
+
 function roomCallReducer(state: RoomState, action: CallAction): AppState {
   switch (action.type) {
     case 'MEDIA_ACQUIRED': {
@@ -406,43 +464,8 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
       return toErrorScreen(state, action.error, true, state.screen);
     }
 
-    case 'CALL_PEERS_RECEIVED': {
-      const remotePeers = action.callPeers.filter((id) => id !== state.selfPeerId);
-      const callActive = action.callPeers.length > 0;
-
-      // Waiting for someone to negotiate with
-      if (state.screen.type === 'waiting-for-peer' && remotePeers.length > 0) {
-        return {
-          ...state,
-          callActive,
-          screen: {
-            type: 'negotiating',
-            role: 'caller',
-            muted: state.screen.muted,
-            videoOff: state.screen.videoOff,
-            pipHidden: state.screen.pipHidden,
-          },
-        };
-      }
-
-      // Remote peer left during active call or negotiation — call is over.
-      // Force callActive=false because cleanup will send leave-call, but
-      // the server broadcasts call-peers:[] to everyone EXCEPT us.
-      if (
-        (state.screen.type === 'call' || state.screen.type === 'negotiating') &&
-        remotePeers.length === 0
-      ) {
-        return {
-          ...state,
-          callActive: false,
-          view: 'chat',
-          screen: { type: 'idle' },
-        };
-      }
-
-      // All other cases: just update callActive
-      return { ...state, callActive };
-    }
+    case 'CALL_PEERS_RECEIVED':
+      return handleCallPeersReceived(state, action);
 
     case 'JOINED_ROOM':
       return {
@@ -451,23 +474,8 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         iceTransportPolicy: action.iceTransportPolicy,
       };
 
-    case 'RECEIVED_OFFER': {
-      // Idle or already connected: ignore stale/unexpected offers
-      if (state.screen.type === 'idle') return state;
-      if (state.screen.type === 'call') return state;
-      // Waiting-for-peer: callee negotiation flow
-      if (state.screen.type !== 'waiting-for-peer') return state;
-      return {
-        ...state,
-        screen: {
-          type: 'negotiating',
-          role: 'callee',
-          muted: state.screen.muted,
-          videoOff: state.screen.videoOff,
-          pipHidden: state.screen.pipHidden,
-        },
-      };
-    }
+    case 'RECEIVED_OFFER':
+      return handleReceivedOffer(state);
 
     case 'RECEIVED_ANSWER':
     case 'RECEIVED_ICE_CANDIDATE':

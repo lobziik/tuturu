@@ -148,6 +148,7 @@ export function App() {
           messages={roomState.messages}
           deviceId={roomState.deviceId}
           wsStatus={roomState.wsStatus}
+          reconnectAttempt={roomState.reconnectAttempt}
           historyHasMore={roomState.historyHasMore}
           peers={roomState.peers}
           screen={roomState.screen}

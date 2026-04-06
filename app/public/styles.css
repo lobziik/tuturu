@@ -711,6 +711,10 @@ footer a:hover {
 
 /* Connection Status Banner */
 .connection-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   padding: 0.375rem 1rem;
   text-align: center;
   font-size: 0.8125rem;
@@ -727,6 +731,23 @@ footer a:hover {
 .connection-status-disconnected {
   background: #991b1b;
   color: #fecaca;
+}
+
+.reconnect-btn {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentcolor;
+  border-radius: 4px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.9;
+}
+
+.reconnect-btn:hover {
+  opacity: 1;
+  background: rgb(255 255 255 / 10%);
 }
 
 /* Chat Feed Container — wrapper for virtua VList */

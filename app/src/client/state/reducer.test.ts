@@ -27,6 +27,7 @@ function roomState(
     view: 'chat',
     messages: [],
     wsStatus: 'connected',
+    reconnectAttempt: 0,
     selfPeerId: null,
     peers: {},
     historyCursor: null,
@@ -108,6 +109,7 @@ describe('reducer', () => {
       expect(room.view).toBe('chat');
       expect(room.messages).toEqual([]);
       expect(room.wsStatus).toBe('connecting');
+      expect(room.reconnectAttempt).toBe(0);
       expect(room.selfPeerId).toBeNull();
       expect(room.peers).toEqual({});
       expect(room.historyCursor).toBeNull();
@@ -166,10 +168,43 @@ describe('reducer', () => {
       expect(room.screen.type).toBe('idle');
     });
 
-    test('WS_ROOM_RECONNECTING sets wsStatus', () => {
+    test('WS_ROOM_RECONNECTING sets wsStatus and stores attempt number', () => {
       const state = roomState({ type: 'idle' }, { wsStatus: 'disconnected' });
-      const room = expectRoom(reducer(state, { type: 'WS_ROOM_RECONNECTING', attempt: 1 }));
+      const room = expectRoom(reducer(state, { type: 'WS_ROOM_RECONNECTING', attempt: 5 }));
       expect(room.wsStatus).toBe('reconnecting');
+      expect(room.reconnectAttempt).toBe(5);
+    });
+
+    test('WS_ROOM_CONNECTED resets reconnectAttempt', () => {
+      const state = roomState({ type: 'idle' }, { wsStatus: 'reconnecting', reconnectAttempt: 10 });
+      const room = expectRoom(reducer(state, { type: 'WS_ROOM_CONNECTED' }));
+      expect(room.wsStatus).toBe('connected');
+      expect(room.reconnectAttempt).toBe(0);
+    });
+
+    test('WS_RECONNECT_EXHAUSTED sets wsStatus and errors active call', () => {
+      const state = roomState(
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
+        { wsStatus: 'reconnecting', reconnectAttempt: 20 },
+      );
+      const room = expectRoom(reducer(state, { type: 'WS_RECONNECT_EXHAUSTED' }));
+      expect(room.wsStatus).toBe('disconnected');
+      expect(room.reconnectAttempt).toBe(0);
+      expect(room.screen.type).toBe('error');
+    });
+
+    test('WS_RECONNECT_EXHAUSTED does not affect chat view screen', () => {
+      const state = roomState({ type: 'idle' }, { wsStatus: 'reconnecting', reconnectAttempt: 20 });
+      const room = expectRoom(reducer(state, { type: 'WS_RECONNECT_EXHAUSTED' }));
+      expect(room.wsStatus).toBe('disconnected');
+      expect(room.screen.type).toBe('idle');
+    });
+
+    test('RECONNECT_REQUESTED sets wsStatus to reconnecting and resets attempt', () => {
+      const state = roomState({ type: 'idle' }, { wsStatus: 'disconnected' });
+      const room = expectRoom(reducer(state, { type: 'RECONNECT_REQUESTED' }));
+      expect(room.wsStatus).toBe('reconnecting');
+      expect(room.reconnectAttempt).toBe(0);
     });
 
     test('WS_CLOSED intentional goes to idle and chat view', () => {
@@ -209,6 +244,23 @@ describe('reducer', () => {
       const state = roomState({ type: 'idle' });
       const room = expectRoom(reducer(state, { type: 'WS_ERROR', error: 'Connection failed' }));
       expect(room.wsStatus).toBe('disconnected');
+    });
+
+    test('WS_ERROR does not overwrite reconnecting status', () => {
+      const state = roomState({ type: 'idle' }, { wsStatus: 'reconnecting', reconnectAttempt: 3 });
+      const result = reducer(state, { type: 'WS_ERROR', error: 'Connection failed' });
+      expect(result).toBe(state);
+    });
+
+    test('WS_CLOSED unintentional does not overwrite reconnecting status', () => {
+      const state = roomState({ type: 'idle' }, { wsStatus: 'reconnecting', reconnectAttempt: 5 });
+      const result = reducer(state, {
+        type: 'WS_CLOSED',
+        code: 1006,
+        reason: '',
+        intentional: false,
+      });
+      expect(result).toBe(state);
     });
   });
 

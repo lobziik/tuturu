@@ -1,29 +1,62 @@
 /**
  * Connection status banner — shows when WebSocket is not connected.
  *
- * Displays "Connecting...", "Reconnecting...", or "Disconnected" based on wsStatus.
+ * Displays "Connecting...", "Reconnecting (N/20)...", or "Disconnected" + Reconnect button.
  * Hidden when connected.
  *
  * @module components/ConnectionStatus
  */
 
+import { useCallback } from 'preact/hooks';
 import type { WsStatus } from '../state/types';
+import type { Dispatch } from '../state/context';
+
+/** Maximum reconnect attempts — matches roomWebSocket.ts constant */
+const MAX_RECONNECT_ATTEMPTS = 20;
 
 interface ConnectionStatusProps {
+  /** Current WebSocket connection status */
   wsStatus: WsStatus;
+  /** Current reconnect attempt number (0 = not reconnecting) */
+  reconnectAttempt: number;
+  /** State dispatch function (for reconnect button) */
+  dispatch: Dispatch;
 }
 
-const STATUS_LABELS: Record<Exclude<WsStatus, 'connected'>, string> = {
-  connecting: 'Connecting...',
-  reconnecting: 'Reconnecting...',
-  disconnected: 'Disconnected',
-};
+/** Format the status label based on wsStatus and reconnect progress */
+function formatStatusLabel(wsStatus: Exclude<WsStatus, 'connected'>, attempt: number): string {
+  switch (wsStatus) {
+    case 'connecting':
+      return 'Connecting...';
+    case 'reconnecting':
+      return attempt > 0
+        ? `Reconnecting (${attempt}/${MAX_RECONNECT_ATTEMPTS})...`
+        : 'Reconnecting...';
+    case 'disconnected':
+      return 'Disconnected';
+  }
+}
 
 /** Thin banner below header showing connection status when not connected */
-export function ConnectionStatus({ wsStatus }: Readonly<ConnectionStatusProps>) {
+export function ConnectionStatus({
+  wsStatus,
+  reconnectAttempt,
+  dispatch,
+}: Readonly<ConnectionStatusProps>) {
   if (wsStatus === 'connected') return null;
 
+  const handleReconnect = useCallback(() => {
+    dispatch({ type: 'RECONNECT_REQUESTED' });
+  }, [dispatch]);
+
   return (
-    <div class={`connection-status connection-status-${wsStatus}`}>{STATUS_LABELS[wsStatus]}</div>
+    <div class={`connection-status connection-status-${wsStatus}`}>
+      <span>{formatStatusLabel(wsStatus, reconnectAttempt)}</span>
+      {wsStatus === 'disconnected' && (
+        <button type="button" class="reconnect-btn" onClick={handleReconnect}>
+          Reconnect
+        </button>
+      )}
+    </div>
   );
 }

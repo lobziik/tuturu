@@ -50,6 +50,18 @@ export function handleRoomWebSocketEffects(ctx: EffectContext, args: EffectArgs)
     resetDeadTimer(ctx);
   }
 
+  // === Manual reconnect requested by user ===
+  if (action.type === 'RECONNECT_REQUESTED' && newState.phase === 'room') {
+    const aesKey = refs.aesKey.current;
+    if (!aesKey) {
+      console.error('[ROOM_WS] Cannot reconnect: aesKey not available');
+      return;
+    }
+    refs.reconnectAttempt.current = 0;
+    clearReconnectTimer(refs);
+    connectWebSocket(ctx, { roomId: newState.roomId, nickname: newState.nickname, aesKey });
+  }
+
   // === Disconnection / close / error → reconnect ===
   if (newState.phase === 'room') {
     handleDisconnection(ctx, action, newState);
@@ -221,9 +233,7 @@ function startReconnect(ctx: EffectContext, roomId: string, nickname: string): v
 
   if (attempt >= MAX_RECONNECT_ATTEMPTS) {
     console.error(`[ROOM_WS] Giving up after ${MAX_RECONNECT_ATTEMPTS} reconnect attempts`);
-    dispatch({
-      type: 'WS_ROOM_DISCONNECTED',
-    });
+    dispatch({ type: 'WS_RECONNECT_EXHAUSTED' });
     return;
   }
 

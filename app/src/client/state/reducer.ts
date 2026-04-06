@@ -309,7 +309,7 @@ type ConnectionAction = Extract<
 function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppState {
   switch (action.type) {
     case 'WS_ROOM_CONNECTED':
-      return { ...state, wsStatus: 'connected', reconnectAttempt: 0 };
+      return { ...state, wsStatus: 'connected', reconnectAttempt: 0, loadingHistory: false };
 
     case 'WS_ROOM_DISCONNECTED':
     case 'WS_RECONNECT_EXHAUSTED': {

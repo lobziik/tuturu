@@ -151,6 +151,12 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       })),
     });
 
+    // Send current call peers so new joiner knows if a call is active
+    const callPeers = rooms.getCallPeers(msg.roomId);
+    if (callPeers.length > 0) {
+      send(ws, { type: 'call-peers', v: 1, callPeers });
+    }
+
     // Send initial history batch
     const history = db.getHistory(msg.roomId, undefined, historyBatchSize);
     send(ws, {

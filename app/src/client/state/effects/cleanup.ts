@@ -26,7 +26,7 @@ export function cleanupCallResources(refs: ResourceRefs): void {
 
   // Notify server so it removes us from callPeers.
   // Without this, the server would still consider us in-call,
-  // causing peer-joined-call to be sent to us on the next join.
+  // causing call-peers to be broadcast with us still listed.
   if (refs.inCall.current && refs.ws.current) {
     sendMessage(refs.ws.current, { type: 'leave-call', v: 1 });
   }
@@ -77,8 +77,13 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
     cleanupCallResources(refs);
   }
 
-  // PEER_LEFT_CALL → Remote peer left, tear down call resources + leave server call
-  if (action.type === 'PEER_LEFT_CALL') {
+  // Remote peer left (CALL_PEERS_RECEIVED with empty remote list) — reducer
+  // transitions call/negotiating → idle, so we detect the screen change here.
+  const wasInCall =
+    prevScreen?.type === 'call' ||
+    prevScreen?.type === 'negotiating' ||
+    prevScreen?.type === 'waiting-for-peer';
+  if (wasInCall && newScreen?.type === 'idle') {
     cleanupCallResources(refs);
   }
 

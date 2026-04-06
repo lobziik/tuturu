@@ -465,24 +465,6 @@ describe('ServerToClientMessageSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  test('parses peer-joined-call', () => {
-    const result = ServerToClientMessageSchema.safeParse({
-      type: 'peer-joined-call',
-      v: 1,
-      peerId: 'uuid-123',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  test('parses peer-left-call', () => {
-    const result = ServerToClientMessageSchema.safeParse({
-      type: 'peer-left-call',
-      v: 1,
-      peerId: 'uuid-123',
-    });
-    expect(result.success).toBe(true);
-  });
-
   test('parses call-peers', () => {
     const result = ServerToClientMessageSchema.safeParse({
       type: 'call-peers',

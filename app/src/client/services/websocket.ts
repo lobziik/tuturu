@@ -217,14 +217,6 @@ function handleServerMessage(
       dispatch({ type: 'SERVER_ERROR', error: message.message });
       break;
 
-    case 'peer-joined-call':
-      dispatch({ type: 'PEER_JOINED_CALL', peerId: message.peerId });
-      break;
-
-    case 'peer-left-call':
-      dispatch({ type: 'PEER_LEFT_CALL', peerId: message.peerId });
-      break;
-
     case 'call-peers':
       dispatch({ type: 'CALL_PEERS_RECEIVED', callPeers: message.callPeers });
       break;

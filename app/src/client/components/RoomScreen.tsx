@@ -33,6 +33,8 @@ interface RoomScreenProps {
   screen: Screen;
   /** Stashed incoming offer (when screen is idle) */
   incomingOffer: { fromPeerId: string; offer: RTCSessionDescriptionInit } | null;
+  /** Whether a call is active in the room (from server broadcast) */
+  callActive: boolean;
   /** Remote peer's media stream (for floating PiP) */
   remoteStream: MediaStream | null;
   /** State dispatch function */
@@ -48,6 +50,7 @@ export function RoomScreen({
   peers,
   screen,
   incomingOffer,
+  callActive,
   remoteStream,
   dispatch,
 }: Readonly<RoomScreenProps>) {
@@ -91,7 +94,7 @@ export function RoomScreen({
         onCallClick={handleCallClick}
         peerCount={peerCount}
         callDisabled={callDisabled}
-        inCall={showFloatingPiP}
+        inCall={showFloatingPiP || callActive}
       />
       <ConnectionStatus wsStatus={wsStatus} />
       {incomingOffer !== null && <IncomingCallBanner dispatch={dispatch} />}

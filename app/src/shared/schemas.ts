@@ -274,18 +274,6 @@ const ChatReceivedRelaySchema = z.object({
   peerId: z.string(),
 });
 
-const PeerJoinedCallSchema = z.object({
-  type: z.literal('peer-joined-call'),
-  v: z.literal(1),
-  peerId: z.string(),
-});
-
-const PeerLeftCallSchema = z.object({
-  type: z.literal('peer-left-call'),
-  v: z.literal(1),
-  peerId: z.string(),
-});
-
 const CallPeersSchema = z.object({
   type: z.literal('call-peers'),
   v: z.literal(1),
@@ -312,8 +300,6 @@ export const ServerToClientMessageSchema = z.discriminatedUnion('type', [
   ChatReceivedRelaySchema,
   HistorySchema,
   PingSchema,
-  PeerJoinedCallSchema,
-  PeerLeftCallSchema,
   CallPeersSchema,
   ServerErrorSchema,
 ]);

@@ -86,7 +86,9 @@ export function FloatingCallPiP({ remoteStream, dispatch }: Readonly<FloatingCal
       onPointerUp={onPointerUp}
     >
       {hasVideo ? (
-        <video ref={videoRef} autoplay playsinline class="floating-pip-video" />
+        <video ref={videoRef} autoplay playsinline class="floating-pip-video">
+          <track kind="captions" />
+        </video>
       ) : (
         <span class="floating-pip-icon">{'\uD83D\uDCDE'}</span>
       )}

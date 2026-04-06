@@ -20,8 +20,9 @@ export const WS_PING_INTERVAL_MS = 30_000;
 /** Server closes connection if no pong received within this period */
 export const WS_PONG_TIMEOUT_MS = 90_000;
 
-/** Client considers connection dead if no ping received within this period */
-export const WS_DEAD_DETECTION_MS = 60_000;
+/** Client considers connection dead if no ping received within this period.
+ *  Must exceed WS_PONG_TIMEOUT_MS to avoid premature reconnects on jittery networks. */
+export const WS_DEAD_DETECTION_MS = 100_000;
 
 /** Maximum participants per room (video mesh limit) */
 export const MAX_ROOM_PARTICIPANTS = 6;

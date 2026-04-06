@@ -20,6 +20,7 @@ import { getScreen } from './types';
  */
 export function cleanupCallResources(refs: ResourceRefs): void {
   console.log('[CLEANUP] Cleaning up call resources');
+  refs.makingOffer.current = false;
   if (refs.pc.current) {
     closePeerConnection(refs.pc.current);
     refs.pc.current = null;

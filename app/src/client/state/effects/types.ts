@@ -36,6 +36,13 @@ export interface ResourceRefs {
   seq: { current: number };
   /** Whether seq counter has been loaded from IDB (guards against sending with seq=0) */
   seqLoaded: { current: boolean };
+  /**
+   * True while createOffer() → setLocalDescription() is in flight.
+   * Used by handleOffer for glare detection: if makingOffer is true but
+   * signalingState is still 'stable', we know an offer is pending and
+   * must treat incoming offers as collisions (perfect negotiation pattern).
+   */
+  makingOffer: { current: boolean };
 }
 
 /**

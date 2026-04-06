@@ -399,19 +399,27 @@ function handleCallPeersReceived(
   const remotePeers = action.callPeers.filter((id) => id !== state.selfPeerId);
   const callActive = action.callPeers.length > 0;
 
-  // Waiting for someone to negotiate with
+  // Waiting for someone to negotiate with — deterministic role assignment
+  // prevents glare: higher peerId creates the offer, lower waits for it.
+  // Mirrors the polite/impolite split used in glare resolution as a fallback.
   if (state.screen.type === 'waiting-for-peer' && remotePeers.length > 0) {
-    return {
-      ...state,
-      callActive,
-      screen: {
-        type: 'negotiating',
-        role: 'caller',
-        muted: state.screen.muted,
-        videoOff: state.screen.videoOff,
-        pipHidden: state.screen.pipHidden,
-      },
-    };
+    const shouldBecomeCaller =
+      state.selfPeerId != null && remotePeers[0] != null && state.selfPeerId > remotePeers[0];
+    if (shouldBecomeCaller) {
+      return {
+        ...state,
+        callActive,
+        screen: {
+          type: 'negotiating',
+          role: 'caller',
+          muted: state.screen.muted,
+          videoOff: state.screen.videoOff,
+          pipHidden: state.screen.pipHidden,
+        },
+      };
+    }
+    // Lower peerId: stay on waiting-for-peer, remote peer will send the offer
+    return { ...state, callActive };
   }
 
   // Remote peer left during active call or negotiation — call is over.

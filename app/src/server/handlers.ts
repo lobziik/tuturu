@@ -334,6 +334,16 @@ export function createHandlers(deps: HandlerDeps): Handlers {
 
     const result = rooms.joinCall(roomId, peerId);
     if ('error' in result) {
+      if (result.error === 'call_full') {
+        console.warn(`[HANDLER] ${peerId} join-call rejected: call is full`);
+        send(ws, {
+          type: 'error',
+          v: 1,
+          code: 'CALL_FULL',
+          message: 'Call is full (max 2 participants)',
+        });
+        return;
+      }
       console.warn(`[HANDLER] ${peerId} join-call rejected: not in room (rooms check)`);
       send(ws, {
         type: 'error',

@@ -185,6 +185,15 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
         )}
 
         <button
+          class="control-btn"
+          title="Minimize to chat"
+          onClick={() => dispatch({ type: 'SWITCH_TO_CHAT' })}
+        >
+          <span class="icon">{'\u2B07'}</span>
+          <span class="label">Minimize</span>
+        </button>
+
+        <button
           id="hangup-btn"
           class="control-btn danger"
           title="Hang Up"

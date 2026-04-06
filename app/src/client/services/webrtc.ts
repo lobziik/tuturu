@@ -14,6 +14,31 @@ import { sendMessage } from './websocket';
 type Dispatch = (action: Action) => void;
 
 /**
+ * ICE candidates that arrived before setRemoteDescription completed.
+ * Keyed by RTCPeerConnection so buffers are automatically eligible for GC
+ * when the connection is discarded.
+ */
+const pendingCandidates = new WeakMap<RTCPeerConnection, RTCIceCandidateInit[]>();
+
+/** Apply buffered ICE candidates after remote description has been set */
+async function flushPendingCandidates(pc: RTCPeerConnection, pcRef: PcRef): Promise<void> {
+  const candidates = pendingCandidates.get(pc);
+  if (!candidates || candidates.length === 0) return;
+  pendingCandidates.delete(pc);
+
+  for (const candidate of candidates) {
+    if (pcRef.current !== pc) return;
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log('[RTC] Buffered ICE candidate added');
+    } catch (error) {
+      if (pcRef.current !== pc) return;
+      console.warn('[RTC] Failed to add buffered ICE candidate (non-fatal):', error);
+    }
+  }
+}
+
+/**
  * Mutable ref to the active peer connection.
  * Used by async operations to detect staleness: if `pcRef.current !== pc`,
  * the call session changed during an await and the operation should abort.
@@ -189,6 +214,8 @@ export async function handleOffer(
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     if (pcRef.current !== pc) return;
+    await flushPendingCandidates(pc, pcRef);
+    if (pcRef.current !== pc) return;
     const answer = await pc.createAnswer();
     if (pcRef.current !== pc) return;
     await pc.setLocalDescription(answer);
@@ -225,6 +252,8 @@ export async function handleAnswer(
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
     if (pcRef.current !== pc) return;
+    await flushPendingCandidates(pc, pcRef);
+    if (pcRef.current !== pc) return;
     console.log('[RTC] Answer received and set');
   } catch (error) {
     if (pcRef.current !== pc) return;
@@ -236,13 +265,24 @@ export async function handleAnswer(
   }
 }
 
-/** Handle incoming ICE candidate */
+/** Handle incoming ICE candidate, buffering if remote description is not yet set */
 export async function handleIceCandidate(
   pc: RTCPeerConnection | null,
   candidate: RTCIceCandidateInit,
   pcRef: PcRef,
 ): Promise<void> {
   if (!pc || pcRef.current !== pc) return;
+
+  if (!pc.remoteDescription) {
+    let queue = pendingCandidates.get(pc);
+    if (!queue) {
+      queue = [];
+      pendingCandidates.set(pc, queue);
+    }
+    queue.push(candidate);
+    console.log('[RTC] Buffered ICE candidate (remote description not set yet)');
+    return;
+  }
 
   try {
     await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -260,6 +300,7 @@ export async function handleIceCandidate(
  * dispatching actions after cleanup.
  */
 export function closePeerConnection(pc: RTCPeerConnection): void {
+  pendingCandidates.delete(pc);
   pc.ontrack = null;
   pc.onicecandidate = null;
   pc.onconnectionstatechange = null;

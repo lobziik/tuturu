@@ -107,7 +107,7 @@ export function setupWebSocketHandlers(
       return;
     }
 
-    handleServerMessage(result.data, dispatch, refs);
+    handleServerMessage(result.data, dispatch, refs, roomContext.roomId);
   };
 }
 
@@ -139,6 +139,7 @@ function handleServerMessage(
   message: ServerToClientMessage,
   dispatch: Dispatch,
   refs: WsRefs,
+  roomId: string,
 ): void {
   switch (message.type) {
     case 'join':
@@ -179,7 +180,7 @@ function handleServerMessage(
       break;
 
     case 'chat-broadcast':
-      handleChatBroadcast(message.blob, dispatch, refs);
+      handleChatBroadcast(message.blob, dispatch, refs, roomId);
       break;
 
     case 'history':
@@ -225,13 +226,7 @@ function handleServerMessage(
       break;
 
     case 'call-peers':
-      // Server sends the list of peers already in the call when we join.
-      // Dispatch PEER_JOINED_CALL for each so the caller flow can start.
-      // If peer-joined-call already arrived first, the reducer ignores
-      // duplicates (only transitions from waiting-for-peer).
-      for (const peerId of message.callPeers) {
-        dispatch({ type: 'PEER_JOINED_CALL', peerId });
-      }
+      dispatch({ type: 'CALL_PEERS_RECEIVED', callPeers: message.callPeers });
       break;
 
     // Stubs for call-level messages not yet wired
@@ -242,7 +237,7 @@ function handleServerMessage(
 }
 
 /** Decrypt and process a live chat-broadcast message */
-function handleChatBroadcast(blob: string, dispatch: Dispatch, refs: WsRefs): void {
+function handleChatBroadcast(blob: string, dispatch: Dispatch, refs: WsRefs, roomId: string): void {
   const aesKey = refs.aesKey.current;
   const db = refs.db.current;
   if (!aesKey || !db) {
@@ -251,7 +246,7 @@ function handleChatBroadcast(blob: string, dispatch: Dispatch, refs: WsRefs): vo
   }
 
   void (async () => {
-    const result = await handleIncomingMessage(blob, aesKey, db);
+    const result = await handleIncomingMessage(blob, aesKey, db, roomId);
     if (result.type === 'ok') {
       dispatch({ type: 'CHAT_RECEIVED', message: result.message });
     } else {

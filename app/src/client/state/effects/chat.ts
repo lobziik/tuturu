@@ -70,8 +70,8 @@ export function handleChatEffects(ctx: EffectContext, args: EffectArgs): void {
           uuid,
         });
 
-        await putMessage(db, message);
-        await putOwnSeq(db, deviceId, seq);
+        await putMessage(db, roomId, message);
+        await putOwnSeq(db, roomId, deviceId, seq);
       } catch (err) {
         console.error('[CHAT] Send failed:', err);
       }

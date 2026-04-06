@@ -22,6 +22,7 @@ import { getScreen } from './types';
 export function cleanupCallResources(refs: ResourceRefs): void {
   console.log('[CLEANUP] Cleaning up call resources');
   refs.makingOffer.current = false;
+  refs.pendingOffer.current = null;
 
   // Notify server so it removes us from callPeers.
   // Without this, the server would still consider us in-call,

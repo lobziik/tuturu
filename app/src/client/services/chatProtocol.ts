@@ -72,12 +72,14 @@ export type HandleResult =
  * @param blob - Base64-encoded encrypted wire format (iv || ciphertext || authTag)
  * @param aesKey - AES-256-GCM CryptoKey from deriveKeys()
  * @param db - Open IDBDatabase connection
+ * @param roomId - Room this message belongs to (for scoped seq tracking and storage)
  * @returns Discriminated union result — never throws for expected failures
  */
 export async function handleIncomingMessage(
   blob: string,
   aesKey: CryptoKey,
   db: IDBDatabase,
+  roomId: string,
 ): Promise<HandleResult> {
   // Step 1: Base64 decode
   let wire: Uint8Array;
@@ -120,7 +122,7 @@ export async function handleIncomingMessage(
 
   // Steps 6-8: Replay check + dedup check + store in a single IDB transaction.
   // Eliminates TOCTOU races when multiple messages are processed concurrently.
-  const storeResult = await checkAndStoreMessage(db, message);
+  const storeResult = await checkAndStoreMessage(db, roomId, message);
   if (!storeResult.stored) {
     return { type: storeResult.reason };
   }

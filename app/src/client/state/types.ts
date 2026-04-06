@@ -99,6 +99,11 @@ export type AppState =
       iceServers: IceServerConfig[] | null;
       /** ICE transport policy: 'all' (default) or 'relay' (force TURN) */
       iceTransportPolicy: IceTransportPolicy;
+      /** Stashed incoming offer for incoming call UI when screen is idle */
+      incomingOffer: {
+        fromPeerId: string;
+        offer: RTCSessionDescriptionInit;
+      } | null;
     };
 
 /** Extract the room-phase state for components that only operate in room phase */
@@ -143,6 +148,8 @@ export type Action =
   | { type: 'TOGGLE_PIP_VISIBILITY' }
   | { type: 'FLIP_CAMERA' }
   | { type: 'HANGUP' }
+  | { type: 'ACCEPT_CALL' }
+  | { type: 'DECLINE_CALL' }
   | { type: 'DISMISS_ERROR' }
 
   // Room-level WebSocket lifecycle
@@ -178,6 +185,7 @@ export type Action =
   // Server responses — call signaling
   | { type: 'PEER_JOINED_CALL'; peerId: string }
   | { type: 'PEER_LEFT_CALL'; peerId: string }
+  | { type: 'CALL_PEERS_RECEIVED'; callPeers: string[] }
 
   // Server responses — signaling / ICE
   | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy }

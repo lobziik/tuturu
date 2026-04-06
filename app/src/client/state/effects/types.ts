@@ -49,6 +49,11 @@ export interface ResourceRefs {
    * we never joined (e.g. media error before waiting-for-peer).
    */
   inCall: { current: boolean };
+  /**
+   * Stashed offer from ACCEPT_CALL, consumed after MEDIA_ACQUIRED for incoming call callee flow.
+   * Non-serializable (contains RTCSessionDescriptionInit), lives in ref not state.
+   */
+  pendingOffer: { current: { offer: RTCSessionDescriptionInit; fromPeerId: string } | null };
 }
 
 /**

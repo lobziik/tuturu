@@ -27,30 +27,6 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
   const prevScreen = getScreen(prevState);
   const iceConfig = getIceConfig(newState);
 
-  // ACCEPT_CALL → Stash the offer in a ref so webrtc can use it after MEDIA_ACQUIRED.
-  // Must read prevState because reducer already cleared incomingOffer.
-  if (action.type === 'ACCEPT_CALL' && prevState.phase === 'room' && prevState.incomingOffer) {
-    refs.pendingOffer.current = {
-      offer: prevState.incomingOffer.offer,
-      fromPeerId: prevState.incomingOffer.fromPeerId,
-    };
-  }
-
-  // MEDIA_ACQUIRED + pending offer from incoming call → dispatch RECEIVED_OFFER
-  // on next microtask to avoid re-entrant dispatch. This triggers:
-  // reducer → negotiating(callee), then webrtc effect → handleOffer.
-  if (
-    action.type === 'MEDIA_ACQUIRED' &&
-    newScreen?.type === 'waiting-for-peer' &&
-    refs.pendingOffer.current
-  ) {
-    const pending = refs.pendingOffer.current;
-    refs.pendingOffer.current = null;
-    queueMicrotask(() => {
-      dispatch({ type: 'RECEIVED_OFFER', offer: pending.offer, fromPeerId: pending.fromPeerId });
-    });
-  }
-
   // Entering negotiating as caller → Create peer connection and send offer
   if (
     prevScreen?.type !== 'negotiating' &&

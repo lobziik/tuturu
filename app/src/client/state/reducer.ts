@@ -150,6 +150,19 @@ function resolveHistoryCursor(existing: number | null, incoming: number | null):
   return Math.min(existing, incoming);
 }
 
+/** Clone a Set and add new entries — avoids O(N) rebuild from array */
+function extendSet(base: Set<string>, additions: string[]): Set<string> {
+  const copy = new Set(base);
+  for (const id of additions) copy.add(id);
+  return copy;
+}
+
+/** Result of mergeHistory when new messages were added */
+interface MergeResult {
+  messages: ChatMessage[];
+  addedUuids: string[];
+}
+
 /**
  * Merge history messages with existing messages.
  * Deduplicates by uuid using the Set index, sorts by timestamp ascending.
@@ -159,11 +172,14 @@ function mergeHistory(
   existing: ChatMessage[],
   uuids: Set<string>,
   incoming: ChatMessage[],
-): ChatMessage[] | null {
+): MergeResult | null {
   const newMessages = incoming.filter((m) => !uuids.has(m.uuid));
   if (newMessages.length === 0) return null;
 
-  return [...newMessages, ...existing].sort((a, b) => a.timestamp - b.timestamp);
+  return {
+    messages: [...newMessages, ...existing].sort((a, b) => a.timestamp - b.timestamp),
+    addedUuids: newMessages.map((m) => m.uuid),
+  };
 }
 
 // ============================================================================
@@ -264,7 +280,7 @@ function roomChatReducer(state: RoomState, action: ChatAction): AppState {
       return {
         ...state,
         messages: inserted,
-        messageUuids: new Set([...state.messageUuids, action.message.uuid]),
+        messageUuids: extendSet(state.messageUuids, [action.message.uuid]),
       };
     }
 
@@ -274,14 +290,16 @@ function roomChatReducer(state: RoomState, action: ChatAction): AppState {
         if (!merged) return state;
         return {
           ...state,
-          messages: merged,
-          messageUuids: new Set(merged.map((m) => m.uuid)),
+          messages: merged.messages,
+          messageUuids: extendSet(state.messageUuids, merged.addedUuids),
         };
       }
       return {
         ...state,
-        messages: merged ?? state.messages,
-        messageUuids: merged ? new Set(merged.map((m) => m.uuid)) : state.messageUuids,
+        messages: merged ? merged.messages : state.messages,
+        messageUuids: merged
+          ? extendSet(state.messageUuids, merged.addedUuids)
+          : state.messageUuids,
         historyCursor: resolveHistoryCursor(state.historyCursor, action.cursor),
         historyHasMore: action.hasMore,
         loadingHistory: false,

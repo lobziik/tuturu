@@ -337,6 +337,15 @@ describe('reducer', () => {
       expect(room.messages[2]!.uuid).toBe('c');
     });
 
+    test('CHAT_RECEIVED keeps messageUuids in sync', () => {
+      const msg1 = chatMessage({ uuid: 'x' });
+      const state = roomState({ type: 'idle' }, { messages: [msg1] });
+
+      const msg2 = chatMessage({ uuid: 'y' });
+      const room = expectRoom(reducer(state, { type: 'CHAT_RECEIVED', message: msg2 }));
+      expect(room.messageUuids).toEqual(new Set(['x', 'y']));
+    });
+
     test('CHAT_RECEIVED deduplicates by uuid', () => {
       const msg = chatMessage({ uuid: 'dup' });
       const state = roomState({ type: 'idle' }, { messages: [msg] });
@@ -366,6 +375,25 @@ describe('reducer', () => {
       expect(room.messages[2]!.uuid).toBe('c');
       expect(room.historyCursor).toBe(5);
       expect(room.historyHasMore).toBe(true);
+    });
+
+    test('HISTORY_LOADED keeps messageUuids in sync after merge', () => {
+      const existing = chatMessage({ timestamp: 200, uuid: 'b' });
+      const state = roomState(
+        { type: 'idle' },
+        { messages: [existing], historyHasMore: true, historyCursor: 10 },
+      );
+
+      const incoming = [
+        chatMessage({ timestamp: 100, uuid: 'a' }),
+        chatMessage({ timestamp: 200, uuid: 'b' }), // duplicate
+        chatMessage({ timestamp: 300, uuid: 'c' }),
+      ];
+
+      const room = expectRoom(
+        reducer(state, { type: 'HISTORY_LOADED', messages: incoming, cursor: 5, hasMore: false }),
+      );
+      expect(room.messageUuids).toEqual(new Set(['a', 'b', 'c']));
     });
 
     test('HISTORY_LOADED replayed batch is fully deduplicated', () => {

@@ -13,6 +13,15 @@ import { sendMessage } from './websocket';
 
 type Dispatch = (action: Action) => void;
 
+/**
+ * Mutable ref to the active peer connection.
+ * Used by async operations to detect staleness: if `pcRef.current !== pc`,
+ * the call session changed during an await and the operation should abort.
+ * This eliminates the entire class of race conditions where async WebRTC
+ * operations from call N dispatch actions into call N+1.
+ */
+type PcRef = { current: RTCPeerConnection | null };
+
 /** Configuration for creating a peer connection */
 interface PeerConnectionConfig {
   iceServers: IceServerConfig[];
@@ -118,12 +127,10 @@ export async function handleOffer(
   pc: RTCPeerConnection | null,
   offer: RTCSessionDescriptionInit,
   ws: WebSocket | null,
+  pcRef: PcRef,
   dispatch: Dispatch,
 ): Promise<void> {
-  if (!pc) {
-    console.error('[RTC] No peer connection to handle offer');
-    return;
-  }
+  if (!pc || pcRef.current !== pc) return;
 
   if (pc.signalingState !== 'stable') {
     console.warn('[RTC] Ignoring stale offer: expected stable, got', pc.signalingState);
@@ -132,14 +139,18 @@ export async function handleOffer(
 
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    if (pcRef.current !== pc) return;
     const answer = await pc.createAnswer();
+    if (pcRef.current !== pc) return;
     await pc.setLocalDescription(answer);
+    if (pcRef.current !== pc) return;
     if (!answer.sdp) {
       throw new Error('Created answer has no SDP');
     }
     sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp });
     console.log('[RTC] Sent answer');
   } catch (error) {
+    if (pcRef.current !== pc) return;
     console.error('[RTC] Failed to handle offer:', error);
     dispatch({
       type: 'RTC_FAILED',
@@ -152,12 +163,10 @@ export async function handleOffer(
 export async function handleAnswer(
   pc: RTCPeerConnection | null,
   answer: RTCSessionDescriptionInit,
+  pcRef: PcRef,
   dispatch: Dispatch,
 ): Promise<void> {
-  if (!pc) {
-    console.error('[RTC] No peer connection to handle answer');
-    return;
-  }
+  if (!pc || pcRef.current !== pc) return;
 
   if (pc.signalingState !== 'have-local-offer') {
     console.warn('[RTC] Ignoring stale answer: expected have-local-offer, got', pc.signalingState);
@@ -166,8 +175,10 @@ export async function handleAnswer(
 
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    if (pcRef.current !== pc) return;
     console.log('[RTC] Answer received and set');
   } catch (error) {
+    if (pcRef.current !== pc) return;
     console.error('[RTC] Failed to handle answer:', error);
     dispatch({
       type: 'RTC_FAILED',
@@ -180,17 +191,15 @@ export async function handleAnswer(
 export async function handleIceCandidate(
   pc: RTCPeerConnection | null,
   candidate: RTCIceCandidateInit,
-  _dispatch: Dispatch,
+  pcRef: PcRef,
 ): Promise<void> {
-  if (!pc) {
-    console.error('[RTC] No peer connection for ICE candidate');
-    return;
-  }
+  if (!pc || pcRef.current !== pc) return;
 
   try {
     await pc.addIceCandidate(new RTCIceCandidate(candidate));
     console.log('[RTC] ICE candidate added');
   } catch (error) {
+    if (pcRef.current !== pc) return;
     console.warn('[RTC] Failed to add ICE candidate (non-fatal):', error);
   }
 }

@@ -1,6 +1,11 @@
 /**
  * WebRTC side effects — peer connection lifecycle, offer/answer/ICE handling.
  *
+ * All async operations use `refs.pc` as a staleness guard: if `refs.pc.current`
+ * no longer points to the PC the operation started with, the call session changed
+ * (hangup, peer-left, error) and the operation silently aborts. This eliminates
+ * the class of race conditions where async work from call N leaks into call N+1.
+ *
  * @module state/effects/webrtc
  */
 
@@ -43,6 +48,7 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
     pc.createOffer()
       .then((offer) => pc.setLocalDescription(offer))
       .then(() => {
+        if (refs.pc.current !== pc) return;
         const sdp = pc.localDescription?.sdp;
         if (!sdp) {
           throw new Error('localDescription has no SDP after setLocalDescription');
@@ -51,6 +57,7 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
         console.log('[RTC] Sent offer');
       })
       .catch((error: Error) => {
+        if (refs.pc.current !== pc) return;
         console.error('[RTC] Failed to create offer:', error);
         dispatch({
           type: 'RTC_FAILED',
@@ -73,16 +80,16 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
       );
       refs.pc.current = pc;
     }
-    void handleOffer(refs.pc.current, action.offer, refs.ws.current, dispatch);
+    void handleOffer(refs.pc.current, action.offer, refs.ws.current, refs.pc, dispatch);
   }
 
   // Received answer → Set remote description (only during active negotiation)
   if (action.type === 'RECEIVED_ANSWER' && newScreen?.type === 'negotiating') {
-    void handleAnswer(refs.pc.current, action.answer, dispatch);
+    void handleAnswer(refs.pc.current, action.answer, refs.pc, dispatch);
   }
 
   // Received ICE candidate → Add to peer connection (only during call-related screens)
   if (action.type === 'RECEIVED_ICE_CANDIDATE' && newScreen && 'muted' in newScreen) {
-    void handleIceCandidate(refs.pc.current, action.candidate, dispatch);
+    void handleIceCandidate(refs.pc.current, action.candidate, refs.pc);
   }
 }

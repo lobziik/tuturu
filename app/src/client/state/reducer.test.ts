@@ -422,7 +422,8 @@ describe('reducer', () => {
   // ========================================================================
 
   describe('Signaling messages', () => {
-    test('CALL_PEERS_RECEIVED with remote peer transitions waiting-for-peer to negotiating', () => {
+    test('CALL_PEERS_RECEIVED with remote peer makes higher peerId the caller', () => {
+      // selfPeerId 'z-peer' > 'a-peer' → this peer becomes the caller
       const state = roomState(
         {
           type: 'waiting-for-peer',
@@ -430,16 +431,34 @@ describe('reducer', () => {
           videoOff: false,
           pipHidden: false,
         },
-        { selfPeerId: 'self-peer' },
+        { selfPeerId: 'z-peer' },
       );
       const room = expectRoom(
-        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['self-peer', 'p2'] }),
+        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['z-peer', 'a-peer'] }),
       );
       expect(room.screen.type).toBe('negotiating');
       if (room.screen.type === 'negotiating') {
         expect(room.screen.role).toBe('caller');
         expect(room.screen.muted).toBe(true);
       }
+      expect(room.callActive).toBe(true);
+    });
+
+    test('CALL_PEERS_RECEIVED with remote peer keeps lower peerId on waiting-for-peer', () => {
+      // selfPeerId 'a-peer' < 'z-peer' → this peer waits for the offer (callee)
+      const state = roomState(
+        {
+          type: 'waiting-for-peer',
+          muted: false,
+          videoOff: false,
+          pipHidden: false,
+        },
+        { selfPeerId: 'a-peer' },
+      );
+      const room = expectRoom(
+        reducer(state, { type: 'CALL_PEERS_RECEIVED', callPeers: ['a-peer', 'z-peer'] }),
+      );
+      expect(room.screen.type).toBe('waiting-for-peer');
       expect(room.callActive).toBe(true);
     });
 

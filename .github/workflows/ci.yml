@@ -40,9 +40,9 @@ jobs:
         working-directory: app
         run: bun run format:check
 
-      - name: Build client
+      - name: Dead code check
         working-directory: app
-        run: bun run build
+        run: bun run lint:dead
 
   test:
     runs-on: ubuntu-latest

@@ -126,12 +126,6 @@ function loadConfig() {
  */
 export const config = loadConfig();
 
-/**
- * TypeScript type inferred from Zod schema
- * No duplication needed!
- */
-export type Config = z.infer<typeof configSchema>;
-
 /** Retention period in milliseconds (derived from retentionDays) */
 export const retentionMs = config.retentionDays * 86_400_000;
 
@@ -143,9 +137,6 @@ export const pongTimeoutMs = 90_000;
 
 /** Interval between cleanup runs for expired messages and blobs (ms) */
 export const cleanupIntervalMs = 3_600_000;
-
-/** Minimum interval between blob uploads per IP (ms) */
-export const blobRateLimitMs = 1_000;
 
 /**
  * Check if TURN server is configured

@@ -20,41 +20,41 @@ import { checkAndStoreMessage } from './db';
 // ============================================================================
 
 /** Successful message processing — message stored in IndexedDB */
-export interface HandleResultOk {
+interface HandleResultOk {
   type: 'ok';
   /** Validated and stored ChatMessage */
   message: ChatMessage;
 }
 
 /** Message seq ≤ lastSeenSeq for this deviceId (replay attack or re-delivery) */
-export interface HandleResultReplay {
+interface HandleResultReplay {
   type: 'replay';
 }
 
 /** Message UUID already exists in IndexedDB (duplicate delivery) */
-export interface HandleResultDuplicate {
+interface HandleResultDuplicate {
   type: 'duplicate';
 }
 
 /** AES-GCM decryption failed (wrong room key, tampered, or corrupted data) */
-export interface HandleResultDecryptError {
+interface HandleResultDecryptError {
   type: 'decrypt-error';
 }
 
 /** Message has unknown wire format version — ignore gracefully */
-export interface HandleResultUnknownVersion {
+interface HandleResultUnknownVersion {
   type: 'unknown-version';
   /** The version number found in the message */
   v: number;
 }
 
 /** JSON parse or Zod schema validation failed */
-export interface HandleResultParseError {
+interface HandleResultParseError {
   type: 'parse-error';
 }
 
 /** All possible outcomes of processing an incoming encrypted blob */
-export type HandleResult =
+type HandleResult =
   | HandleResultOk
   | HandleResultReplay
   | HandleResultDuplicate

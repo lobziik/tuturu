@@ -9,7 +9,7 @@
  * Error thrown when PiP drag encounters an invalid state or configuration.
  * Follows project's fail-fast error handling pattern.
  */
-export class PipDragError extends Error {
+class PipDragError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'PipDragError';
@@ -318,7 +318,7 @@ function handlePointerCancel(event: PointerEvent): void {
  *
  * @throws {PipDragError} If called before setupPipDrag initialization
  */
-export function resetPipPosition(): void {
+function resetPipPosition(): void {
   if (!videoElement) {
     throw new PipDragError('resetPipPosition called before setupPipDrag initialization');
   }

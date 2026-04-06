@@ -19,7 +19,7 @@ import { getScreen } from './types';
  * Also notifies the server via leave-call if we previously joined.
  * Does NOT close the room-level WebSocket — chat stays alive.
  */
-export function cleanupCallResources(refs: ResourceRefs): void {
+function cleanupCallResources(refs: ResourceRefs): void {
   console.log('[CLEANUP] Cleaning up call resources');
   refs.makingOffer.current = false;
 

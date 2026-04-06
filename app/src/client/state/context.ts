@@ -6,7 +6,6 @@
  */
 
 import { createContext } from 'preact';
-import { useContext } from 'preact/hooks';
 import type { AppState, Action } from './types';
 
 /** Dispatch function type */
@@ -23,11 +22,6 @@ interface AppContextValue {
  * Must be provided by `<App />` via `AppContext.Provider`.
  */
 export const AppContext = createContext<AppContextValue>(null!);
-
-/** Hook to access state and dispatch from the nearest AppContext.Provider */
-export function useAppContext(): AppContextValue {
-  return useContext(AppContext);
-}
 
 /**
  * Wraps a reducer with debug logging.

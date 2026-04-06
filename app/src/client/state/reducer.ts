@@ -576,29 +576,3 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
     }
   }
 }
-
-/** Get human-readable description for WebSocket close codes (RFC 6455) */
-export function getCloseCodeDescription(code: number): string {
-  switch (code) {
-    case 1000:
-      return 'Normal closure';
-    case 1001:
-      return 'Server going away';
-    case 1002:
-      return 'Protocol error';
-    case 1003:
-      return 'Unsupported data type';
-    case 1006:
-      return 'Connection lost (no close frame)';
-    case 1007:
-      return 'Invalid message data';
-    case 1008:
-      return 'Policy violation';
-    case 1009:
-      return 'Message too large';
-    case 1011:
-      return 'Server error';
-    default:
-      return `Unexpected error (code ${code})`;
-  }
-}

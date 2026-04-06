@@ -28,8 +28,6 @@ export const ErrorCodeSchema = z.enum([
   'UNKNOWN',
 ]);
 
-export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
-
 // ============================================================================
 // ICE Configuration (shared between v1 and v2)
 // ============================================================================
@@ -310,6 +308,5 @@ export type ServerToClientMessage = z.infer<typeof ServerToClientMessageSchema>;
 // Sub-type exports for consumers that need individual message shapes
 // ============================================================================
 
-export type HistoryMessage = z.infer<typeof HistoryMessageSchema>;
 export type IceServerConfig = z.infer<typeof IceServerSchema>;
 export type IceTransportPolicy = z.infer<typeof IceTransportPolicySchema>;

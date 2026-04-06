@@ -11,9 +11,6 @@
 export type {
   ChatMessage,
   ClientToServerMessage,
-  ServerToClientMessage,
-  HistoryMessage,
-  ErrorCode,
   IceServerConfig,
   IceTransportPolicy,
 } from './schemas';

@@ -288,7 +288,7 @@ export async function putOwnSeq(
 // ============================================================================
 
 /** Result of atomic check-and-store: either stored, or rejected with reason */
-export type StoreResult = { stored: true } | { stored: false; reason: 'replay' | 'duplicate' };
+type StoreResult = { stored: true } | { stored: false; reason: 'replay' | 'duplicate' };
 
 /**
  * Atomically check replay/dedup guards and store a message in a single readwrite transaction.

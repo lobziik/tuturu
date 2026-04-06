@@ -5,9 +5,6 @@
  * @module shared/constants
  */
 
-/** Server message retention period in days */
-export const RETENTION_DAYS = 7;
-
 /** Number of messages per history page (cursor-based pagination) */
 export const HISTORY_BATCH_SIZE = 100;
 
@@ -26,9 +23,6 @@ export const WS_DEAD_DETECTION_MS = 100_000;
 
 /** Maximum number of WebSocket reconnect attempts before giving up */
 export const MAX_RECONNECT_ATTEMPTS = 20;
-
-/** Maximum participants per room (video mesh limit) */
-export const MAX_ROOM_PARTICIPANTS = 6;
 
 /** IndexedDB database name */
 export const DB_NAME = 'tuturu';

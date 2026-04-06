@@ -91,7 +91,7 @@ export async function hasMultipleCameras(): Promise<boolean> {
 
 let currentFacingMode: 'user' | 'environment' = 'user';
 
-export function resetFacingMode(): void {
+function resetFacingMode(): void {
   currentFacingMode = 'user';
 }
 

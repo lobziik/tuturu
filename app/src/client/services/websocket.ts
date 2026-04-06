@@ -265,17 +265,18 @@ function handleHistory(
   }
 
   void (async () => {
+    const results = await Promise.all(
+      message.messages.map(async (hm) => ({
+        result: await decryptAndValidateBlob(hm.blob, aesKey),
+        id: hm.id,
+      })),
+    );
+
     const decrypted: ChatMessage[] = [];
     let minId: number | null = null;
-
-    for (const hm of message.messages) {
-      const result = await decryptAndValidateBlob(hm.blob, aesKey);
-      if (result) {
-        decrypted.push(result);
-      }
-      if (minId === null || hm.id < minId) {
-        minId = hm.id;
-      }
+    for (const { result, id } of results) {
+      if (result) decrypted.push(result);
+      if (minId === null || id < minId) minId = id;
     }
 
     dispatch({

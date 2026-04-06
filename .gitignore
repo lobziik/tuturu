@@ -5,12 +5,13 @@
 node_modules/
 bun.lockb
 
-# Build artifacts
+# Build artifacts & coverage
 app/public/client.js
 app/public/client.js.map
 app/public/index.js
 app/public/index.js.map
 app/dist/
+app/coverage/
 
 # IDE
 .idea/

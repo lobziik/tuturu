@@ -40,16 +40,10 @@ function nicknameReducer(
   state: Extract<AppState, { phase: 'nickname' }>,
   action: Action,
 ): AppState {
-  switch (action.type) {
-    case 'SUBMIT_NICKNAME':
-      return { phase: 'login', nickname: action.nickname };
-
-    case 'NICKNAME_LOADED':
-      return { phase: 'login', nickname: action.nickname };
-
-    default:
-      return state;
+  if (action.type === 'SUBMIT_NICKNAME' || action.type === 'NICKNAME_LOADED') {
+    return { phase: 'login', nickname: action.nickname };
   }
+  return state;
 }
 
 // ============================================================================

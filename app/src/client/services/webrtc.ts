@@ -130,6 +130,11 @@ export function createPeerConnection(
           reason: 'Connection failed. Please check your network and try again.',
         });
         break;
+      case 'new':
+      case 'connecting':
+      case 'closed':
+        // Transient/terminal states — no action needed
+        break;
     }
   };
 

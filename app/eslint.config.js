@@ -57,6 +57,12 @@ export default [
         'error',
         { allowNumber: true, allowBoolean: true },
       ],
+
+      // Ensure switch statements over discriminated unions handle all cases
+      '@typescript-eslint/switch-exhaustiveness-check': [
+        'error',
+        { allowDefaultCaseForExhaustiveSwitch: true },
+      ],
     },
   },
 

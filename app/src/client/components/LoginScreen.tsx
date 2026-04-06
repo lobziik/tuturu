@@ -78,7 +78,7 @@ export function LoginScreen({ nickname, dispatch }: Readonly<LoginScreenProps>) 
           {isLoading ? 'Please wait...' : 'Enter'}
         </button>
       </form>
-      <p class="hint">Enter a shared passphrase and PIN to join an encrypted room</p>
+      <p class="hint">Enter a shared passphrase and PIN to join a room. Both should match. :)</p>
     </div>
   );
 }

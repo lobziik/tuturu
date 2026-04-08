@@ -88,7 +88,10 @@ export function RoomScreen({
     screen.type === 'waiting-for-peer' || screen.type === 'negotiating' || screen.type === 'call';
 
   return (
-    <div ref={screenRef} class="room-screen">
+    <div
+      ref={screenRef}
+      class="fixed inset-x-0 top-0 h-screen h-dvh flex flex-col z-50 bg-surface overflow-hidden"
+    >
       <Header
         onCallClick={handleCallClick}
         peerCount={peerCount}

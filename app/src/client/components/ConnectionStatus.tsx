@@ -47,11 +47,20 @@ export function ConnectionStatus({
     dispatch({ type: 'RECONNECT_REQUESTED' });
   }, [dispatch]);
 
+  const statusColors =
+    wsStatus === 'disconnected' ? 'bg-red-900 text-red-200' : 'bg-amber-900 text-amber-100';
+
   return (
-    <div class={`connection-status connection-status-${wsStatus}`}>
+    <div
+      class={`flex items-center justify-center gap-2 px-4 py-1.5 text-center text-sm font-medium shrink-0 ${statusColors}`}
+    >
       <span>{formatStatusLabel(wsStatus, reconnectAttempt)}</span>
       {wsStatus === 'disconnected' && (
-        <button type="button" class="reconnect-btn" onClick={handleReconnect}>
+        <button
+          type="button"
+          class="bg-transparent text-inherit border border-current rounded px-2 py-0.5 text-xs font-semibold cursor-pointer opacity-90 hover:opacity-100 hover:bg-white/10"
+          onClick={handleReconnect}
+        >
           Reconnect
         </button>
       )}

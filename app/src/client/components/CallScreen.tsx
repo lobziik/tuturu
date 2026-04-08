@@ -10,6 +10,17 @@ import type { Screen } from '../state/types';
 import type { Dispatch } from '../state/context';
 import { hasMultipleCameras } from '../services/media';
 import { setupPipDrag, cleanupPipDrag } from '../services/pip-drag';
+import {
+  MicrophoneIcon,
+  SpeakerXMarkIcon,
+  VideoCameraIcon,
+  VideoCameraSlashIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  ArrowPathIcon,
+  ChevronDownIcon,
+  PhoneXMarkIcon,
+} from '@heroicons/react/24/solid';
 
 /** Screen types that this component handles */
 type CallScreenState = Extract<
@@ -80,9 +91,9 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
     if (isCall && isMobile) {
       if (statusHideTimeoutRef.current !== null) clearTimeout(statusHideTimeoutRef.current);
       const bar = statusBarRef.current;
-      if (bar) bar.classList.remove('hidden-overlay');
+      if (bar) bar.classList.remove('status-hidden');
       statusHideTimeoutRef.current = window.setTimeout(() => {
-        if (bar) bar.classList.add('hidden-overlay');
+        if (bar) bar.classList.add('status-hidden');
         statusHideTimeoutRef.current = null;
       }, 3000);
     } else {
@@ -91,7 +102,7 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
         statusHideTimeoutRef.current = null;
       }
       const bar = statusBarRef.current;
-      if (bar) bar.classList.remove('hidden-overlay');
+      if (bar) bar.classList.remove('status-hidden');
     }
     return () => {
       if (statusHideTimeoutRef.current !== null) {
@@ -111,96 +122,297 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
 
   const isAudioOnly = localStream !== null && localStream.getVideoTracks().length === 0;
   const showFlip = isCall && hasMultiCams && !screen.videoOff && !isAudioOnly;
-  const layoutClass = isMobile ? 'mobile-call' : 'desktop-call';
+
+  // ── Shared elements ──────────────────────────────────────────────────
+
+  const videoContainer = (
+    <div class="absolute inset-0">
+      {/* Remote video */}
+      <video
+        id="remote-video"
+        ref={remoteVideoRef}
+        autoplay
+        playsinline
+        class="w-full h-full object-cover"
+      />
+
+      {/* Local video (PiP) */}
+      <video
+        id="local-video"
+        ref={localVideoRef}
+        autoplay
+        playsinline
+        muted
+        class={
+          'absolute top-0 left-0 w-40 max-h-30 aspect-4/3 rounded-xl ' +
+          'border-2 border-white/30 shadow-lg object-cover cursor-grab touch-none ' +
+          'select-none will-change-[left,top] z-5' +
+          (screen.pipHidden ? ' pip-hidden' : '')
+        }
+        style={isAudioOnly ? 'display: none' : ''}
+      />
+
+      {/* Waiting / negotiating overlay */}
+      {(isWaiting || isNegotiating) && (
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-4">
+          <span
+            class="text-2xl font-bold text-white/90 uppercase tracking-wider bg-black/40 px-8 py-4 rounded-lg backdrop-blur-sm"
+            style="text-shadow: 0 2px 8px rgba(0,0,0,0.6)"
+          >
+            {isWaiting ? 'WAITING FOR PEER' : 'CONNECTING TO PEER'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Mobile layout ────────────────────────────────────────────────────
+
+  if (isMobile) {
+    return (
+      <div
+        id="call-interface"
+        class="fixed inset-0 z-100 bg-black h-screen"
+        style="height: 100svh; height: 100dvh"
+      >
+        {videoContainer}
+
+        {/* Status bar — mobile */}
+        <div
+          id="status-bar"
+          ref={statusBarRef}
+          class={
+            'absolute top-0 right-0 p-4 pt-safe pr-safe ' +
+            'bg-linear-to-b from-black/70 to-transparent ' +
+            'border-none rounded-none z-10 transition-opacity duration-300 text-right'
+          }
+        >
+          <span id="status-text" class="font-semibold text-white">
+            {statusText}
+          </span>
+        </div>
+
+        {/* Controls — mobile circular buttons */}
+        <div class="absolute bottom-safe-8 inset-x-0 flex justify-center gap-5 px-4 z-10 flex-nowrap">
+          {/* Mute */}
+          <button
+            id="mute-btn"
+            class={
+              'size-14 rounded-full p-0 flex flex-col items-center justify-center ' +
+              'backdrop-blur-md border border-white/20 ' +
+              (screen.muted ? 'bg-red-500/80 text-white' : 'bg-slate-800/80 text-white')
+            }
+            title={screen.muted ? 'Unmute' : 'Mute'}
+            onClick={() => dispatch({ type: 'TOGGLE_MUTE' })}
+          >
+            {screen.muted ? <SpeakerXMarkIcon class="size-5" /> : <MicrophoneIcon class="size-5" />}
+          </button>
+
+          {/* Video toggle */}
+          <button
+            id="video-btn"
+            class={
+              'size-14 rounded-full p-0 flex flex-col items-center justify-center ' +
+              'backdrop-blur-md border border-white/20 ' +
+              (screen.videoOff ? 'bg-red-500/80 text-white' : 'bg-slate-800/80 text-white')
+            }
+            title={isAudioOnly ? 'No camera available' : 'Video On/Off'}
+            disabled={isAudioOnly}
+            style={isAudioOnly ? 'opacity: 0.5' : ''}
+            onClick={() => dispatch({ type: 'TOGGLE_VIDEO' })}
+          >
+            {screen.videoOff ? (
+              <VideoCameraSlashIcon class="size-5" />
+            ) : (
+              <VideoCameraIcon class="size-5" />
+            )}
+          </button>
+
+          {/* PiP toggle */}
+          <button
+            id="pip-toggle-btn"
+            class={
+              'size-14 rounded-full p-0 flex flex-col items-center justify-center ' +
+              'bg-slate-800/80 backdrop-blur-md border border-white/20 text-white'
+            }
+            title="Toggle Preview"
+            onClick={() => dispatch({ type: 'TOGGLE_PIP_VISIBILITY' })}
+          >
+            {screen.pipHidden ? <EyeIcon class="size-5" /> : <EyeSlashIcon class="size-5" />}
+          </button>
+
+          {/* Flip camera */}
+          {showFlip && (
+            <button
+              id="flip-btn"
+              class={
+                'size-14 rounded-full p-0 flex flex-col items-center justify-center ' +
+                'bg-slate-800/80 backdrop-blur-md border border-white/20 text-white'
+              }
+              title="Flip Camera"
+              onClick={() => dispatch({ type: 'FLIP_CAMERA' })}
+            >
+              <ArrowPathIcon class="size-5" />
+            </button>
+          )}
+
+          {/* Minimize */}
+          <button
+            class={
+              'size-14 rounded-full p-0 flex flex-col items-center justify-center ' +
+              'bg-slate-800/80 backdrop-blur-md border border-white/20 text-white'
+            }
+            title="Minimize to chat"
+            onClick={() => dispatch({ type: 'SWITCH_TO_CHAT' })}
+          >
+            <ChevronDownIcon class="size-5" />
+          </button>
+
+          {/* Hang up */}
+          <button
+            id="hangup-btn"
+            class={
+              'size-14 rounded-full p-0 flex flex-col items-center justify-center ' +
+              'bg-red-500/90 hover:bg-red-600/95 backdrop-blur-md border border-white/20 text-white'
+            }
+            title="Hang Up"
+            onClick={() => dispatch({ type: 'HANGUP' })}
+          >
+            <PhoneXMarkIcon class="size-5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Desktop layout ───────────────────────────────────────────────────
 
   return (
-    <div id="call-interface" class={layoutClass}>
-      <div class="status-bar" id="status-bar" ref={statusBarRef}>
-        <span id="status-text">{statusText}</span>
+    <div id="call-interface" class="fixed inset-0 z-100 bg-black">
+      {videoContainer}
+
+      {/* Status bar — desktop */}
+      <div
+        id="status-bar"
+        ref={statusBarRef}
+        class={
+          'absolute top-4 right-4 px-4 py-3 ' +
+          'bg-slate-800/85 backdrop-blur-md border border-white/10 ' +
+          'rounded-lg z-10 transition-opacity duration-300'
+        }
+      >
+        <span id="status-text" class="font-semibold text-white">
+          {statusText}
+        </span>
       </div>
 
-      <div class="video-container">
-        <video id="remote-video" ref={remoteVideoRef} autoplay playsinline />
-        <video
-          id="local-video"
-          ref={localVideoRef}
-          autoplay
-          playsinline
-          muted
-          class={screen.pipHidden ? 'pip-hidden' : ''}
-          style={isAudioOnly ? 'display: none' : ''}
-        />
-        {(isWaiting || isNegotiating) && (
-          <div class="waiting-overlay">
-            <span class="waiting-overlay-text">
-              {isWaiting ? 'WAITING FOR PEER' : 'CONNECTING TO PEER'}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div class="controls">
+      {/* Controls bar — desktop */}
+      <div
+        class={
+          'absolute bottom-8 left-1/2 -translate-x-1/2 ' +
+          'bg-slate-800/85 backdrop-blur-md border border-white/10 ' +
+          'rounded-2xl p-4 z-10 flex justify-center gap-4'
+        }
+      >
+        {/* Mute */}
         <button
           id="mute-btn"
-          class={`control-btn ${screen.muted ? 'active' : ''}`}
+          class={
+            'flex flex-col items-center gap-2 px-6 py-4 text-txt ' +
+            'border min-w-25 rounded-lg cursor-pointer transition-colors ' +
+            (screen.muted
+              ? 'bg-danger border-danger hover:bg-danger-dark'
+              : 'bg-surface-light border-surface-border hover:bg-surface-border')
+          }
           title={screen.muted ? 'Unmute' : 'Mute'}
           onClick={() => dispatch({ type: 'TOGGLE_MUTE' })}
         >
-          <span class="icon">{screen.muted ? '\uD83D\uDD07' : '\uD83C\uDF99'}</span>
-          <span class="label">{screen.muted ? 'Unmute' : 'Mute'}</span>
+          {screen.muted ? <SpeakerXMarkIcon class="size-6" /> : <MicrophoneIcon class="size-6" />}
+          <span class="text-sm">{screen.muted ? 'Unmute' : 'Mute'}</span>
         </button>
 
+        {/* Video toggle */}
         <button
           id="video-btn"
-          class={`control-btn ${screen.videoOff ? 'active' : ''}`}
+          class={
+            'flex flex-col items-center gap-2 px-6 py-4 text-txt ' +
+            'border min-w-25 rounded-lg cursor-pointer transition-colors ' +
+            (screen.videoOff
+              ? 'bg-danger border-danger hover:bg-danger-dark'
+              : 'bg-surface-light border-surface-border hover:bg-surface-border')
+          }
           title={isAudioOnly ? 'No camera available' : 'Video On/Off'}
           disabled={isAudioOnly}
           style={isAudioOnly ? 'opacity: 0.5' : ''}
           onClick={() => dispatch({ type: 'TOGGLE_VIDEO' })}
         >
-          <span class="icon">{screen.videoOff ? '\uD83D\uDEAB' : '\uD83D\uDCF9'}</span>
-          <span class="label">{screen.videoOff ? 'Video On' : 'Video Off'}</span>
+          {screen.videoOff ? (
+            <VideoCameraSlashIcon class="size-6" />
+          ) : (
+            <VideoCameraIcon class="size-6" />
+          )}
+          <span class="text-sm">{screen.videoOff ? 'Video On' : 'Video Off'}</span>
         </button>
 
+        {/* PiP toggle */}
         <button
           id="pip-toggle-btn"
-          class="control-btn visible"
+          class={
+            'flex flex-col items-center gap-2 px-6 py-4 text-txt ' +
+            'bg-surface-light border border-surface-border min-w-25 rounded-lg ' +
+            'cursor-pointer transition-colors hover:bg-surface-border'
+          }
           title="Toggle Preview"
           onClick={() => dispatch({ type: 'TOGGLE_PIP_VISIBILITY' })}
         >
-          <span class="icon">{screen.pipHidden ? '\uD83D\uDC41' : '\uD83D\uDC64'}</span>
-          <span class="label">{screen.pipHidden ? 'Show' : 'Hide'}</span>
+          {screen.pipHidden ? <EyeIcon class="size-6" /> : <EyeSlashIcon class="size-6" />}
+          <span class="text-sm">{screen.pipHidden ? 'Show' : 'Hide'}</span>
         </button>
 
+        {/* Flip camera */}
         {showFlip && (
           <button
             id="flip-btn"
-            class="control-btn visible"
+            class={
+              'flex flex-col items-center gap-2 px-6 py-4 text-txt ' +
+              'bg-surface-light border border-surface-border min-w-25 rounded-lg ' +
+              'cursor-pointer transition-colors hover:bg-surface-border'
+            }
             title="Flip Camera"
             onClick={() => dispatch({ type: 'FLIP_CAMERA' })}
           >
-            <span class="icon">{'\uD83D\uDD04'}</span>
-            <span class="label">Flip</span>
+            <ArrowPathIcon class="size-6" />
+            <span class="text-sm">Flip</span>
           </button>
         )}
 
+        {/* Minimize */}
         <button
-          class="control-btn"
+          class={
+            'flex flex-col items-center gap-2 px-6 py-4 text-txt ' +
+            'bg-surface-light border border-surface-border min-w-25 rounded-lg ' +
+            'cursor-pointer transition-colors hover:bg-surface-border'
+          }
           title="Minimize to chat"
           onClick={() => dispatch({ type: 'SWITCH_TO_CHAT' })}
         >
-          <span class="icon">{'\u2B07'}</span>
-          <span class="label">Minimize</span>
+          <ChevronDownIcon class="size-6" />
+          <span class="text-sm">Minimize</span>
         </button>
 
+        {/* Hang up */}
         <button
           id="hangup-btn"
-          class="control-btn danger"
+          class={
+            'flex flex-col items-center gap-2 px-6 py-4 text-txt ' +
+            'bg-danger border border-danger min-w-25 rounded-lg ' +
+            'cursor-pointer transition-colors hover:bg-danger-dark'
+          }
           title="Hang Up"
           onClick={() => dispatch({ type: 'HANGUP' })}
         >
-          <span class="icon">{'\uD83D\uDCDE'}</span>
-          <span class="label">Hang Up</span>
+          <PhoneXMarkIcon class="size-6" />
+          <span class="text-sm">Hang Up</span>
         </button>
       </div>
     </div>

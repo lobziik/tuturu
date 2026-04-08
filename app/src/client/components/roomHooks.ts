@@ -46,7 +46,7 @@ export function useTouchMovePrevention(screenRef: RefObject<HTMLDivElement>): vo
     const handler = (e: TouchEvent) => {
       const target = e.target as HTMLElement;
       // Allow scroll inside VList's scroll container, but NOT the overlay scroll-to-bottom button
-      if (target.closest('.chat-feed-container') && !target.closest('.scroll-to-bottom')) return;
+      if (target.closest('[data-chat-feed]') && !target.closest('[data-scroll-btn]')) return;
       // Allow scroll inside overflowing contenteditable input
       const editable = target.closest('[contenteditable]') as HTMLElement | null;
       if (editable && editable.scrollHeight > editable.clientHeight) return;

@@ -69,10 +69,37 @@ jobs:
         working-directory: app
         run: bun run test:coverage
 
+      # Run SonarCloud inline in the upstream repo (pushes and same-repo PRs
+      # always have secrets access). Fork PRs lack SONAR_TOKEN and are handled
+      # by the workflow_run-based sonar.yml instead.
       - name: SonarCloud scan
+        if: github.repository == 'lobziik/tuturu' && env.SONAR_TOKEN != ''
         uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7.1.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage
+          path: app/coverage/
+          retention-days: 1
+
+      - name: Save PR metadata
+        if: github.event_name == 'pull_request'
+        run: |
+          mkdir -p /tmp/pr-metadata
+          echo "${{ github.event.number }}" > /tmp/pr-metadata/number
+          echo "${{ github.event.pull_request.head.ref }}" > /tmp/pr-metadata/head_ref
+          echo "${{ github.event.pull_request.base.ref }}" > /tmp/pr-metadata/base_ref
+
+      - name: Upload PR metadata
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr-metadata
+          path: /tmp/pr-metadata/
+          retention-days: 1
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0

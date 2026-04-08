@@ -80,8 +80,7 @@ export function RoomScreen({
   }, []);
 
   const peerCount = Object.keys(peers).length + 1;
-  const callDisabled =
-    screen.type !== 'idle' || wsStatus !== 'connected' || Object.keys(peers).length === 0;
+  const callDisabled = screen.type !== 'idle' || wsStatus !== 'connected';
 
   // Show floating PiP when call is active but view is chat (minimized)
   const showFloatingPiP =

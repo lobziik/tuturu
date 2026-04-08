@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+/*
+ * tuturu — Tailwind CSS source
+ *
+ * Custom theme tokens map 1-to-1 with the old CSS vars so every Tailwind
+ * utility (bg-brand, text-muted, border-surface …) resolves to the same
+ * palette the app already uses.
+ */
+
+/* ── Theme ─────────────────────────────────────────────────────────────── */
+
+@theme {
+  --color-brand: #6366f1;
+  --color-brand-dark: #4f46e5;
+  --color-danger: #ef4444;
+  --color-danger-dark: #dc2626;
+  --color-success: #10b981;
+  --color-surface: #0f172a;
+  --color-surface-light: #1e293b;
+  --color-surface-border: #334155;
+  --color-txt: #f1f5f9;
+  --color-txt-muted: #94a3b8;
+  --color-online: #22c55e;
+
+  --font-family-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-family-mono: "Courier New", monospace;
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body {
+    font-family: var(--font-family-sans);
+    background: var(--color-surface);
+    color: var(--color-txt);
+    line-height: 1.6;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+}
+
+/* ── Animations ────────────────────────────────────────────────────────── */
+
+@layer utilities {
+  @keyframes slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(-1rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes pulse-call {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(34 197 94 / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 6px rgb(34 197 94 / 0);
+    }
+  }
+
+  .animate-slide-in {
+    animation: slide-in 0.3s ease-out;
+  }
+
+  .animate-pulse-call {
+    animation: pulse-call 2s ease-in-out infinite;
+  }
+}
+
+/* ── Scrollbar styling for chat feed ───────────────────────────────────── */
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-surface-border) transparent;
+  }
+}
+
+/* ── PiP drag helpers ─────────────────────────────────────────────────── */
+
+@layer utilities {
+  .pip-dragging {
+    cursor: grabbing !important;
+  }
+
+  .pip-hidden {
+    display: none !important;
+  }
+}
+
+/* ── iOS safe-area helpers ─────────────────────────────────────────────── */
+
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bottom-safe-8 {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 2rem);
+  }
+}
+
+/* ── Contenteditable placeholder ───────────────────────────────────────── */
+
+@layer components {
+  .chat-editable:empty::before {
+    content: attr(data-placeholder);
+    color: var(--color-txt-muted);
+    pointer-events: none;
+  }
+}
+
+/* ── Status bar auto-hide transition (mobile call) ─────────────────────── */
+
+@layer utilities {
+  .status-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+}

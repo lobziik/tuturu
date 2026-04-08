@@ -175,13 +175,15 @@ export function ChatFeed({
   }, [feedItems.length, onRefocusInput]);
 
   return (
-    <div class="chat-feed-container">
+    <div class="flex-1 overflow-hidden relative min-h-0" data-chat-feed>
       <VList ref={vListRef} onScroll={handleScroll} shift={false} style={{ height: '100%' }}>
         {feedItems.map((item) => {
           if (item.kind === 'separator') {
             return (
-              <div key={item.key} class="date-separator">
-                <span>{item.label}</span>
+              <div key={item.key} class="text-center pt-4 pb-2">
+                <span class="inline-block text-xs text-txt-muted bg-surface-light px-3 py-1 rounded-full border border-surface-border">
+                  {item.label}
+                </span>
               </div>
             );
           }

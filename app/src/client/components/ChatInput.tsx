@@ -8,6 +8,7 @@
 
 import { useState, useCallback } from 'preact/hooks';
 import type { RefObject } from 'preact';
+import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
 
 interface ChatInputProps {
   /** Callback when user sends a message */
@@ -89,11 +90,13 @@ export function ChatInput({ onSend, inputRef, disabled = false }: Readonly<ChatI
   }, []);
 
   return (
-    <div class={`chat-input-bar${disabled ? ' chat-input-bar-disabled' : ''}`}>
+    <div
+      class={`flex items-end gap-2 px-4 py-2 pb-safe bg-surface-light border-t border-surface-border shrink-0${disabled ? ' opacity-50 pointer-events-none' : ''}`}
+    >
       <div // NOSONAR: contenteditable used intentionally in attempt to avoid iOS Safari form accessory bar.
         // Doesn't work, though... :/
         ref={inputRef}
-        class="chat-text-input"
+        class="chat-editable flex-1 px-4 py-2.5 text-base font-sans bg-surface text-txt border border-surface-border rounded-[1.25rem] outline-none max-h-24 leading-snug overflow-y-auto whitespace-pre-wrap wrap-break-word select-text focus:border-brand"
         contentEditable={!disabled}
         role="textbox"
         aria-label="Message"
@@ -106,14 +109,14 @@ export function ChatInput({ onSend, inputRef, disabled = false }: Readonly<ChatI
         onFocus={handleFocus}
       />
       <button
-        class="chat-send-btn"
+        class="size-10 rounded-full bg-brand text-white border-none shrink-0 flex items-center justify-center p-0 cursor-pointer transition-opacity hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed"
         type="button"
         disabled={!canSend || disabled}
         onMouseDown={preventFocusSteal}
         onClick={doSend}
         aria-label="Send message"
       >
-        &#x27A4;
+        <PaperAirplaneIcon class="size-5" />
       </button>
     </div>
   );

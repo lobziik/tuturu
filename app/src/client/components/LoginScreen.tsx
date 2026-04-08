@@ -47,38 +47,46 @@ export function LoginScreen({ nickname, dispatch }: Readonly<LoginScreenProps>) 
   };
 
   return (
-    <div class="card">
-      <p class="login-greeting">Hi, {nickname}</p>
-      <h2>Join a room</h2>
-      <form class="login-form" onSubmit={handleSubmit}>
-        <input
-          type="text"
-          class="form-input"
-          placeholder="Passphrase"
-          autocomplete="off"
-          value={passphrase}
-          onInput={(e) => setPassphrase((e.target as HTMLInputElement).value)}
-          disabled={isLoading}
-        />
-        <input
-          type="text"
-          class="form-input form-input-pin"
-          placeholder="000000"
-          maxLength={6}
-          pattern="\d{6}"
-          inputMode="numeric"
-          autocomplete="off"
-          value={pin}
-          onInput={(e) => setPin((e.target as HTMLInputElement).value)}
-          disabled={isLoading}
-        />
-        {error && <p class="login-error">{error}</p>}
-        {isLoading && <p class="login-loading">Deriving keys...</p>}
-        <button type="submit" class="primary-btn" disabled={!canSubmit}>
-          {isLoading ? 'Please wait...' : 'Enter'}
-        </button>
-      </form>
-      <p class="hint">Enter a shared passphrase and PIN to join a room. Both should match. :)</p>
+    <div class="flex flex-col items-center justify-center min-h-screen min-h-dvh p-4">
+      <div class="bg-surface-light border border-surface-border rounded-2xl p-8 w-full max-w-md text-center">
+        <p class="text-base text-txt-muted mb-2">Hi, {nickname}</p>
+        <h2 class="text-2xl font-bold mb-6">Join a room</h2>
+        <form class="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <input
+            type="text"
+            class="w-full p-4 text-base font-sans bg-surface text-txt border-2 border-surface-border rounded-lg focus:outline-none focus:border-brand disabled:opacity-50"
+            placeholder="Passphrase"
+            autocomplete="off"
+            value={passphrase}
+            onInput={(e) => setPassphrase((e.target as HTMLInputElement).value)}
+            disabled={isLoading}
+          />
+          <input
+            type="text"
+            class="w-full p-4 text-base font-sans bg-surface text-txt border-2 border-surface-border rounded-lg focus:outline-none focus:border-brand disabled:opacity-50 text-3xl text-center tracking-[0.5rem] font-mono"
+            placeholder="000000"
+            maxLength={6}
+            pattern="\d{6}"
+            inputMode="numeric"
+            autocomplete="off"
+            value={pin}
+            onInput={(e) => setPin((e.target as HTMLInputElement).value)}
+            disabled={isLoading}
+          />
+          {error && <p class="text-sm text-danger text-center">{error}</p>}
+          {isLoading && <p class="text-sm text-brand text-center">Deriving keys...</p>}
+          <button
+            type="submit"
+            class="bg-brand text-white px-6 py-3 text-base font-semibold border-none rounded-lg cursor-pointer transition-colors hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!canSubmit}
+          >
+            {isLoading ? 'Please wait...' : 'Enter'}
+          </button>
+        </form>
+        <p class="mt-4 text-sm text-txt-muted">
+          Enter a shared passphrase and PIN to join a room. Both should match. :)
+        </p>
+      </div>
     </div>
   );
 }

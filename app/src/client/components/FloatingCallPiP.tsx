@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'preact/hooks';
+import { PhoneIcon } from '@heroicons/react/24/solid';
 import type { Dispatch } from '../state/context';
 
 interface FloatingCallPiPProps {
@@ -80,17 +81,17 @@ export function FloatingCallPiP({ remoteStream, dispatch }: Readonly<FloatingCal
   return (
     <div
       ref={containerRef}
-      class="floating-call-pip"
+      class="fixed top-4 right-4 w-[120px] h-[90px] rounded-xl overflow-hidden bg-slate-900 shadow-lg z-[1000] touch-none cursor-pointer flex items-center justify-center"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
       {hasVideo ? (
-        <video ref={videoRef} autoplay playsinline class="floating-pip-video">
+        <video ref={videoRef} autoplay playsinline class="w-full h-full object-cover">
           <track kind="captions" />
         </video>
       ) : (
-        <span class="floating-pip-icon">{'\uD83D\uDCDE'}</span>
+        <PhoneIcon class="size-6 text-txt" />
       )}
     </div>
   );

@@ -9,7 +9,15 @@ import globals from 'globals';
 export default [
   // Ignore patterns (replaces .eslintignore)
   {
-    ignores: ['**/node_modules/**', 'public/**', 'dist/**', '*.log', 'bun.lock', 'build.ts'],
+    ignores: [
+      '**/node_modules/**',
+      'public/**',
+      'dist/**',
+      'hack/**',
+      '*.log',
+      'bun.lock',
+      'build.ts',
+    ],
   },
 
   // Base TypeScript config for all TS files

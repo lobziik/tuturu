@@ -11,9 +11,9 @@
  */
 
 import { ChatMessageSchema } from '../../shared/schemas';
-import type { ChatMessage } from '../../shared/types';
+import type { ChatMessage, BlobRecord } from '../../shared/types';
 import { decryptMessage, fromBase64 } from './crypto';
-import { checkAndStoreMessage } from './db';
+import { checkAndStoreBlob } from './db';
 
 // ============================================================================
 // Result Types
@@ -120,12 +120,43 @@ export async function handleIncomingMessage(
   }
   const message = parsed.data;
 
-  // Steps 6-8: Replay check + dedup check + store in a single IDB transaction.
+  // Steps 6-8: Replay check + dedup check + store encrypted blob in a single IDB transaction.
   // Eliminates TOCTOU races when multiple messages are processed concurrently.
-  const storeResult = await checkAndStoreMessage(db, roomId, message);
+  // Stores the original wire blob (still encrypted) — not the decrypted plaintext.
+  const storeResult = await checkAndStoreBlob(db, roomId, message, wire);
   if (!storeResult.stored) {
     return { type: storeResult.reason };
   }
 
   return { type: 'ok', message };
+}
+
+// ============================================================================
+// Blob Record Decryption
+// ============================================================================
+
+/**
+ * Decrypt a BlobRecord back to a ChatMessage.
+ * Used for bulk decryption of cached blobs on room entry.
+ *
+ * No seq/dedup checks — data already passed validation when originally stored.
+ * Returns null on any failure (decrypt, parse, validate) — never throws.
+ */
+export async function decryptBlobRecord(
+  aesKey: CryptoKey,
+  record: BlobRecord,
+): Promise<ChatMessage | null> {
+  try {
+    const plainBytes = await decryptMessage(aesKey, record.blob);
+    const json: unknown = JSON.parse(new TextDecoder().decode(plainBytes));
+    const parsed = ChatMessageSchema.safeParse(json);
+    if (!parsed.success) {
+      console.warn('[CHAT_PROTO] Stored blob failed schema validation:', parsed.error.issues);
+      return null;
+    }
+    return parsed.data;
+  } catch (err) {
+    console.warn('[CHAT_PROTO] Failed to decrypt stored blob:', err);
+    return null;
+  }
 }

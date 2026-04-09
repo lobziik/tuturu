@@ -6,14 +6,10 @@
  */
 
 import 'fake-indexeddb/auto';
-import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
+import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
 import {
   openDB,
   resetDBCache,
-  putMessage,
-  getMessage,
-  getMessagesByTimestamp,
-  clearMessages,
   putSetting,
   getSetting,
   getOrCreateDeviceId,
@@ -21,10 +17,19 @@ import {
   putLastSeenSeq,
   getOwnSeq,
   putOwnSeq,
-  checkAndStoreMessage,
   clearAllData,
+  putBlobRecord,
+  getBlobRecord,
+  getAllBlobs,
+  getBlobsByTimestamp,
+  clearBlobs,
+  checkAndStoreBlob,
+  storeBlobIfNew,
+  migrateMessagesToBlobs,
 } from './db';
-import type { ChatMessage } from '../../shared/types';
+import { encryptMessage, deriveKeys } from './crypto';
+import { decryptBlobRecord } from './chatProtocol';
+import type { ChatMessage, BlobRecord } from '../../shared/types';
 
 const TEST_ROOM = 'test-room';
 
@@ -65,27 +70,15 @@ afterAll(() => {
 // ============================================================================
 
 describe('openDB', () => {
-  test('creates database with three object stores', async () => {
+  test('creates database with three object stores (messages deleted in v4 on fresh install)', async () => {
     const db = await openDB();
 
-    expect(db.objectStoreNames.contains('messages')).toBe(true);
+    // Fresh install: messages store is created (v1/v2) then deleted (v4, empty)
+    expect(db.objectStoreNames.contains('messages')).toBe(false);
     expect(db.objectStoreNames.contains('settings')).toBe(true);
     expect(db.objectStoreNames.contains('seq')).toBe(true);
+    expect(db.objectStoreNames.contains('blobs')).toBe(true);
     expect(db.objectStoreNames.length).toBe(3);
-
-    db.close();
-  });
-
-  test('messages store has by_timestamp, by_deviceId, and by_roomId_timestamp indexes', async () => {
-    const db = await openDB();
-
-    const tx = db.transaction('messages', 'readonly');
-    const store = tx.objectStore('messages');
-
-    expect(store.indexNames.contains('by_timestamp')).toBe(true);
-    expect(store.indexNames.contains('by_deviceId')).toBe(true);
-    expect(store.indexNames.contains('by_roomId_timestamp')).toBe(true);
-    expect(store.keyPath).toBe('uuid');
 
     db.close();
   });
@@ -108,151 +101,6 @@ describe('openDB', () => {
     expect(db1).toBe(db2);
 
     db1.close();
-  });
-});
-
-// ============================================================================
-// Messages
-// ============================================================================
-
-describe('messages', () => {
-  test('putMessage + getMessage roundtrip', async () => {
-    const db = await openDB();
-    const msg = makeMessage({ uuid: 'test-uuid-1', text: 'Hello world' });
-
-    await putMessage(db, TEST_ROOM, msg);
-    const retrieved = await getMessage(db, 'test-uuid-1');
-
-    expect(retrieved).toBeDefined();
-    expect(retrieved!.uuid).toBe(msg.uuid);
-    expect(retrieved!.text).toBe(msg.text);
-
-    db.close();
-  });
-
-  test('getMessage returns undefined for non-existent uuid', async () => {
-    const db = await openDB();
-    const result = await getMessage(db, 'non-existent');
-
-    expect(result).toBeUndefined();
-
-    db.close();
-  });
-
-  test('getMessagesByTimestamp returns messages in descending order', async () => {
-    const db = await openDB();
-
-    const msg1 = makeMessage({ uuid: 'u1', timestamp: 1000 });
-    const msg2 = makeMessage({ uuid: 'u2', timestamp: 2000 });
-    const msg3 = makeMessage({ uuid: 'u3', timestamp: 3000 });
-
-    await putMessage(db, TEST_ROOM, msg1);
-    await putMessage(db, TEST_ROOM, msg2);
-    await putMessage(db, TEST_ROOM, msg3);
-
-    const results = await getMessagesByTimestamp(db, TEST_ROOM, 4000, 10);
-
-    expect(results.length).toBe(3);
-    expect(results[0]!.uuid).toBe('u3');
-    expect(results[1]!.uuid).toBe('u2');
-    expect(results[2]!.uuid).toBe('u1');
-
-    db.close();
-  });
-
-  test('getMessagesByTimestamp respects before cursor (exclusive)', async () => {
-    const db = await openDB();
-
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u1', timestamp: 1000 }));
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u2', timestamp: 2000 }));
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u3', timestamp: 3000 }));
-
-    const results = await getMessagesByTimestamp(db, TEST_ROOM, 3000, 10);
-
-    expect(results.length).toBe(2);
-    expect(results[0]!.uuid).toBe('u2');
-    expect(results[1]!.uuid).toBe('u1');
-
-    db.close();
-  });
-
-  test('getMessagesByTimestamp respects limit', async () => {
-    const db = await openDB();
-
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u1', timestamp: 1000 }));
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u2', timestamp: 2000 }));
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u3', timestamp: 3000 }));
-
-    const results = await getMessagesByTimestamp(db, TEST_ROOM, 4000, 2);
-
-    expect(results.length).toBe(2);
-    expect(results[0]!.uuid).toBe('u3');
-    expect(results[1]!.uuid).toBe('u2');
-
-    db.close();
-  });
-
-  test('getMessagesByTimestamp returns empty array when no matches', async () => {
-    const db = await openDB();
-
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u1', timestamp: 5000 }));
-
-    const results = await getMessagesByTimestamp(db, TEST_ROOM, 1000, 10);
-    expect(results.length).toBe(0);
-
-    db.close();
-  });
-
-  test('getMessagesByTimestamp isolates messages by roomId', async () => {
-    const db = await openDB();
-
-    await putMessage(db, 'room-a', makeMessage({ uuid: 'u1', timestamp: 1000 }));
-    await putMessage(db, 'room-b', makeMessage({ uuid: 'u2', timestamp: 2000 }));
-    await putMessage(db, 'room-a', makeMessage({ uuid: 'u3', timestamp: 3000 }));
-
-    const roomAMessages = await getMessagesByTimestamp(db, 'room-a', 4000, 10);
-    const roomBMessages = await getMessagesByTimestamp(db, 'room-b', 4000, 10);
-
-    expect(roomAMessages.length).toBe(2);
-    expect(roomAMessages[0]!.uuid).toBe('u3');
-    expect(roomAMessages[1]!.uuid).toBe('u1');
-
-    expect(roomBMessages.length).toBe(1);
-    expect(roomBMessages[0]!.uuid).toBe('u2');
-
-    db.close();
-  });
-
-  test('clearMessages removes all messages', async () => {
-    const db = await openDB();
-
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u1' }));
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'u2' }));
-
-    await clearMessages(db);
-
-    const result1 = await getMessage(db, 'u1');
-    const result2 = await getMessage(db, 'u2');
-
-    expect(result1).toBeUndefined();
-    expect(result2).toBeUndefined();
-
-    db.close();
-  });
-
-  test('putMessage overwrites existing message with same uuid', async () => {
-    const db = await openDB();
-
-    const msg1 = makeMessage({ uuid: 'same-uuid', text: 'original' });
-    const msg2 = makeMessage({ uuid: 'same-uuid', text: 'updated' });
-
-    await putMessage(db, TEST_ROOM, msg1);
-    await putMessage(db, TEST_ROOM, msg2);
-
-    const result = await getMessage(db, 'same-uuid');
-    expect(result?.text).toBe('updated');
-
-    db.close();
   });
 });
 
@@ -438,18 +286,191 @@ describe('own seq counter', () => {
 });
 
 // ============================================================================
-// Atomic check-and-store
+// Bulk operations
 // ============================================================================
 
-describe('checkAndStoreMessage', () => {
-  test('stores message and updates seq on success', async () => {
+describe('clearAllData', () => {
+  test('clears all stores including blobs', async () => {
+    const db = await openDB();
+
+    await putSetting(db, 'nickname', 'Alice');
+    await putLastSeenSeq(db, TEST_ROOM, 'device-1', 5);
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'blob-1' }));
+
+    await clearAllData(db);
+
+    expect(await getSetting(db, 'nickname')).toBeUndefined();
+    expect(await getLastSeenSeq(db, TEST_ROOM, 'device-1')).toBe(0);
+    expect(await getBlobRecord(db, 'blob-1')).toBeUndefined();
+
+    db.close();
+  });
+});
+
+// ============================================================================
+// Blobs Store
+// ============================================================================
+
+/** Build a minimal BlobRecord for testing */
+function makeBlobRecord(overrides: Partial<BlobRecord> = {}): BlobRecord {
+  return {
+    uuid: crypto.randomUUID(),
+    roomId: TEST_ROOM,
+    timestamp: Date.now(),
+    deviceId: 'test-device',
+    seq: 1,
+    type: 'text',
+    blob: new Uint8Array([1, 2, 3, 4, 5]),
+    ...overrides,
+  };
+}
+
+describe('blobs store schema', () => {
+  test('blobs store has uuid keyPath and expected indexes', async () => {
+    const db = await openDB();
+
+    const tx = db.transaction('blobs', 'readonly');
+    const store = tx.objectStore('blobs');
+
+    expect(store.keyPath).toBe('uuid');
+    expect(store.indexNames.contains('by_room_ts')).toBe(true);
+    expect(store.indexNames.contains('by_room_seq')).toBe(true);
+
+    db.close();
+  });
+});
+
+describe('putBlobRecord / getBlobRecord', () => {
+  test('roundtrip stores and retrieves blob record', async () => {
+    const db = await openDB();
+    const record = makeBlobRecord({ uuid: 'blob-1', seq: 3 });
+
+    await putBlobRecord(db, record);
+    const retrieved = await getBlobRecord(db, 'blob-1');
+
+    expect(retrieved).toBeDefined();
+    expect(retrieved!.uuid).toBe('blob-1');
+    expect(retrieved!.roomId).toBe(TEST_ROOM);
+    expect(retrieved!.seq).toBe(3);
+    expect(retrieved!.blob).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+
+    db.close();
+  });
+
+  test('getBlobRecord returns undefined for non-existent uuid', async () => {
+    const db = await openDB();
+    const result = await getBlobRecord(db, 'nonexistent');
+    expect(result).toBeUndefined();
+    db.close();
+  });
+});
+
+describe('getAllBlobs', () => {
+  test('returns records ordered by timestamp ascending', async () => {
+    const db = await openDB();
+
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b1', timestamp: 3000 }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b2', timestamp: 1000 }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b3', timestamp: 2000 }));
+
+    const results = await getAllBlobs(db, TEST_ROOM);
+
+    expect(results.length).toBe(3);
+    expect(results[0]!.uuid).toBe('b2');
+    expect(results[1]!.uuid).toBe('b3');
+    expect(results[2]!.uuid).toBe('b1');
+
+    db.close();
+  });
+
+  test('filters by roomId', async () => {
+    const db = await openDB();
+
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b1', roomId: 'room-a' }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b2', roomId: 'room-b' }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b3', roomId: 'room-a' }));
+
+    const results = await getAllBlobs(db, 'room-a');
+    expect(results.length).toBe(2);
+    expect(results.every((r) => r.roomId === 'room-a')).toBe(true);
+
+    db.close();
+  });
+
+  test('returns empty array for unknown roomId', async () => {
+    const db = await openDB();
+    const results = await getAllBlobs(db, 'nonexistent-room');
+    expect(results).toEqual([]);
+    db.close();
+  });
+});
+
+describe('getBlobsByTimestamp', () => {
+  test('returns records in descending order with cursor and limit', async () => {
+    const db = await openDB();
+
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b1', timestamp: 1000 }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b2', timestamp: 2000 }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b3', timestamp: 3000 }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b4', timestamp: 4000 }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b5', timestamp: 5000 }));
+
+    // before=5000 (exclusive), limit=2 → should get b4, b3
+    const results = await getBlobsByTimestamp(db, TEST_ROOM, 5000, 2);
+
+    expect(results.length).toBe(2);
+    expect(results[0]!.uuid).toBe('b4');
+    expect(results[1]!.uuid).toBe('b3');
+
+    db.close();
+  });
+
+  test('filters by roomId', async () => {
+    const db = await openDB();
+
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b1', roomId: 'room-a', timestamp: 1000 }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b2', roomId: 'room-b', timestamp: 2000 }));
+
+    const results = await getBlobsByTimestamp(db, 'room-a', 9999, 10);
+    expect(results.length).toBe(1);
+    expect(results[0]!.uuid).toBe('b1');
+
+    db.close();
+  });
+});
+
+describe('clearBlobs', () => {
+  test('removes all blob records', async () => {
+    const db = await openDB();
+
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b1' }));
+    await putBlobRecord(db, makeBlobRecord({ uuid: 'b2' }));
+
+    await clearBlobs(db);
+
+    expect(await getBlobRecord(db, 'b1')).toBeUndefined();
+    expect(await getBlobRecord(db, 'b2')).toBeUndefined();
+
+    db.close();
+  });
+});
+
+// ============================================================================
+// Atomic check-and-store (blobs)
+// ============================================================================
+
+describe('checkAndStoreBlob', () => {
+  test('stores blob and updates seq on success', async () => {
     const db = await openDB();
     const msg = makeMessage({ seq: 1, deviceId: 'dev-1' });
+    const wireBlob = new Uint8Array([10, 20, 30]);
 
-    const result = await checkAndStoreMessage(db, TEST_ROOM, msg);
+    const result = await checkAndStoreBlob(db, TEST_ROOM, msg, wireBlob);
 
     expect(result).toEqual({ stored: true });
-    expect(await getMessage(db, msg.uuid)).toBeDefined();
+    const stored = await getBlobRecord(db, msg.uuid);
+    expect(stored).toBeDefined();
+    expect(stored!.blob).toEqual(wireBlob);
     expect(await getLastSeenSeq(db, TEST_ROOM, 'dev-1')).toBe(1);
 
     db.close();
@@ -460,10 +481,10 @@ describe('checkAndStoreMessage', () => {
     await putLastSeenSeq(db, TEST_ROOM, 'dev-1', 5);
 
     const msg = makeMessage({ seq: 5, deviceId: 'dev-1' });
-    const result = await checkAndStoreMessage(db, TEST_ROOM, msg);
+    const result = await checkAndStoreBlob(db, TEST_ROOM, msg, new Uint8Array([1]));
 
     expect(result).toEqual({ stored: false, reason: 'replay' });
-    expect(await getMessage(db, msg.uuid)).toBeUndefined();
+    expect(await getBlobRecord(db, msg.uuid)).toBeUndefined();
 
     db.close();
   });
@@ -471,10 +492,10 @@ describe('checkAndStoreMessage', () => {
   test('rejects duplicate UUID', async () => {
     const db = await openDB();
     const msg1 = makeMessage({ seq: 1, uuid: 'same-uuid', deviceId: 'dev-1' });
-    await checkAndStoreMessage(db, TEST_ROOM, msg1);
+    await checkAndStoreBlob(db, TEST_ROOM, msg1, new Uint8Array([1]));
 
     const msg2 = makeMessage({ seq: 2, uuid: 'same-uuid', deviceId: 'dev-1' });
-    const result = await checkAndStoreMessage(db, TEST_ROOM, msg2);
+    const result = await checkAndStoreBlob(db, TEST_ROOM, msg2, new Uint8Array([2]));
 
     expect(result).toEqual({ stored: false, reason: 'duplicate' });
     // seq should NOT have been updated to 2
@@ -483,69 +504,289 @@ describe('checkAndStoreMessage', () => {
     db.close();
   });
 
-  test('replay check runs before dedup check', async () => {
+  test('seq advances across multiple calls', async () => {
     const db = await openDB();
-    // Store message at seq=5
-    const msg = makeMessage({ seq: 5, uuid: 'msg-uuid', deviceId: 'dev-1' });
-    await checkAndStoreMessage(db, TEST_ROOM, msg);
 
-    // Try seq=3 with same UUID — should be 'replay', not 'duplicate'
-    const replay = makeMessage({ seq: 3, uuid: 'msg-uuid', deviceId: 'dev-1' });
-    const result = await checkAndStoreMessage(db, TEST_ROOM, replay);
+    const msg1 = makeMessage({ seq: 1, deviceId: 'dev-1' });
+    await checkAndStoreBlob(db, TEST_ROOM, msg1, new Uint8Array([1]));
 
+    const msg2 = makeMessage({ seq: 2, deviceId: 'dev-1' });
+    await checkAndStoreBlob(db, TEST_ROOM, msg2, new Uint8Array([2]));
+
+    expect(await getLastSeenSeq(db, TEST_ROOM, 'dev-1')).toBe(2);
+
+    // seq=1 should now be rejected as replay
+    const msg3 = makeMessage({ seq: 1, deviceId: 'dev-1' });
+    const result = await checkAndStoreBlob(db, TEST_ROOM, msg3, new Uint8Array([3]));
     expect(result).toEqual({ stored: false, reason: 'replay' });
 
     db.close();
   });
 
-  test('tracks seq per deviceId independently', async () => {
+  test('atomicity: reject leaves no trace', async () => {
     const db = await openDB();
-    await putLastSeenSeq(db, TEST_ROOM, 'dev-1', 10);
+    await putLastSeenSeq(db, TEST_ROOM, 'dev-1', 5);
 
-    const msg = makeMessage({ seq: 1, deviceId: 'dev-2' });
-    const result = await checkAndStoreMessage(db, TEST_ROOM, msg);
+    const msg = makeMessage({ seq: 3, deviceId: 'dev-1' });
+    await checkAndStoreBlob(db, TEST_ROOM, msg, new Uint8Array([1]));
 
-    expect(result).toEqual({ stored: true });
+    // Neither blob nor seq should be changed
+    expect(await getBlobRecord(db, msg.uuid)).toBeUndefined();
+    expect(await getLastSeenSeq(db, TEST_ROOM, 'dev-1')).toBe(5);
+
+    db.close();
+  });
+});
+
+describe('storeBlobIfNew', () => {
+  test('stores new blob and returns true', async () => {
+    const db = await openDB();
+    const msg = makeMessage({ seq: 1 });
+    const wireBlob = new Uint8Array([10, 20, 30]);
+
+    const result = await storeBlobIfNew(db, TEST_ROOM, msg, wireBlob);
+
+    expect(result).toBe(true);
+    const stored = await getBlobRecord(db, msg.uuid);
+    expect(stored).toBeDefined();
+    expect(stored!.blob).toEqual(wireBlob);
 
     db.close();
   });
 
-  test('seq tracking is scoped to roomId', async () => {
+  test('returns false for existing uuid without overwriting', async () => {
     const db = await openDB();
+    const msg = makeMessage({ seq: 1 });
+    const originalBlob = new Uint8Array([1, 2, 3]);
+    const newBlob = new Uint8Array([4, 5, 6]);
 
-    // Store message in room-a at seq=5
-    const msgA = makeMessage({ seq: 5, deviceId: 'dev-1', uuid: 'uuid-a' });
-    await checkAndStoreMessage(db, 'room-a', msgA);
+    await storeBlobIfNew(db, TEST_ROOM, msg, originalBlob);
+    const result = await storeBlobIfNew(db, TEST_ROOM, msg, newBlob);
 
-    // Same device, seq=1 in room-b should succeed (independent seq tracking)
-    const msgB = makeMessage({ seq: 1, deviceId: 'dev-1', uuid: 'uuid-b' });
-    const result = await checkAndStoreMessage(db, 'room-b', msgB);
+    expect(result).toBe(false);
+    const stored = await getBlobRecord(db, msg.uuid);
+    expect(stored!.blob).toEqual(originalBlob);
 
-    expect(result).toEqual({ stored: true });
-    expect(await getLastSeenSeq(db, 'room-a', 'dev-1')).toBe(5);
-    expect(await getLastSeenSeq(db, 'room-b', 'dev-1')).toBe(1);
+    db.close();
+  });
+
+  test('does NOT check seq — stores even when seq <= lastSeenSeq', async () => {
+    const db = await openDB();
+    await putLastSeenSeq(db, TEST_ROOM, 'test-device', 10);
+
+    const msg = makeMessage({ seq: 3, deviceId: 'test-device' });
+    const result = await storeBlobIfNew(db, TEST_ROOM, msg, new Uint8Array([1]));
+
+    expect(result).toBe(true);
+    expect(await getBlobRecord(db, msg.uuid)).toBeDefined();
 
     db.close();
   });
 });
 
 // ============================================================================
-// Bulk operations
+// Data migration (v2 plaintext → encrypted blobs)
 // ============================================================================
 
-describe('clearAllData', () => {
-  test('clears all stores', async () => {
+let testKey: CryptoKey;
+
+beforeAll(async () => {
+  const keys = await deriveKeys('test phrase', '000000', 'localhost');
+  testKey = keys.aesKey;
+});
+
+/**
+ * Open a v3 database (with messages store) for migration testing.
+ * Simulates the v2→v3 upgrade path where messages store still exists with data.
+ */
+function openV3WithMessages(
+  dbName: string,
+  messages: Array<ChatMessage & { roomId: string }>,
+): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(dbName, 3);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      // v1+v2: create messages + settings + seq
+      if (!db.objectStoreNames.contains('messages')) {
+        const msgs = db.createObjectStore('messages', { keyPath: 'uuid' });
+        msgs.createIndex('by_timestamp', 'timestamp');
+        msgs.createIndex('by_deviceId', 'deviceId');
+        msgs.createIndex('by_roomId_timestamp', ['roomId', 'timestamp']);
+      }
+      if (!db.objectStoreNames.contains('settings')) {
+        db.createObjectStore('settings', { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains('seq')) {
+        db.createObjectStore('seq', { keyPath: ['roomId', 'deviceId'] });
+      }
+      // v3: create blobs
+      if (!db.objectStoreNames.contains('blobs')) {
+        const blobs = db.createObjectStore('blobs', { keyPath: 'uuid' });
+        blobs.createIndex('by_room_ts', ['roomId', 'timestamp']);
+        blobs.createIndex('by_room_seq', ['roomId', 'deviceId', 'seq']);
+      }
+      // Pre-populate messages store
+      const store = request.transaction!.objectStore('messages');
+      for (const msg of messages) {
+        store.put(msg);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new DOMException('Failed to open v3 db'));
+  });
+}
+
+describe('migrateMessagesToBlobs', () => {
+  const MIGRATE_DB = 'tuturu-migrate-test';
+
+  beforeEach(() => {
+    indexedDB.deleteDatabase(MIGRATE_DB);
+  });
+
+  test('migrates plaintext messages to encrypted blobs', async () => {
+    const msg1 = {
+      ...makeMessage({ uuid: 'migrate-1', seq: 1, timestamp: 1000 }),
+      roomId: TEST_ROOM,
+    };
+    const msg2 = {
+      ...makeMessage({ uuid: 'migrate-2', seq: 2, timestamp: 2000 }),
+      roomId: TEST_ROOM,
+    };
+    const db = await openV3WithMessages(MIGRATE_DB, [msg1, msg2]);
+
+    await migrateMessagesToBlobs(db, testKey);
+
+    // messages store should be empty
+    const checkTx = db.transaction('messages', 'readonly');
+    const count = await new Promise<number>((resolve, reject) => {
+      const req = checkTx.objectStore('messages').count();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    expect(count).toBe(0);
+
+    // blobs store should have encrypted records
+    const blob1 = await getBlobRecord(db, 'migrate-1');
+    const blob2 = await getBlobRecord(db, 'migrate-2');
+    expect(blob1).toBeDefined();
+    expect(blob2).toBeDefined();
+    expect(blob1!.roomId).toBe(TEST_ROOM);
+    expect(blob1!.deviceId).toBe(msg1.deviceId);
+
+    // Decrypt should yield original message
+    const decrypted = await decryptBlobRecord(testKey, blob1!);
+    expect(decrypted).not.toBeNull();
+    expect(decrypted!.uuid).toBe(msg1.uuid);
+    expect(decrypted!.text).toBe(msg1.text);
+
+    db.close();
+  });
+
+  test('no-op when messages store does not exist', async () => {
     const db = await openDB();
 
-    await putMessage(db, TEST_ROOM, makeMessage({ uuid: 'msg-1' }));
-    await putSetting(db, 'nickname', 'Alice');
-    await putLastSeenSeq(db, TEST_ROOM, 'device-1', 5);
+    // Fresh v4 db — messages store deleted. Should not throw.
+    await migrateMessagesToBlobs(db, testKey);
 
-    await clearAllData(db);
+    const blobs = await getAllBlobs(db, TEST_ROOM);
+    expect(blobs).toEqual([]);
 
-    expect(await getMessage(db, 'msg-1')).toBeUndefined();
-    expect(await getSetting(db, 'nickname')).toBeUndefined();
-    expect(await getLastSeenSeq(db, TEST_ROOM, 'device-1')).toBe(0);
+    db.close();
+  });
+
+  test('no-op when messages store is empty', async () => {
+    const db = await openV3WithMessages(MIGRATE_DB, []);
+
+    await migrateMessagesToBlobs(db, testKey);
+
+    const blobs = await getAllBlobs(db, TEST_ROOM);
+    expect(blobs).toEqual([]);
+
+    db.close();
+  });
+
+  test('idempotent — second call is no-op', async () => {
+    const msg = { ...makeMessage({ uuid: 'idem-1', seq: 1 }), roomId: TEST_ROOM };
+    const db = await openV3WithMessages(MIGRATE_DB, [msg]);
+
+    await migrateMessagesToBlobs(db, testKey);
+    await migrateMessagesToBlobs(db, testKey);
+
+    const blobs = await getAllBlobs(db, TEST_ROOM);
+    expect(blobs.length).toBe(1);
+
+    db.close();
+  });
+});
+
+describe('v4 schema migration', () => {
+  test('deletes messages store when empty on fresh install', async () => {
+    const db = await openDB();
+    expect(db.objectStoreNames.contains('messages')).toBe(false);
+    db.close();
+  });
+
+  test('keeps messages store when it has data (v2→v4 upgrade)', async () => {
+    const UPGRADE_DB = 'tuturu-v2-upgrade-test';
+    indexedDB.deleteDatabase(UPGRADE_DB);
+
+    const msg = { ...makeMessage({ uuid: 'keep-1', seq: 1 }), roomId: TEST_ROOM };
+    const db = await openV3WithMessages(UPGRADE_DB, [msg]);
+    // This is a v3 db with messages data — simulates user who hasn't logged in yet
+    expect(db.objectStoreNames.contains('messages')).toBe(true);
+    db.close();
+
+    // Now "upgrade" to v4 — messages store has data, should be kept
+    const db4 = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(UPGRADE_DB, 4);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const tx = request.transaction!;
+        if (db.objectStoreNames.contains('messages')) {
+          const store = tx.objectStore('messages');
+          const countReq = store.count();
+          countReq.onsuccess = () => {
+            if (countReq.result === 0) {
+              db.deleteObjectStore('messages');
+            }
+          };
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    expect(db4.objectStoreNames.contains('messages')).toBe(true);
+    db4.close();
+    indexedDB.deleteDatabase(UPGRADE_DB);
+  });
+});
+
+// ============================================================================
+// Round-trip integration test
+// ============================================================================
+
+describe('encrypt → store → load → decrypt round-trip', () => {
+  test('full cycle preserves message content', async () => {
+    const db = await openDB();
+
+    const msg = makeMessage({ seq: 1, text: 'Hello encrypted world' });
+    const plaintext = new TextEncoder().encode(JSON.stringify(msg));
+    const wireBlob = await encryptMessage(testKey, plaintext);
+
+    const storeResult = await checkAndStoreBlob(db, TEST_ROOM, msg, wireBlob);
+    expect(storeResult).toEqual({ stored: true });
+
+    const blobs = await getAllBlobs(db, TEST_ROOM);
+    expect(blobs.length).toBe(1);
+
+    const decrypted = await decryptBlobRecord(testKey, blobs[0]!);
+    expect(decrypted).not.toBeNull();
+    expect(decrypted!.uuid).toBe(msg.uuid);
+    expect(decrypted!.text).toBe('Hello encrypted world');
+    expect(decrypted!.deviceId).toBe(msg.deviceId);
+    expect(decrypted!.seq).toBe(msg.seq);
 
     db.close();
   });

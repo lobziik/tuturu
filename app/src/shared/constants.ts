@@ -28,4 +28,4 @@ export const MAX_RECONNECT_ATTEMPTS = 20;
 export const DB_NAME = 'tuturu';
 
 /** IndexedDB schema version — increment when adding migrations */
-export const DB_VERSION = 2;
+export const DB_VERSION = 4;

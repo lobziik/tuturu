@@ -11,7 +11,7 @@ import type { EffectContext, EffectArgs } from './types';
 import type { ChatMessage } from '../../../shared/schemas';
 import { sendMessage } from '../../services/websocket';
 import { encryptMessage, toBase64 } from '../../services/crypto';
-import { putMessage, putOwnSeq } from '../../services/db';
+import { putBlobRecord, putOwnSeq } from '../../services/db';
 
 /** Handle chat-related side effects */
 export function handleChatEffects(ctx: EffectContext, args: EffectArgs): void {
@@ -70,7 +70,15 @@ export function handleChatEffects(ctx: EffectContext, args: EffectArgs): void {
           uuid,
         });
 
-        await putMessage(db, roomId, message);
+        await putBlobRecord(db, {
+          uuid: message.uuid,
+          roomId,
+          timestamp: message.timestamp,
+          deviceId: message.deviceId,
+          seq: message.seq,
+          type: message.type,
+          blob: encrypted,
+        });
       } catch (err) {
         console.error('[CHAT] Send failed:', err);
         return;

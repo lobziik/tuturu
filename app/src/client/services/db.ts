@@ -3,9 +3,12 @@
  *
  * @remarks
  * Stores:
- * - `messages` — decrypted chat messages with roomId (keyPath: uuid)
  * - `settings` — key-value pairs: nickname, deviceId (keyPath: key)
  * - `seq` — per-roomId+deviceId sequence tracking (compound keyPath: [roomId, deviceId])
+ * - `blobs` — encrypted wire blobs + plaintext metadata index (keyPath: uuid)
+ *
+ * Legacy `messages` store (plaintext) is conditionally deleted in migration v4.
+ * If the store still has data (runtime migration hasn't run yet), it is kept until next upgrade.
  *
  * All public functions take an IDBDatabase instance for testability.
  * Use {@link openDB} for the singleton connection in production.
@@ -14,7 +17,7 @@
  */
 
 import { DB_NAME, DB_VERSION } from '../../shared/constants';
-import type { ChatMessage, SettingRecord, SeqRecord } from '../../shared/types';
+import type { ChatMessage, SettingRecord, SeqRecord, BlobRecord } from '../../shared/types';
 
 // ============================================================================
 // Migration Framework
@@ -23,8 +26,9 @@ import type { ChatMessage, SettingRecord, SeqRecord } from '../../shared/types';
 /**
  * Migration functions keyed by version number.
  * The `onupgradeneeded` handler runs migrations from (oldVersion + 1) to DB_VERSION.
+ * Each migration receives the database and the versionchange transaction for store access.
  */
-const migrations: Record<number, (db: IDBDatabase) => void> = {
+const migrations: Record<number, (db: IDBDatabase, tx: IDBTransaction) => void> = {
   1: (db) => {
     const messages = db.createObjectStore('messages', { keyPath: 'uuid' });
     messages.createIndex('by_timestamp', 'timestamp');
@@ -46,6 +50,25 @@ const migrations: Record<number, (db: IDBDatabase) => void> = {
 
     db.createObjectStore('seq', { keyPath: ['roomId', 'deviceId'] });
   },
+  3: (db) => {
+    // Encrypted blob storage: wire blobs + plaintext metadata index.
+    const blobs = db.createObjectStore('blobs', { keyPath: 'uuid' });
+    blobs.createIndex('by_room_ts', ['roomId', 'timestamp']);
+    blobs.createIndex('by_room_seq', ['roomId', 'deviceId', 'seq']);
+  },
+  4: (db, tx) => {
+    // Delete legacy plaintext messages store — only if empty.
+    // If the runtime data migration (migrateMessagesToBlobs) hasn't run yet,
+    // the store still has data and must be kept until next app open after login.
+    if (!db.objectStoreNames.contains('messages')) return;
+    const store = tx.objectStore('messages');
+    const countReq = store.count();
+    countReq.onsuccess = () => {
+      if (countReq.result === 0) {
+        db.deleteObjectStore('messages');
+      }
+    };
+  },
 };
 
 /** Cached database connection (singleton) */
@@ -65,6 +88,7 @@ export function openDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = request.result;
+      const tx = request.transaction!;
       const oldVersion = event.oldVersion;
       for (let v = oldVersion + 1; v <= DB_VERSION; v++) {
         const migration = migrations[v];
@@ -74,7 +98,7 @@ export function openDB(): Promise<IDBDatabase> {
               `Available migrations: ${Object.keys(migrations).join(', ')}`,
           );
         }
-        migration(db);
+        migration(db, tx);
       }
     };
 
@@ -118,68 +142,91 @@ function promisifyTransaction(tx: IDBTransaction): Promise<void> {
 }
 
 // ============================================================================
-// Messages Store
+// Blobs Store
 // ============================================================================
 
-/** Store a decrypted chat message scoped to a room */
-export async function putMessage(
-  db: IDBDatabase,
-  roomId: string,
-  message: ChatMessage,
-): Promise<void> {
-  const tx = db.transaction('messages', 'readwrite');
-  tx.objectStore('messages').put({ ...message, roomId });
+/** Store an encrypted blob record */
+export async function putBlobRecord(db: IDBDatabase, record: BlobRecord): Promise<void> {
+  const tx = db.transaction('blobs', 'readwrite');
+  tx.objectStore('blobs').put(record);
   await promisifyTransaction(tx);
 }
 
-/** Retrieve a message by UUID, or undefined if not found */
-export async function getMessage(db: IDBDatabase, uuid: string): Promise<ChatMessage | undefined> {
-  const tx = db.transaction('messages', 'readonly');
-  const result = await promisifyRequest(tx.objectStore('messages').get(uuid));
-  return result as ChatMessage | undefined;
+/** Retrieve a blob record by UUID, or undefined if not found */
+export async function getBlobRecord(
+  db: IDBDatabase,
+  uuid: string,
+): Promise<BlobRecord | undefined> {
+  const tx = db.transaction('blobs', 'readonly');
+  const result = await promisifyRequest(tx.objectStore('blobs').get(uuid));
+  return result as BlobRecord | undefined;
 }
 
 /**
- * Retrieve messages for a room ordered by timestamp (newest first), with cursor-based pagination.
- *
- * @param db - IndexedDB database connection
- * @param roomId - Room to retrieve messages for
- * @param before - Only return messages with timestamp < before (unix ms). Omit for latest.
- * @param limit - Maximum number of messages to return
+ * Retrieve all blob records for a room, ordered by timestamp ascending.
+ * Used for bulk decryption on room entry (cold start).
  */
-export async function getMessagesByTimestamp(
-  db: IDBDatabase,
-  roomId: string,
-  before: number,
-  limit: number,
-): Promise<ChatMessage[]> {
+export function getAllBlobs(db: IDBDatabase, roomId: string): Promise<BlobRecord[]> {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('messages', 'readonly');
-    const index = tx.objectStore('messages').index('by_roomId_timestamp');
+    const tx = db.transaction('blobs', 'readonly');
+    const index = tx.objectStore('blobs').index('by_room_ts');
 
-    // Compound index [roomId, timestamp]: lower bound is [roomId] (min timestamp),
-    // upper bound is [roomId, before) (exclusive on timestamp)
-    const range = IDBKeyRange.bound([roomId], [roomId, before], false, true);
-    const request = index.openCursor(range, 'prev');
+    const range = IDBKeyRange.bound([roomId], [roomId, Infinity]);
+    const request = index.openCursor(range, 'next');
 
-    const results: ChatMessage[] = [];
+    const results: BlobRecord[] = [];
     request.onsuccess = () => {
       const cursor = request.result;
-      if (!cursor || results.length >= limit) {
+      if (!cursor) {
         resolve(results);
         return;
       }
-      results.push(cursor.value as ChatMessage);
+      results.push(cursor.value as BlobRecord);
       cursor.continue();
     };
     request.onerror = () => reject(request.error ?? new DOMException('Cursor request failed'));
   });
 }
 
-/** Delete all messages from the store */
-export async function clearMessages(db: IDBDatabase): Promise<void> {
-  const tx = db.transaction('messages', 'readwrite');
-  tx.objectStore('messages').clear();
+/**
+ * Retrieve blob records for a room with cursor-based pagination (newest first).
+ *
+ * @param db - IndexedDB database connection
+ * @param roomId - Room to retrieve blobs for
+ * @param before - Only return blobs with timestamp < before (unix ms)
+ * @param limit - Maximum number of blobs to return
+ */
+export function getBlobsByTimestamp(
+  db: IDBDatabase,
+  roomId: string,
+  before: number,
+  limit: number,
+): Promise<BlobRecord[]> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readonly');
+    const index = tx.objectStore('blobs').index('by_room_ts');
+
+    const range = IDBKeyRange.bound([roomId], [roomId, before], false, true);
+    const request = index.openCursor(range, 'prev');
+
+    const results: BlobRecord[] = [];
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor || results.length >= limit) {
+        resolve(results);
+        return;
+      }
+      results.push(cursor.value as BlobRecord);
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error ?? new DOMException('Cursor request failed'));
+  });
+}
+
+/** Delete all blob records from the store */
+export async function clearBlobs(db: IDBDatabase): Promise<void> {
+  const tx = db.transaction('blobs', 'readwrite');
+  tx.objectStore('blobs').clear();
   await promisifyTransaction(tx);
 }
 
@@ -291,24 +338,25 @@ export async function putOwnSeq(
 type StoreResult = { stored: true } | { stored: false; reason: 'replay' | 'duplicate' };
 
 /**
- * Atomically check replay/dedup guards and store a message in a single readwrite transaction.
+ * Atomically check replay/dedup guards and store an encrypted blob in a single readwrite transaction.
  *
- * Performs in one IDB transaction:
+ * Performs in one IDB transaction on blobs + seq stores:
  * 1. Read lastSeenSeq for message.deviceId in roomId — reject if message.seq <= lastSeenSeq
- * 2. Read messages store by UUID — reject if already exists
- * 3. Write message (with roomId) + update lastSeenSeq
+ * 2. Read blobs store by UUID — reject if already exists
+ * 3. Write BlobRecord (metadata from message + wireBlob) + update lastSeenSeq
  *
  * This eliminates TOCTOU races when multiple messages are processed concurrently.
  */
-export function checkAndStoreMessage(
+export function checkAndStoreBlob(
   db: IDBDatabase,
   roomId: string,
   message: ChatMessage,
+  wireBlob: Uint8Array,
 ): Promise<StoreResult> {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(['messages', 'seq'], 'readwrite');
+    const tx = db.transaction(['blobs', 'seq'], 'readwrite');
     const seqStore = tx.objectStore('seq');
-    const messagesStore = tx.objectStore('messages');
+    const blobStore = tx.objectStore('blobs');
     let intentionalAbort = false;
 
     // Step 1: Read lastSeenSeq (compound key: [roomId, deviceId])
@@ -325,17 +373,26 @@ export function checkAndStoreMessage(
       }
 
       // Step 2: Check UUID dedup
-      const msgReq = messagesStore.get(message.uuid);
-      msgReq.onsuccess = () => {
-        if (msgReq.result !== undefined) {
+      const blobReq = blobStore.get(message.uuid);
+      blobReq.onsuccess = () => {
+        if (blobReq.result !== undefined) {
           intentionalAbort = true;
           tx.abort();
           resolve({ stored: false, reason: 'duplicate' });
           return;
         }
 
-        // Step 3: Write message (with roomId) + update seq
-        messagesStore.put({ ...message, roomId });
+        // Step 3: Write BlobRecord + update seq
+        const blobRecord: BlobRecord = {
+          uuid: message.uuid,
+          roomId,
+          timestamp: message.timestamp,
+          deviceId: message.deviceId,
+          seq: message.seq,
+          type: message.type,
+          blob: wireBlob,
+        };
+        blobStore.put(blobRecord);
         seqStore.put({
           roomId,
           deviceId: message.deviceId,
@@ -343,7 +400,7 @@ export function checkAndStoreMessage(
         } satisfies SeqRecord);
         // Transaction will auto-commit; oncomplete resolves below
       };
-      msgReq.onerror = () => reject(msgReq.error ?? new DOMException('Message lookup failed'));
+      blobReq.onerror = () => reject(blobReq.error ?? new DOMException('Blob lookup failed'));
     };
     seqReq.onerror = () => reject(seqReq.error ?? new DOMException('Sequence lookup failed'));
 
@@ -356,15 +413,119 @@ export function checkAndStoreMessage(
   });
 }
 
+/**
+ * Store a blob record if the UUID doesn't already exist (dedup-only, no seq check).
+ * Used for history messages that have seq <= lastSeenSeq by definition.
+ *
+ * @returns true if stored, false if uuid already exists
+ */
+export function storeBlobIfNew(
+  db: IDBDatabase,
+  roomId: string,
+  message: ChatMessage,
+  wireBlob: Uint8Array,
+): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('blobs', 'readwrite');
+    const store = tx.objectStore('blobs');
+    let alreadyExists = false;
+
+    const getReq = store.get(message.uuid);
+    getReq.onsuccess = () => {
+      if (getReq.result !== undefined) {
+        alreadyExists = true;
+        // Let transaction complete naturally — nothing to write
+        return;
+      }
+
+      const record: BlobRecord = {
+        uuid: message.uuid,
+        roomId,
+        timestamp: message.timestamp,
+        deviceId: message.deviceId,
+        seq: message.seq,
+        type: message.type,
+        blob: wireBlob,
+      };
+      store.put(record);
+    };
+    getReq.onerror = () => reject(getReq.error ?? new DOMException('Blob lookup failed'));
+
+    tx.oncomplete = () => resolve(!alreadyExists);
+    tx.onerror = () => reject(tx.error ?? new DOMException('Transaction failed'));
+    tx.onabort = () => reject(tx.error ?? new DOMException('Transaction aborted'));
+  });
+}
+
+// ============================================================================
+// Data migration (v2 plaintext → v3 encrypted blobs)
+// ============================================================================
+
+/**
+ * Migrate plaintext messages from the `messages` store to encrypted blobs.
+ * Three-phase approach avoids IDB transaction auto-close during async encryption:
+ * 1. Phase A (readonly tx): read all plaintext records
+ * 2. Phase B (no tx): encrypt each record
+ * 3. Phase C (readwrite tx): write blobs + clear messages
+ *
+ * Safe to re-run: if messages store is empty or deleted (v4 migration), this is a no-op.
+ * If interrupted, messages store still has data and migration retries on next login.
+ */
+export async function migrateMessagesToBlobs(db: IDBDatabase, aesKey: CryptoKey): Promise<void> {
+  // messages store may have been deleted by v4 schema migration
+  if (!db.objectStoreNames.contains('messages')) return;
+
+  // Phase A: Read all plaintext messages
+  const readTx = db.transaction('messages', 'readonly');
+  const allRecords = await promisifyRequest(readTx.objectStore('messages').getAll());
+
+  if (!allRecords || allRecords.length === 0) return;
+
+  console.log(`[MIGRATION] Migrating ${allRecords.length} plaintext messages to encrypted blobs`);
+
+  // Lazy import to avoid circular dependency (db.ts should not statically import crypto.ts)
+  const { encryptMessage } = await import('./crypto');
+
+  // Phase B: Encrypt each record (async, outside IDB transaction)
+  const pairs: Array<{ record: ChatMessage & { roomId: string }; wireBlob: Uint8Array }> = [];
+  for (const record of allRecords) {
+    const typedRecord = record as ChatMessage & { roomId: string };
+    const plaintext = new TextEncoder().encode(JSON.stringify(typedRecord));
+    const wireBlob = await encryptMessage(aesKey, plaintext);
+    pairs.push({ record: typedRecord, wireBlob });
+  }
+
+  // Phase C: Write all blobs + clear messages (single readwrite transaction)
+  const writeTx = db.transaction(['messages', 'blobs'], 'readwrite');
+  const blobStore = writeTx.objectStore('blobs');
+  for (const { record, wireBlob } of pairs) {
+    const blobRecord: BlobRecord = {
+      uuid: record.uuid,
+      roomId: record.roomId,
+      timestamp: record.timestamp,
+      deviceId: record.deviceId,
+      seq: record.seq,
+      type: record.type,
+      blob: wireBlob,
+    };
+    blobStore.put(blobRecord);
+  }
+  writeTx.objectStore('messages').clear();
+  await promisifyTransaction(writeTx);
+
+  console.log(`[MIGRATION] Successfully migrated ${pairs.length} messages`);
+}
+
 // ============================================================================
 // Bulk operations
 // ============================================================================
 
-/** Clear all data from all stores (messages, settings, seq) */
+/** Clear all data from all active stores */
 export async function clearAllData(db: IDBDatabase): Promise<void> {
-  const tx = db.transaction(['messages', 'settings', 'seq'], 'readwrite');
-  tx.objectStore('messages').clear();
-  tx.objectStore('settings').clear();
-  tx.objectStore('seq').clear();
+  const storeNames = Array.from(db.objectStoreNames);
+  const tx = db.transaction(storeNames, 'readwrite');
+  for (const name of storeNames) {
+    tx.objectStore(name).clear();
+  }
   await promisifyTransaction(tx);
 }

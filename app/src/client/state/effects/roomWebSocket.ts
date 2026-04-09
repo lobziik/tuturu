@@ -15,7 +15,9 @@ import {
   closeWebSocket,
 } from '../../services/websocket';
 import type { WsRoomContext } from '../../services/websocket';
-import { getMessagesByTimestamp } from '../../services/db';
+import { getAllBlobs, migrateMessagesToBlobs } from '../../services/db';
+import { decryptBlobRecord } from '../../services/chatProtocol';
+import type { ChatMessage } from '../../../shared/types';
 import type { EffectContext, EffectArgs } from './types';
 
 /** Maximum reconnect delay in milliseconds */
@@ -65,7 +67,7 @@ export function handleRoomWebSocketEffects(ctx: EffectContext, args: EffectArgs)
   }
 }
 
-/** Initialize room: connect WS, load IDB cache, load seq counter */
+/** Initialize room: connect WS, migrate data, load IDB cache, load seq counter */
 function handleRoomEntry(
   ctx: EffectContext,
   newState: Extract<EffectArgs['newState'], { phase: 'room' }>,
@@ -80,25 +82,43 @@ function handleRoomEntry(
   }
 
   connectWebSocket(ctx, { roomId, nickname, aesKey });
-  loadCachedMessages(refs.db.current, roomId, dispatch);
   initSeqCounter(refs, refs.db.current, roomId, deviceId);
+
+  // Migration must complete before loading cached messages (blobs store)
+  void (async () => {
+    const db = refs.db.current;
+    if (db) {
+      try {
+        await migrateMessagesToBlobs(db, aesKey);
+      } catch (err) {
+        console.error('[ROOM_WS] Migration failed:', err);
+      }
+    }
+    loadCachedMessages(db, aesKey, roomId, dispatch);
+  })();
 }
 
-/** Load cached messages from IndexedDB for instant display */
+/** Load cached messages from encrypted blobs in IndexedDB for instant display */
 function loadCachedMessages(
   db: IDBDatabase | null,
+  aesKey: CryptoKey | null,
   roomId: string,
   dispatch: EffectContext['dispatch'],
 ): void {
-  if (!db) return;
+  if (!db || !aesKey) return;
 
   void (async () => {
     try {
-      const cached = await getMessagesByTimestamp(db, roomId, Date.now() + 1, 200);
-      if (cached.length > 0) {
+      const blobs = await getAllBlobs(db, roomId);
+      if (blobs.length === 0) return;
+
+      const results = await Promise.all(blobs.map((record) => decryptBlobRecord(aesKey, record)));
+      const messages = results.filter((msg): msg is ChatMessage => msg !== null);
+
+      if (messages.length > 0) {
         dispatch({
           type: 'HISTORY_LOADED',
-          messages: cached.slice().reverse(),
+          messages,
           cursor: null,
           hasMore: false,
           fromCache: true,

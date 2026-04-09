@@ -10,10 +10,10 @@
 
 import 'fake-indexeddb/auto';
 import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
-import type { ChatMessage } from '../../shared/types';
-import { handleIncomingMessage } from './chatProtocol';
+import type { ChatMessage, BlobRecord } from '../../shared/types';
+import { handleIncomingMessage, decryptBlobRecord } from './chatProtocol';
 import { encryptMessage, toBase64, deriveKeys } from './crypto';
-import { openDB, resetDBCache, putLastSeenSeq, getMessage, getLastSeenSeq } from './db';
+import { openDB, resetDBCache, putLastSeenSeq, getBlobRecord, getLastSeenSeq } from './db';
 
 // ============================================================================
 // Test helpers
@@ -88,14 +88,21 @@ describe('handleIncomingMessage — happy path', () => {
     }
   });
 
-  test('stores message in IndexedDB on success', async () => {
+  test('stores encrypted blob in IndexedDB on success', async () => {
     const msg = makeMessage();
     const blob = await makeBlob(msg);
     await handleIncomingMessage(blob, testKey, db, TEST_ROOM);
 
-    const stored = await getMessage(db, msg.uuid);
+    const stored = await getBlobRecord(db, msg.uuid);
     expect(stored).toBeDefined();
-    expect(stored!.text).toBe('Hello');
+    expect(stored!.uuid).toBe(msg.uuid);
+    expect(stored!.roomId).toBe(TEST_ROOM);
+    expect(stored!.deviceId).toBe(msg.deviceId);
+    expect(stored!.seq).toBe(msg.seq);
+    expect(stored!.type).toBe(msg.type);
+    // blob field should be encrypted bytes, not plaintext
+    expect(stored!.blob).toBeInstanceOf(Uint8Array);
+    expect(stored!.blob.length).toBeGreaterThan(0);
   });
 
   test('updates lastSeenSeq on success', async () => {
@@ -261,13 +268,13 @@ describe('handleIncomingMessage — replay detection', () => {
     expect(result.type).toBe('ok');
   });
 
-  test('does not store message on replay', async () => {
+  test('does not store blob on replay', async () => {
     await putLastSeenSeq(db, TEST_ROOM, 'device-aaa', 5);
     const msg = makeMessage({ seq: 3, deviceId: 'device-aaa' });
     const blob = await makeBlob(msg);
     await handleIncomingMessage(blob, testKey, db, TEST_ROOM);
 
-    const stored = await getMessage(db, msg.uuid);
+    const stored = await getBlobRecord(db, msg.uuid);
     expect(stored).toBeUndefined();
   });
 });
@@ -334,5 +341,66 @@ describe('handleIncomingMessage — pipeline ordering', () => {
     const blob2 = await makeBlob(msg2);
     const result = await handleIncomingMessage(blob2, testKey, db, TEST_ROOM);
     expect(result.type).toBe('replay');
+  });
+});
+
+// ============================================================================
+// decryptBlobRecord
+// ============================================================================
+
+describe('decryptBlobRecord', () => {
+  test('decrypts valid blob record to ChatMessage', async () => {
+    const msg = makeMessage({ text: 'encrypted content' });
+    const plaintext = new TextEncoder().encode(JSON.stringify(msg));
+    const wire = await encryptMessage(testKey, plaintext);
+
+    const record: BlobRecord = {
+      uuid: msg.uuid,
+      roomId: TEST_ROOM,
+      timestamp: msg.timestamp,
+      deviceId: msg.deviceId,
+      seq: msg.seq,
+      type: msg.type,
+      blob: wire,
+    };
+
+    const result = await decryptBlobRecord(testKey, record);
+    expect(result).not.toBeNull();
+    expect(result!.uuid).toBe(msg.uuid);
+    expect(result!.text).toBe('encrypted content');
+  });
+
+  test('returns null for garbage blob', async () => {
+    const record: BlobRecord = {
+      uuid: 'garbage-uuid',
+      roomId: TEST_ROOM,
+      timestamp: Date.now(),
+      deviceId: 'dev-1',
+      seq: 1,
+      type: 'text',
+      blob: new Uint8Array([1, 2, 3, 4, 5]),
+    };
+
+    const result = await decryptBlobRecord(testKey, record);
+    expect(result).toBeNull();
+  });
+
+  test('returns null for blob encrypted with wrong key', async () => {
+    const msg = makeMessage();
+    const plaintext = new TextEncoder().encode(JSON.stringify(msg));
+    const wire = await encryptMessage(wrongKey, plaintext);
+
+    const record: BlobRecord = {
+      uuid: msg.uuid,
+      roomId: TEST_ROOM,
+      timestamp: msg.timestamp,
+      deviceId: msg.deviceId,
+      seq: msg.seq,
+      type: msg.type,
+      blob: wire,
+    };
+
+    const result = await decryptBlobRecord(testKey, record);
+    expect(result).toBeNull();
   });
 });

@@ -43,3 +43,21 @@ export interface SeqRecord {
   /** Highest seq number received from this deviceId in this room */
   lastSeenSeq: number;
 }
+
+/** IndexedDB `blobs` store record — encrypted wire blob + plaintext metadata index */
+export interface BlobRecord {
+  /** Message UUID — keyPath, deduplication */
+  uuid: string;
+  /** Room identifier — for filtering and pagination */
+  roomId: string;
+  /** Unix timestamp in milliseconds — sort order */
+  timestamp: number;
+  /** Sender device identifier — seq chain tracking */
+  deviceId: string;
+  /** Monotonic sequence number — replay detection */
+  seq: number;
+  /** Message content type — UI hints without decryption */
+  type: 'text' | 'photo';
+  /** Encrypted wire format: iv(12) || ciphertext || authTag(16) */
+  blob: Uint8Array;
+}

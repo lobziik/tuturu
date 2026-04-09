@@ -17,6 +17,7 @@ import {
 import type { Action } from '../state/types';
 import { handleIncomingMessage } from './chatProtocol';
 import { decryptMessage, fromBase64, encryptMessage, toBase64 } from './crypto';
+import { storeBlobIfNew } from './db';
 
 type Dispatch = (action: Action) => void;
 
@@ -184,7 +185,7 @@ function handleServerMessage(
       break;
 
     case 'history':
-      handleHistory(message, dispatch, refs);
+      handleHistory(message, dispatch, refs, roomId);
       break;
 
     case 'chat-ack':
@@ -248,15 +249,17 @@ function handleChatBroadcast(blob: string, dispatch: Dispatch, refs: WsRefs, roo
 }
 
 /**
- * Decrypt history batch and dispatch HISTORY_LOADED.
+ * Decrypt history batch, persist to IDB, and dispatch HISTORY_LOADED.
  *
- * Uses decryptAndValidate (no IDB interaction) to avoid false replay
- * rejection of old-but-valid messages that are already in IndexedDB.
+ * Uses decryptAndValidate (no seq check) to avoid false replay
+ * rejection of old-but-valid messages. Persists wire blobs via storeBlobIfNew
+ * so they are available from IDB cache on next cold start.
  */
 function handleHistory(
   message: { messages: Array<{ id: number; blob: string; created_at: number }>; hasMore: boolean },
   dispatch: Dispatch,
   refs: WsRefs,
+  roomId: string,
 ): void {
   const aesKey = refs.aesKey.current;
   if (!aesKey) {
@@ -266,16 +269,31 @@ function handleHistory(
 
   void (async () => {
     const results = await Promise.all(
-      message.messages.map(async (hm) => ({
-        result: await decryptAndValidateBlob(hm.blob, aesKey),
-        id: hm.id,
-      })),
+      message.messages.map(async (hm) => {
+        let wire: Uint8Array;
+        try {
+          wire = fromBase64(hm.blob);
+        } catch {
+          return { result: null, id: hm.id, wire: null };
+        }
+        const result = await decryptAndValidateBlob(wire, aesKey);
+        return { result, id: hm.id, wire };
+      }),
     );
 
+    const db = refs.db.current;
     const decrypted: ChatMessage[] = [];
     let minId: number | null = null;
-    for (const { result, id } of results) {
-      if (result) decrypted.push(result);
+    for (const { result, id, wire } of results) {
+      if (result) {
+        decrypted.push(result);
+        // Persist to IDB (fire-and-forget — don't block dispatch)
+        if (db && wire) {
+          storeBlobIfNew(db, roomId, result, wire).catch((err) => {
+            console.warn('[WS] Failed to persist history blob:', err);
+          });
+        }
+      }
       if (minId === null || id < minId) minId = id;
     }
 
@@ -289,16 +307,17 @@ function handleHistory(
 }
 
 /**
- * Decrypt and validate a blob without IDB interaction.
- * Steps 1-5 only: base64 decode → AES-GCM decrypt → JSON parse → version check → Zod validate.
+ * Decrypt and validate wire bytes without IDB interaction.
+ * Steps: AES-GCM decrypt → JSON parse → version check → Zod validate.
  * Used for history messages where replay/dedup checks are not appropriate.
+ *
+ * @param wire - Raw encrypted bytes (caller handles base64 decoding)
  */
 async function decryptAndValidateBlob(
-  blob: string,
+  wire: Uint8Array,
   aesKey: CryptoKey,
 ): Promise<ChatMessage | null> {
   try {
-    const wire = fromBase64(blob);
     const plainBytes = await decryptMessage(aesKey, wire);
     const json: unknown = JSON.parse(new TextDecoder().decode(plainBytes));
 

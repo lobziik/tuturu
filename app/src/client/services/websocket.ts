@@ -287,7 +287,9 @@ function handleHistory(
     for (const { result, id, wire } of results) {
       if (result) {
         decrypted.push(result);
-        // Persist to IDB (fire-and-forget — don't block dispatch)
+        // Persist to IDB (fire-and-forget — don't block dispatch).
+        // If the tab closes before this completes, some blobs may not be cached.
+        // This is acceptable: next history fetch (delta) will re-deliver them.
         if (db && wire) {
           storeBlobIfNew(db, roomId, result, wire).catch((err) => {
             console.warn('[WS] Failed to persist history blob:', err);

@@ -721,43 +721,35 @@ describe('migrateMessagesToBlobs', () => {
 });
 
 describe('v4 schema migration', () => {
-  test('deletes messages store when empty on fresh install', async () => {
+  test('deletes messages store on fresh install', async () => {
     const db = await openDB();
     expect(db.objectStoreNames.contains('messages')).toBe(false);
     db.close();
   });
 
-  test('keeps messages store when it has data (v2→v4 upgrade)', async () => {
-    const UPGRADE_DB = 'tuturu-v2-upgrade-test';
+  test('unconditionally deletes messages store even with data (v3→v4 upgrade)', async () => {
+    const UPGRADE_DB = 'tuturu-v3-upgrade-test';
     indexedDB.deleteDatabase(UPGRADE_DB);
 
-    const msg = { ...makeMessage({ uuid: 'keep-1', seq: 1 }), roomId: TEST_ROOM };
+    const msg = { ...makeMessage({ uuid: 'drop-1', seq: 1 }), roomId: TEST_ROOM };
     const db = await openV3WithMessages(UPGRADE_DB, [msg]);
-    // This is a v3 db with messages data — simulates user who hasn't logged in yet
     expect(db.objectStoreNames.contains('messages')).toBe(true);
     db.close();
 
-    // Now "upgrade" to v4 — messages store has data, should be kept
+    // Upgrade to v4 — messages store is unconditionally deleted
     const db4 = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(UPGRADE_DB, 4);
       request.onupgradeneeded = () => {
         const db = request.result;
-        const tx = request.transaction!;
         if (db.objectStoreNames.contains('messages')) {
-          const store = tx.objectStore('messages');
-          const countReq = store.count();
-          countReq.onsuccess = () => {
-            if (countReq.result === 0) {
-              db.deleteObjectStore('messages');
-            }
-          };
+          db.deleteObjectStore('messages');
         }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
 
-    expect(db4.objectStoreNames.contains('messages')).toBe(true);
+    expect(db4.objectStoreNames.contains('messages')).toBe(false);
     db4.close();
     indexedDB.deleteDatabase(UPGRADE_DB);
   });

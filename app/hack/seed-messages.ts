@@ -28,6 +28,8 @@ function parseArg(flag: string): string | undefined {
 
 // ============================================================================
 // Crypto (inline — avoids importing client module that pulls in DOM types)
+// KEEP IN SYNC WITH src/client/services/crypto.ts — if Argon2 params or
+// HKDF info strings change there, update here or seed data will be unreadable.
 // ============================================================================
 
 const IV_LENGTH = 12;
@@ -176,6 +178,8 @@ async function main() {
 
   const db = new Database(DB_PATH);
   db.run('PRAGMA journal_mode = WAL');
+  // OFF is unsafe if the script crashes mid-write (WAL data loss), but acceptable
+  // for a dev seeding tool where re-running is cheap.
   db.run('PRAGMA synchronous = OFF');
   db.run(`
     CREATE TABLE IF NOT EXISTS messages (

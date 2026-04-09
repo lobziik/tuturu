@@ -7,8 +7,8 @@
  * - `seq` — per-roomId+deviceId sequence tracking (compound keyPath: [roomId, deviceId])
  * - `blobs` — encrypted wire blobs + plaintext metadata index (keyPath: uuid)
  *
- * Legacy `messages` store (plaintext) is conditionally deleted in migration v4.
- * If the store still has data (runtime migration hasn't run yet), it is kept until next upgrade.
+ * Legacy `messages` store (plaintext) is unconditionally deleted in migration v4.
+ * Runtime migration (migrateMessagesToBlobs) should run before the v4 schema upgrade when possible.
  *
  * All public functions take an IDBDatabase instance for testability.
  * Use {@link openDB} for the singleton connection in production.
@@ -56,18 +56,12 @@ const migrations: Record<number, (db: IDBDatabase, tx: IDBTransaction) => void> 
     blobs.createIndex('by_room_ts', ['roomId', 'timestamp']);
     blobs.createIndex('by_room_seq', ['roomId', 'deviceId', 'seq']);
   },
-  4: (db, tx) => {
-    // Delete legacy plaintext messages store — only if empty.
-    // If the runtime data migration (migrateMessagesToBlobs) hasn't run yet,
-    // the store still has data and must be kept until next app open after login.
+  4: (db) => {
+    // Unconditionally delete legacy plaintext messages store.
+    // Any unencrypted data that wasn't migrated at runtime (migrateMessagesToBlobs)
+    // is lost — think it's acceptable for now
     if (!db.objectStoreNames.contains('messages')) return;
-    const store = tx.objectStore('messages');
-    const countReq = store.count();
-    countReq.onsuccess = () => {
-      if (countReq.result === 0) {
-        db.deleteObjectStore('messages');
-      }
-    };
+    db.deleteObjectStore('messages');
   },
 };
 
@@ -164,7 +158,8 @@ export async function getBlobRecord(
 
 /**
  * Retrieve all blob records for a room, ordered by timestamp ascending.
- * Used for bulk decryption on room entry (cold start).
+ * WARNING: Loads everything into memory — use only for migration or export.
+ * For cold-start cache loading, use {@link getBlobsByTimestamp} with a limit.
  */
 export function getAllBlobs(db: IDBDatabase, roomId: string): Promise<BlobRecord[]> {
   return new Promise((resolve, reject) => {

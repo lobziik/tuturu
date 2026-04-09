@@ -15,7 +15,7 @@ import {
   closeWebSocket,
 } from '../../services/websocket';
 import type { WsRoomContext } from '../../services/websocket';
-import { getAllBlobs, migrateMessagesToBlobs } from '../../services/db';
+import { getBlobsByTimestamp, migrateMessagesToBlobs } from '../../services/db';
 import { decryptBlobRecord } from '../../services/chatProtocol';
 import type { ChatMessage } from '../../../shared/types';
 import type { EffectContext, EffectArgs } from './types';
@@ -98,7 +98,10 @@ function handleRoomEntry(
   })();
 }
 
-/** Load cached messages from encrypted blobs in IndexedDB for instant display */
+/** Maximum number of cached messages to load from IDB on cold start */
+const CACHE_LOAD_LIMIT = 200;
+
+/** Load recent cached messages from encrypted blobs in IndexedDB for instant display */
 function loadCachedMessages(
   db: IDBDatabase | null,
   aesKey: CryptoKey | null,
@@ -109,7 +112,8 @@ function loadCachedMessages(
 
   void (async () => {
     try {
-      const blobs = await getAllBlobs(db, roomId);
+      // Load only the most recent N blobs to avoid OOM on large histories
+      const blobs = await getBlobsByTimestamp(db, roomId, Infinity, CACHE_LOAD_LIMIT);
       if (blobs.length === 0) return;
 
       const results = await Promise.all(blobs.map((record) => decryptBlobRecord(aesKey, record)));

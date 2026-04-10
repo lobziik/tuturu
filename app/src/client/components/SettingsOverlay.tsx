@@ -79,16 +79,8 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
   );
 
   return (
-    <div
-      class="overlay-backdrop settings-backdrop"
-      role="button"
-      tabIndex={-1}
-      onClick={handleBackdropClick}
-      onKeyDown={(e: KeyboardEvent) => {
-        if (e.key === 'Escape') onClose();
-      }}
-    >
-      <div class="settings-modal">
+    <div class="overlay-backdrop settings-backdrop" onClick={handleBackdropClick}>
+      <div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="settings-header">
           <span>Settings</span>
           <button

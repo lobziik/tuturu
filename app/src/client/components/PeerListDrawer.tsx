@@ -48,16 +48,8 @@ export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerLi
   }, [onClose]);
 
   return (
-    <div
-      class="overlay-backdrop peer-list-backdrop"
-      role="button"
-      tabIndex={-1}
-      onClick={handleBackdropClick}
-      onKeyDown={(e: KeyboardEvent) => {
-        if (e.key === 'Escape') onClose();
-      }}
-    >
-      <div class="peer-list-drawer">
+    <div class="overlay-backdrop peer-list-backdrop" onClick={handleBackdropClick}>
+      <div class="peer-list-drawer" role="dialog" aria-modal="true" aria-label="Online users">
         <div class="peer-list-header">
           <span>Online ({totalCount})</span>
           <button

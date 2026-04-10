@@ -84,7 +84,9 @@ export function setupWebSocketHandlers(
 
   ws.onclose = (event: CloseEvent) => {
     console.log('[WS] Connection closed:', event.code, event.reason);
-    const intentional = event.code === 1000 && event.reason === 'Leaving room';
+    const intentional =
+      event.code === 1000 &&
+      (event.reason === 'Leaving room' || event.reason === 'Nickname change');
     dispatch({
       type: 'WS_CLOSED',
       code: event.code,
@@ -120,6 +122,19 @@ export function sendMessage(ws: WebSocket | null, message: ClientToServerMessage
   }
   console.log('[WS] Sending:', message.type);
   ws.send(JSON.stringify(message));
+}
+
+/**
+ * Detach all event handlers from a WebSocket.
+ *
+ * Call this before closing a WS that's being replaced to prevent the stale
+ * `onclose` from dispatching `WS_CLOSED` and overwriting the new WS state.
+ */
+export function detachWebSocketHandlers(ws: WebSocket): void {
+  ws.onopen = null;
+  ws.onclose = null;
+  ws.onerror = null;
+  ws.onmessage = null;
 }
 
 /** Close WebSocket with proper close code */

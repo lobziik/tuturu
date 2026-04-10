@@ -1062,14 +1062,34 @@ video {
 }
 
 /* ============================================================================
+   Shared Overlay Styles
+   ============================================================================ */
+
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.overlay-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+}
+
+.overlay-close-btn:hover {
+  color: var(--text);
+}
+
+/* ============================================================================
    Peer List Drawer
    ============================================================================ */
 
 .peer-list-backdrop {
-  position: fixed;
-  inset: 0;
   background: rgb(0 0 0 / 40%);
-  z-index: 200;
 }
 
 .peer-list-drawer {
@@ -1105,17 +1125,7 @@ video {
 }
 
 .peer-list-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
   font-size: 1.125rem;
-  cursor: pointer;
-  padding: 0.25rem;
-  line-height: 1;
-}
-
-.peer-list-close-btn:hover {
-  color: var(--text);
 }
 
 .peer-list {
@@ -1153,10 +1163,7 @@ video {
    ============================================================================ */
 
 .settings-backdrop {
-  position: fixed;
-  inset: 0;
   background: rgb(0 0 0 / 50%);
-  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1185,17 +1192,7 @@ video {
 }
 
 .settings-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
   font-size: 1.25rem;
-  cursor: pointer;
-  padding: 0.25rem;
-  line-height: 1;
-}
-
-.settings-close-btn:hover {
-  color: var(--text);
 }
 
 .settings-section {

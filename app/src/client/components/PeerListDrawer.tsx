@@ -49,7 +49,7 @@ export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerLi
 
   return (
     <div
-      class="peer-list-backdrop"
+      class="overlay-backdrop peer-list-backdrop"
       role="button"
       tabIndex={-1}
       onClick={handleBackdropClick}
@@ -62,9 +62,10 @@ export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerLi
           <span>Online ({totalCount})</span>
           <button
             type="button"
-            class="peer-list-close-btn"
+            class="overlay-close-btn peer-list-close-btn"
             onClick={onClose}
             aria-label="Close peer list"
+            autoFocus
           >
             {'\u2715'}
           </button>

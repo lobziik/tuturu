@@ -80,7 +80,7 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
 
   return (
     <div
-      class="settings-backdrop"
+      class="overlay-backdrop settings-backdrop"
       role="button"
       tabIndex={-1}
       onClick={handleBackdropClick}
@@ -93,9 +93,10 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
           <span>Settings</span>
           <button
             type="button"
-            class="settings-close-btn"
+            class="overlay-close-btn settings-close-btn"
             onClick={onClose}
             aria-label="Close settings"
+            autoFocus
           >
             {'\u2715'}
           </button>
@@ -112,7 +113,7 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
               maxLength={30}
               autocomplete="off"
               placeholder="Your name"
-              onInput={(e) => setNicknameInput((e.target as HTMLInputElement).value)}
+              onInput={(e) => setNicknameInput(e.currentTarget.value)}
               onKeyDown={handleNicknameKeyDown}
             />
             <button

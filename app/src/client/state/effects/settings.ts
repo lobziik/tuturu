@@ -5,7 +5,12 @@
  */
 
 import { putSetting, clearBlobs } from '../../services/db';
-import { closeWebSocket, createWebSocket, setupWebSocketHandlers } from '../../services/websocket';
+import {
+  closeWebSocket,
+  createWebSocket,
+  detachWebSocketHandlers,
+  setupWebSocketHandlers,
+} from '../../services/websocket';
 import { cleanupRoomResources } from './cleanup';
 import type { EffectContext, EffectArgs } from './types';
 
@@ -30,9 +35,11 @@ export function handleSettingsEffects(ctx: EffectContext, args: EffectArgs): voi
     }
     refs.reconnectAttempt.current = 0;
 
-    // Close existing WS (intentional close won't trigger auto-reconnect)
+    // Detach handlers first to prevent stale onclose from dispatching WS_CLOSED
+    // and overwriting the new WS's state, then close with semantic reason
     if (refs.ws.current) {
-      closeWebSocket(refs.ws.current);
+      detachWebSocketHandlers(refs.ws.current);
+      closeWebSocket(refs.ws.current, 'Nickname change');
     }
 
     // Create new WS with updated nickname

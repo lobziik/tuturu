@@ -7,6 +7,10 @@
 interface HeaderProps {
   /** Callback when phone button is clicked */
   onCallClick: () => void;
+  /** Callback when online indicator is clicked */
+  onPeersClick: () => void;
+  /** Callback when settings button is clicked */
+  onSettingsClick: () => void;
   /** Total number of people in the room (including self) */
   peerCount: number;
   /** Whether the call button should be disabled */
@@ -16,15 +20,27 @@ interface HeaderProps {
 }
 
 /** Room header bar with title, online indicator, and action buttons */
-export function Header({ onCallClick, peerCount, callDisabled, inCall }: Readonly<HeaderProps>) {
+export function Header({
+  onCallClick,
+  onPeersClick,
+  onSettingsClick,
+  peerCount,
+  callDisabled,
+  inCall,
+}: Readonly<HeaderProps>) {
   return (
     <div class="chat-header">
       <div class="chat-header-left">
         <span class="chat-header-title">tuturu</span>
-        <span class="online-indicator">
+        <button
+          type="button"
+          class="online-indicator-btn"
+          onClick={onPeersClick}
+          aria-label="View online users"
+        >
           <span class="online-dot" />
           <span class="online-count">{peerCount}</span>
-        </span>
+        </button>
       </div>
       <div class="chat-header-actions">
         <button
@@ -36,7 +52,12 @@ export function Header({ onCallClick, peerCount, callDisabled, inCall }: Readonl
         >
           {'\uD83D\uDCDE'}
         </button>
-        <button class="chat-header-btn" type="button" aria-label="Settings" disabled>
+        <button
+          class="chat-header-btn"
+          type="button"
+          aria-label="Settings"
+          onClick={onSettingsClick}
+        >
           {'\u2699\uFE0F'}
         </button>
       </div>

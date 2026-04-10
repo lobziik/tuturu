@@ -366,19 +366,19 @@ video {
 }
 
 /* Footer */
-footer {
+.site-footer {
   text-align: center;
   padding: 2rem 0;
   color: var(--text-muted);
   font-size: 0.875rem;
 }
 
-footer a {
+.site-footer a {
   color: var(--primary);
   text-decoration: none;
 }
 
-footer a:hover {
+.site-footer a:hover {
   text-decoration: underline;
 }
 
@@ -970,12 +970,23 @@ footer a:hover {
   gap: 0.5rem;
 }
 
-.online-indicator {
+.online-indicator-btn {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   font-size: 0.8125rem;
   color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.375rem;
+  border-radius: 0.375rem;
+  transition: color 0.15s, background 0.15s;
+}
+
+.online-indicator-btn:hover {
+  color: var(--text);
+  background: var(--border);
 }
 
 .online-dot {
@@ -1048,4 +1059,281 @@ footer a:hover {
 
 .floating-pip-icon {
   font-size: 1.5rem;
+}
+
+/* ============================================================================
+   Peer List Drawer
+   ============================================================================ */
+
+.peer-list-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 40%);
+  z-index: 200;
+}
+
+.peer-list-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 280px;
+  max-width: 85vw;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  animation: slide-right 0.2s ease-out;
+  z-index: 201;
+}
+
+@keyframes slide-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.peer-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.peer-list-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.125rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+}
+
+.peer-list-close-btn:hover {
+  color: var(--text);
+}
+
+.peer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.peer-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9375rem;
+  color: var(--text);
+}
+
+.peer-list-self {
+  color: var(--primary);
+}
+
+.peer-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   Settings Overlay
+   ============================================================================ */
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.settings-modal {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  width: 360px;
+  max-width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 1.125rem;
+  color: var(--text);
+}
+
+.settings-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+}
+
+.settings-close-btn:hover {
+  color: var(--text);
+}
+
+.settings-section {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+}
+
+.settings-section-title {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.settings-nickname-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.settings-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  color: var(--text);
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.settings-input:focus {
+  border-color: var(--primary);
+}
+
+.settings-save-btn {
+  padding: 0.5rem 1rem;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.settings-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.settings-save-btn:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.settings-danger-btn {
+  width: 100%;
+  padding: 0.625rem;
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.settings-danger-btn:hover {
+  background: var(--danger);
+  color: white;
+}
+
+.settings-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.settings-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.settings-confirm-actions .settings-danger-btn {
+  flex: 1;
+  background: var(--danger);
+  color: white;
+}
+
+.settings-confirm-actions .settings-danger-btn:hover {
+  background: var(--danger-dark);
+}
+
+.settings-cancel-btn {
+  flex: 1;
+  padding: 0.625rem;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.settings-cancel-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.settings-about {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.settings-about p {
+  margin: 0;
+}
+
+.settings-section .settings-about a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.settings-section .settings-about a:hover {
+  text-decoration: underline;
 }

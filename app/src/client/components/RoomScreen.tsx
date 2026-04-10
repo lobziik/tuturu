@@ -16,12 +16,16 @@ import { ConnectionStatus } from './ConnectionStatus';
 import { ChatFeed } from './ChatFeed';
 import { ChatInput } from './ChatInput';
 import { FloatingCallPiP } from './FloatingCallPiP';
+import { PeerListDrawer } from './PeerListDrawer';
+import { SettingsOverlay } from './SettingsOverlay';
 
 interface RoomScreenProps {
   /** Chat messages to display */
   messages: ChatMessage[];
   /** This device's unique identifier */
   deviceId: string;
+  /** Current user's display name */
+  nickname: string;
   /** WebSocket connection status */
   wsStatus: WsStatus;
   /** Current reconnect attempt number (0 = not reconnecting) */
@@ -36,6 +40,8 @@ interface RoomScreenProps {
   callActive: boolean;
   /** Remote peer's media stream (for floating PiP) */
   remoteStream: MediaStream | null;
+  /** Currently open overlay panel */
+  overlay: 'peers' | 'settings' | null;
   /** State dispatch function */
   dispatch: Dispatch;
 }
@@ -44,6 +50,7 @@ interface RoomScreenProps {
 export function RoomScreen({
   messages,
   deviceId,
+  nickname,
   wsStatus,
   reconnectAttempt,
   historyHasMore,
@@ -51,6 +58,7 @@ export function RoomScreen({
   screen,
   callActive,
   remoteStream,
+  overlay,
   dispatch,
 }: Readonly<RoomScreenProps>) {
   const inputRef = useRef<HTMLDivElement>(null);
@@ -61,6 +69,18 @@ export function RoomScreen({
 
   const handleCallClick = useCallback(() => {
     dispatch({ type: 'SWITCH_TO_CALL' });
+  }, [dispatch]);
+
+  const handlePeersClick = useCallback(() => {
+    dispatch({ type: 'OPEN_OVERLAY', overlay: 'peers' });
+  }, [dispatch]);
+
+  const handleSettingsClick = useCallback(() => {
+    dispatch({ type: 'OPEN_OVERLAY', overlay: 'settings' });
+  }, [dispatch]);
+
+  const handleCloseOverlay = useCallback(() => {
+    dispatch({ type: 'CLOSE_OVERLAY' });
   }, [dispatch]);
 
   const handleSend = useCallback(
@@ -90,6 +110,8 @@ export function RoomScreen({
     <div ref={screenRef} class="room-screen">
       <Header
         onCallClick={handleCallClick}
+        onPeersClick={handlePeersClick}
+        onSettingsClick={handleSettingsClick}
         peerCount={peerCount}
         callDisabled={callDisabled}
         inCall={showFloatingPiP || callActive}
@@ -107,6 +129,12 @@ export function RoomScreen({
       />
       <ChatInput onSend={handleSend} inputRef={inputRef} disabled={wsStatus !== 'connected'} />
       {showFloatingPiP && <FloatingCallPiP remoteStream={remoteStream} dispatch={dispatch} />}
+      {overlay === 'peers' && (
+        <PeerListDrawer peers={peers} selfNickname={nickname} onClose={handleCloseOverlay} />
+      )}
+      {overlay === 'settings' && (
+        <SettingsOverlay nickname={nickname} dispatch={dispatch} onClose={handleCloseOverlay} />
+      )}
     </div>
   );
 }

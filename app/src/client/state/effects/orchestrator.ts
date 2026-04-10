@@ -12,7 +12,9 @@
 import type { EffectContext, EffectArgs } from './types';
 import { handleCleanupEffects } from './cleanup';
 import { handleRoomWebSocketEffects } from './roomWebSocket';
+import { handlePeerEffects } from './peers';
 import { handleChatEffects } from './chat';
+import { handleSettingsEffects } from './settings';
 import { handleWebSocketEffects } from './websocket';
 import { handleMediaEffects } from './media';
 import { handleWebRTCEffects } from './webrtc';
@@ -25,7 +27,9 @@ import { handleErrorEffects } from './error';
 export function runEffects(ctx: EffectContext, args: EffectArgs): void {
   handleCleanupEffects(ctx, args);
   handleRoomWebSocketEffects(ctx, args);
+  handlePeerEffects(ctx, args);
   handleChatEffects(ctx, args);
+  handleSettingsEffects(ctx, args);
   handleWebSocketEffects(ctx, args);
   handleMediaEffects(ctx, args);
   handleWebRTCEffects(ctx, args);

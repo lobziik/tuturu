@@ -105,6 +105,8 @@ export type AppState =
       iceTransportPolicy: IceTransportPolicy;
       /** Whether a call is currently active in the room (from server call-peers broadcast) */
       callActive: boolean;
+      /** Currently open overlay panel (null = none) */
+      overlay: 'peers' | 'settings' | null;
     };
 
 /** Extract the room-phase state for components that only operate in room phase */
@@ -151,6 +153,13 @@ export type Action =
   | { type: 'HANGUP' }
   | { type: 'DISMISS_ERROR' }
 
+  // User interactions (room phase — overlays & settings)
+  | { type: 'OPEN_OVERLAY'; overlay: 'peers' | 'settings' }
+  | { type: 'CLOSE_OVERLAY' }
+  | { type: 'CHANGE_NICKNAME'; nickname: string }
+  | { type: 'CLEAR_HISTORY' }
+  | { type: 'LEAVE_ROOM' }
+
   // Room-level WebSocket lifecycle
   | { type: 'WS_ROOM_CONNECTED' }
   | { type: 'WS_ROOM_DISCONNECTED' }
@@ -170,6 +179,7 @@ export type Action =
     }
   | { type: 'PEER_JOINED_ROOM'; peerId: string; encryptedNickname: string; count: number }
   | { type: 'PEER_LEFT_ROOM'; peerId: string; count: number }
+  | { type: 'PEER_NICKNAME_RESOLVED'; peerId: string; nickname: string }
 
   // Server responses — chat
   | { type: 'CHAT_RECEIVED'; message: ChatMessage }

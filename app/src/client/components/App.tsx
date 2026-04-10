@@ -147,6 +147,7 @@ export function App() {
         <RoomScreen
           messages={roomState.messages}
           deviceId={roomState.deviceId}
+          nickname={roomState.nickname}
           wsStatus={roomState.wsStatus}
           reconnectAttempt={roomState.reconnectAttempt}
           historyHasMore={roomState.historyHasMore}
@@ -154,6 +155,7 @@ export function App() {
           screen={roomState.screen}
           callActive={roomState.callActive}
           remoteStream={refs.remoteStream.current}
+          overlay={roomState.overlay}
           dispatch={dispatch}
         />
       );

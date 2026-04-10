@@ -8,6 +8,7 @@
 
 import type { AppState, Action, RoomState, Screen } from './types';
 import type { ChatMessage } from '../../shared/schemas';
+import type { PeerState } from '../../shared/types';
 
 /**
  * Top-level reducer — routes to phase-specific sub-reducers.
@@ -72,6 +73,7 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       iceServers: null,
       iceTransportPolicy: 'all',
       callActive: false,
+      overlay: null,
     };
   }
   return state;
@@ -231,6 +233,7 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'PEERS_LIST':
     case 'PEER_JOINED_ROOM':
     case 'PEER_LEFT_ROOM':
+    case 'PEER_NICKNAME_RESOLVED':
       return roomConnectionReducer(state, action);
 
     // Video call sub-machine
@@ -253,6 +256,27 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'HANGUP':
     case 'DISMISS_ERROR':
       return roomCallReducer(state, action);
+
+    // Overlays
+    case 'OPEN_OVERLAY':
+      return { ...state, overlay: action.overlay };
+    case 'CLOSE_OVERLAY':
+      return { ...state, overlay: null };
+
+    // Settings
+    case 'CHANGE_NICKNAME':
+      return { ...state, nickname: action.nickname, overlay: null, wsStatus: 'connecting' };
+    case 'CLEAR_HISTORY':
+      return {
+        ...state,
+        messages: [],
+        messageUuids: new Set(),
+        historyCursor: null,
+        historyHasMore: false,
+        overlay: null,
+      };
+    case 'LEAVE_ROOM':
+      return { phase: 'login', nickname: state.nickname };
 
     // Phase transition actions — not applicable in room phase
     case 'SUBMIT_NICKNAME':
@@ -325,7 +349,8 @@ type ConnectionAction = Extract<
       | 'WS_CLOSED'
       | 'PEERS_LIST'
       | 'PEER_JOINED_ROOM'
-      | 'PEER_LEFT_ROOM';
+      | 'PEER_LEFT_ROOM'
+      | 'PEER_NICKNAME_RESOLVED';
   }
 >;
 
@@ -381,9 +406,9 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
       return { ...state, wsStatus: 'disconnected', callActive: false };
 
     case 'PEERS_LIST': {
-      const peers: Record<string, { peerId: string }> = {};
+      const peers: Record<string, PeerState> = {};
       for (const p of action.peers) {
-        peers[p.peerId] = { peerId: p.peerId };
+        peers[p.peerId] = { peerId: p.peerId, encryptedNickname: p.encryptedNickname };
       }
       return { ...state, selfPeerId: action.selfPeerId, peers };
     }
@@ -391,12 +416,30 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
     case 'PEER_JOINED_ROOM':
       return {
         ...state,
-        peers: { ...state.peers, [action.peerId]: { peerId: action.peerId } },
+        peers: {
+          ...state.peers,
+          [action.peerId]: {
+            peerId: action.peerId,
+            encryptedNickname: action.encryptedNickname,
+          },
+        },
       };
 
     case 'PEER_LEFT_ROOM': {
       const { [action.peerId]: _removed, ...remainingPeers } = state.peers;
       return { ...state, peers: remainingPeers };
+    }
+
+    case 'PEER_NICKNAME_RESOLVED': {
+      const existing = state.peers[action.peerId];
+      if (!existing) return state;
+      return {
+        ...state,
+        peers: {
+          ...state.peers,
+          [action.peerId]: { peerId: existing.peerId, nickname: action.nickname },
+        },
+      };
     }
   }
 }

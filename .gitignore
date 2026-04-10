@@ -1,9 +1,11 @@
 # Environment
 .env
 
+# local dev
+app/messaged.db*
+
 # Dependencies
 node_modules/
-bun.lockb
 
 # Build artifacts & coverage
 app/public/client.js

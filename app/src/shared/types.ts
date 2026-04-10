@@ -22,8 +22,10 @@ export type {
 /** Peer presence state (client-side tracking) */
 export interface PeerState {
   peerId: string;
-  /** Learned from decrypted chat messages — not available immediately on join */
+  /** Decrypted display name — set asynchronously after join */
   nickname?: string;
+  /** Raw encrypted nickname from server — cleared after successful decryption */
+  encryptedNickname?: string;
 }
 
 /** IndexedDB `settings` store record shape */

@@ -38,6 +38,7 @@ function roomState(
     iceServers: null,
     iceTransportPolicy: 'all',
     callActive: false,
+    overlay: null,
     ...overrides,
   };
   // Keep messageUuids in sync with messages unless explicitly overridden
@@ -125,6 +126,7 @@ describe('reducer', () => {
       expect(room.iceServers).toBeNull();
       expect(room.iceTransportPolicy).toBe('all');
       expect(room.callActive).toBe(false);
+      expect(room.overlay).toBeNull();
     });
 
     test('SUBMIT_NICKNAME is ignored in room phase', () => {
@@ -275,7 +277,7 @@ describe('reducer', () => {
   // ========================================================================
 
   describe('Peer tracking', () => {
-    test('PEERS_LIST populates peers and selfPeerId', () => {
+    test('PEERS_LIST populates peers with encryptedNickname and selfPeerId', () => {
       const state = roomState({ type: 'idle' });
       const room = expectRoom(
         reducer(state, {
@@ -289,11 +291,11 @@ describe('reducer', () => {
       );
       expect(room.selfPeerId).toBe('self-1');
       expect(Object.keys(room.peers)).toHaveLength(2);
-      expect(room.peers['p1']).toEqual({ peerId: 'p1' });
-      expect(room.peers['p2']).toEqual({ peerId: 'p2' });
+      expect(room.peers['p1']).toEqual({ peerId: 'p1', encryptedNickname: 'enc1' });
+      expect(room.peers['p2']).toEqual({ peerId: 'p2', encryptedNickname: 'enc2' });
     });
 
-    test('PEER_JOINED_ROOM adds peer', () => {
+    test('PEER_JOINED_ROOM adds peer with encryptedNickname', () => {
       const state = roomState({ type: 'idle' }, { peers: { p1: { peerId: 'p1' } } });
       const room = expectRoom(
         reducer(state, {
@@ -304,7 +306,7 @@ describe('reducer', () => {
         }),
       );
       expect(Object.keys(room.peers)).toHaveLength(2);
-      expect(room.peers['p2']).toEqual({ peerId: 'p2' });
+      expect(room.peers['p2']).toEqual({ peerId: 'p2', encryptedNickname: 'enc' });
     });
 
     test('PEER_LEFT_ROOM removes peer', () => {
@@ -316,6 +318,29 @@ describe('reducer', () => {
       expect(Object.keys(room.peers)).toHaveLength(1);
       expect(room.peers['p1']).toBeUndefined();
       expect(room.peers['p2']).toEqual({ peerId: 'p2' });
+    });
+
+    test('PEER_NICKNAME_RESOLVED patches nickname and clears encryptedNickname', () => {
+      const state = roomState(
+        { type: 'idle' },
+        { peers: { p1: { peerId: 'p1', encryptedNickname: 'enc1' } } },
+      );
+      const room = expectRoom(
+        reducer(state, { type: 'PEER_NICKNAME_RESOLVED', peerId: 'p1', nickname: 'Alice' }),
+      );
+      expect(room.peers['p1']!.peerId).toBe('p1');
+      expect(room.peers['p1']!.nickname).toBe('Alice');
+      expect(room.peers['p1']!.encryptedNickname).toBeUndefined();
+    });
+
+    test('PEER_NICKNAME_RESOLVED is no-op for absent peer', () => {
+      const state = roomState({ type: 'idle' }, { peers: { p1: { peerId: 'p1' } } });
+      const result = reducer(state, {
+        type: 'PEER_NICKNAME_RESOLVED',
+        peerId: 'gone',
+        nickname: 'Ghost',
+      });
+      expect(result).toBe(state);
     });
   });
 
@@ -772,6 +797,78 @@ describe('reducer', () => {
       const room = expectRoom(reducer(state, { type: 'DISMISS_ERROR' }));
       expect(room.screen.type).toBe('idle');
       expect(room.view).toBe('chat');
+    });
+  });
+
+  // ========================================================================
+  // Overlay management
+  // ========================================================================
+
+  describe('Overlay management', () => {
+    test('OPEN_OVERLAY sets overlay to peers', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(reducer(state, { type: 'OPEN_OVERLAY', overlay: 'peers' }));
+      expect(room.overlay).toBe('peers');
+    });
+
+    test('OPEN_OVERLAY sets overlay to settings', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(reducer(state, { type: 'OPEN_OVERLAY', overlay: 'settings' }));
+      expect(room.overlay).toBe('settings');
+    });
+
+    test('CLOSE_OVERLAY clears overlay', () => {
+      const state = roomState({ type: 'idle' }, { overlay: 'peers' });
+      const room = expectRoom(reducer(state, { type: 'CLOSE_OVERLAY' }));
+      expect(room.overlay).toBeNull();
+    });
+
+    test('CLOSE_OVERLAY is no-op when already null', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(reducer(state, { type: 'CLOSE_OVERLAY' }));
+      expect(room.overlay).toBeNull();
+    });
+  });
+
+  // ========================================================================
+  // Settings actions
+  // ========================================================================
+
+  describe('Settings actions', () => {
+    test('CHANGE_NICKNAME updates nickname, closes overlay, sets wsStatus to connecting', () => {
+      const state = roomState({ type: 'idle' }, { overlay: 'settings', wsStatus: 'connected' });
+      const room = expectRoom(reducer(state, { type: 'CHANGE_NICKNAME', nickname: 'NewName' }));
+      expect(room.nickname).toBe('NewName');
+      expect(room.overlay).toBeNull();
+      expect(room.wsStatus).toBe('connecting');
+    });
+
+    test('CLEAR_HISTORY wipes messages and closes overlay', () => {
+      const msg = chatMessage({ uuid: 'x' });
+      const state = roomState(
+        { type: 'idle' },
+        {
+          messages: [msg],
+          historyCursor: 42,
+          historyHasMore: true,
+          overlay: 'settings',
+        },
+      );
+      const room = expectRoom(reducer(state, { type: 'CLEAR_HISTORY' }));
+      expect(room.messages).toEqual([]);
+      expect(room.messageUuids.size).toBe(0);
+      expect(room.historyCursor).toBeNull();
+      expect(room.historyHasMore).toBe(false);
+      expect(room.overlay).toBeNull();
+    });
+
+    test('LEAVE_ROOM transitions to login phase preserving nickname', () => {
+      const state = roomState({ type: 'idle' }, { nickname: 'Mama' });
+      const newState = reducer(state, { type: 'LEAVE_ROOM' });
+      expect(newState.phase).toBe('login');
+      if (newState.phase === 'login') {
+        expect(newState.nickname).toBe('Mama');
+      }
     });
   });
 

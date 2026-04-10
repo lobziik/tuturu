@@ -10,7 +10,7 @@
  * @module components/SettingsOverlay
  */
 
-import { useState, useCallback } from 'preact/hooks';
+import { useState, useCallback, useEffect } from 'preact/hooks';
 import type { Dispatch } from '../state/context';
 
 interface SettingsOverlayProps {
@@ -59,6 +59,15 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
     [onClose],
   );
 
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const handleNicknameKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
@@ -70,7 +79,15 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
   );
 
   return (
-    <div class="settings-backdrop" onClick={handleBackdropClick}>
+    <div
+      class="settings-backdrop"
+      role="button"
+      tabIndex={-1}
+      onClick={handleBackdropClick}
+      onKeyDown={(e: KeyboardEvent) => {
+        if (e.key === 'Escape') onClose();
+      }}
+    >
       <div class="settings-modal">
         <div class="settings-header">
           <span>Settings</span>

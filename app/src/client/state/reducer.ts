@@ -261,6 +261,7 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'OPEN_OVERLAY':
       return { ...state, overlay: action.overlay };
     case 'CLOSE_OVERLAY':
+      if (state.overlay === null) return state;
       return { ...state, overlay: null };
 
     // Settings
@@ -437,7 +438,11 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
         ...state,
         peers: {
           ...state.peers,
-          [action.peerId]: { peerId: existing.peerId, nickname: action.nickname },
+          [action.peerId]: {
+            ...existing,
+            nickname: action.nickname,
+            encryptedNickname: undefined,
+          },
         },
       };
     }

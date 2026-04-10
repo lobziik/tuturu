@@ -25,7 +25,7 @@ export interface PeerState {
   /** Decrypted display name — set asynchronously after join */
   nickname?: string;
   /** Raw encrypted nickname from server — cleared after successful decryption */
-  encryptedNickname?: string;
+  encryptedNickname?: string | undefined;
 }
 
 /** IndexedDB `settings` store record shape */

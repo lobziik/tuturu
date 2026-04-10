@@ -7,7 +7,7 @@
  * @module components/PeerListDrawer
  */
 
-import { useCallback } from 'preact/hooks';
+import { useCallback, useEffect } from 'preact/hooks';
 import type { PeerState } from '../../shared/types';
 
 interface PeerListDrawerProps {
@@ -38,8 +38,25 @@ export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerLi
     [onClose],
   );
 
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   return (
-    <div class="peer-list-backdrop" onClick={handleBackdropClick}>
+    <div
+      class="peer-list-backdrop"
+      role="button"
+      tabIndex={-1}
+      onClick={handleBackdropClick}
+      onKeyDown={(e: KeyboardEvent) => {
+        if (e.key === 'Escape') onClose();
+      }}
+    >
       <div class="peer-list-drawer">
         <div class="peer-list-header">
           <span>Online ({totalCount})</span>

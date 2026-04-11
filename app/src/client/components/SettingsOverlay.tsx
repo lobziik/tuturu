@@ -35,7 +35,7 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
   const trimmed = nicknameInput.trim();
   const nicknameChanged = trimmed.length > 0 && trimmed !== nickname;
 
-  // Show as modal on mount, handle native Escape via cancel event
+  // Show as modal on mount, handle native Escape and backdrop click
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -45,9 +45,14 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
       e.preventDefault();
       onClose();
     };
+    const handleClick = (e: MouseEvent) => {
+      if (e.target === dialog) onClose();
+    };
     dialog.addEventListener('cancel', handleCancel);
+    dialog.addEventListener('click', handleClick);
     return () => {
       dialog.removeEventListener('cancel', handleCancel);
+      dialog.removeEventListener('click', handleClick);
       dialog.close();
     };
   }, [onClose]);
@@ -73,14 +78,6 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
     dispatch({ type: 'LEAVE_ROOM' });
   }, [confirmLeave, dispatch]);
 
-  // Close when clicking the backdrop area (dialog element itself, not its children)
-  const handleBackdropClick = useCallback(
-    (e: MouseEvent) => {
-      if (e.target === dialogRef.current) onClose();
-    },
-    [onClose],
-  );
-
   const handleNicknameKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
@@ -92,12 +89,7 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
   );
 
   return (
-    <dialog
-      ref={dialogRef}
-      class="overlay-backdrop settings-backdrop"
-      aria-label="Settings"
-      onClick={handleBackdropClick}
-    >
+    <dialog ref={dialogRef} class="overlay-backdrop settings-backdrop" aria-label="Settings">
       <div class="settings-modal">
         <div class="settings-header">
           <span>Settings</span>

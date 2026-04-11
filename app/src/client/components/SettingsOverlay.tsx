@@ -13,8 +13,9 @@
  * @module components/SettingsOverlay
  */
 
-import { useState, useCallback, useEffect, useRef } from 'preact/hooks';
+import { useState, useCallback } from 'preact/hooks';
 import type { Dispatch } from '../state/context';
+import { useDialogOverlay } from './useDialogOverlay';
 
 interface SettingsOverlayProps {
   /** Current nickname */
@@ -27,35 +28,13 @@ interface SettingsOverlayProps {
 
 /** Settings modal overlay */
 export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<SettingsOverlayProps>) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useDialogOverlay(onClose);
   const [nicknameInput, setNicknameInput] = useState(nickname);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
 
   const trimmed = nicknameInput.trim();
   const nicknameChanged = trimmed.length > 0 && trimmed !== nickname;
-
-  // Show as modal on mount, handle native Escape and backdrop click
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    dialog.showModal();
-
-    const handleCancel = (e: Event) => {
-      e.preventDefault();
-      onClose();
-    };
-    const handleClick = (e: MouseEvent) => {
-      if (e.target === dialog) onClose();
-    };
-    dialog.addEventListener('cancel', handleCancel);
-    dialog.addEventListener('click', handleClick);
-    return () => {
-      dialog.removeEventListener('cancel', handleCancel);
-      dialog.removeEventListener('click', handleClick);
-      dialog.close();
-    };
-  }, [onClose]);
 
   const handleSaveNickname = useCallback(() => {
     if (!nicknameChanged) return;

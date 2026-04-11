@@ -19,6 +19,21 @@ import { sendMessage } from './websocket';
 type Dispatch = (action: Action) => void;
 
 /**
+ * Shared mesh state passed to signaling handlers.
+ * Groups per-call mutable state to reduce parameter count.
+ */
+export interface MeshContext {
+  /** WebSocket for sending signaling messages */
+  ws: WebSocket | null;
+  /** Map of all active peer connections (used for staleness checks) */
+  peerConnections: Map<string, RTCPeerConnection>;
+  /** State machine dispatch function */
+  dispatch: Dispatch;
+  /** Set tracking peers with in-flight offer creation (for glare detection) */
+  makingOfferPeers: Set<string>;
+}
+
+/**
  * ICE candidates that arrived before setRemoteDescription completed.
  * Keyed by RTCPeerConnection so buffers are automatically eligible for GC
  * when the connection is discarded.
@@ -169,11 +184,9 @@ export function createPeerConnection(
  */
 async function resolveGlareCollision(
   pc: RTCPeerConnection,
-  peerConnections: Map<string, RTCPeerConnection>,
+  ctx: MeshContext,
   fromPeerId: string,
-  dispatch: Dispatch,
   isPolite: boolean,
-  makingOfferPeers: Set<string>,
 ): Promise<boolean> {
   if (!isPolite) {
     console.log(
@@ -184,16 +197,16 @@ async function resolveGlareCollision(
 
   // Polite peer: cancel pending offer chain and yield to remote offer
   console.log(`[RTC:${fromPeerId}] Glare: polite peer yielding to remote offer`);
-  makingOfferPeers.delete(fromPeerId);
+  ctx.makingOfferPeers.delete(fromPeerId);
 
   if (pc.signalingState === 'have-local-offer') {
     try {
       await pc.setLocalDescription({ type: 'rollback' });
-      if (peerConnections.get(fromPeerId) !== pc) return false;
+      if (ctx.peerConnections.get(fromPeerId) !== pc) return false;
     } catch (error) {
-      if (peerConnections.get(fromPeerId) !== pc) return false;
+      if (ctx.peerConnections.get(fromPeerId) !== pc) return false;
       console.error(`[RTC:${fromPeerId}] Failed to rollback during glare:`, error);
-      dispatch({
+      ctx.dispatch({
         type: 'RTC_FAILED',
         reason: `Glare rollback failed: ${(error as Error).message}`,
         peerId: fromPeerId,
@@ -212,11 +225,10 @@ async function resolveGlareCollision(
 async function acceptOfferAndAnswer(
   pc: RTCPeerConnection,
   offer: RTCSessionDescriptionInit,
-  ws: WebSocket | null,
-  peerConnections: Map<string, RTCPeerConnection>,
+  ctx: MeshContext,
   fromPeerId: string,
-  dispatch: Dispatch,
 ): Promise<void> {
+  const { peerConnections, dispatch } = ctx;
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     if (peerConnections.get(fromPeerId) !== pc) return;
@@ -234,7 +246,7 @@ async function acceptOfferAndAnswer(
       });
       return;
     }
-    sendMessage(ws, { type: 'answer', v: 1, sdp: answer.sdp, targetPeerId: fromPeerId });
+    sendMessage(ctx.ws, { type: 'answer', v: 1, sdp: answer.sdp, targetPeerId: fromPeerId });
     console.log(`[RTC:${fromPeerId}] Sent answer`);
   } catch (error) {
     if (peerConnections.get(fromPeerId) !== pc) return;
@@ -256,38 +268,25 @@ async function acceptOfferAndAnswer(
  *
  * @param pc - Peer connection for the remote peer
  * @param offer - Remote SDP offer to process
- * @param ws - WebSocket for sending the answer back
- * @param peerConnections - Map of all peer connections (used for staleness checks)
+ * @param ctx - Shared mesh state (WebSocket, peer connections, dispatch, offer tracking)
  * @param fromPeerId - ID of the peer that sent the offer
- * @param dispatch - State machine dispatch function
  * @param isPolite - Whether this peer yields during glare (true = rollback own offer)
- * @param makingOfferPeers - Set tracking in-flight offer creation per peer
  */
 export async function handleOffer(
   pc: RTCPeerConnection,
   offer: RTCSessionDescriptionInit,
-  ws: WebSocket | null,
-  peerConnections: Map<string, RTCPeerConnection>,
+  ctx: MeshContext,
   fromPeerId: string,
-  dispatch: Dispatch,
   isPolite: boolean,
-  makingOfferPeers: Set<string>,
 ): Promise<void> {
-  if (peerConnections.get(fromPeerId) !== pc) return;
+  if (ctx.peerConnections.get(fromPeerId) !== pc) return;
 
   // Collision = we're creating or have created our own offer for this peer
-  const offerCollision = makingOfferPeers.has(fromPeerId) || pc.signalingState !== 'stable';
+  const offerCollision = ctx.makingOfferPeers.has(fromPeerId) || pc.signalingState !== 'stable';
 
   if (offerCollision) {
-    const shouldProceed = await resolveGlareCollision(
-      pc,
-      peerConnections,
-      fromPeerId,
-      dispatch,
-      isPolite,
-      makingOfferPeers,
-    );
-    if (!shouldProceed || peerConnections.get(fromPeerId) !== pc) return;
+    const shouldProceed = await resolveGlareCollision(pc, ctx, fromPeerId, isPolite);
+    if (!shouldProceed || ctx.peerConnections.get(fromPeerId) !== pc) return;
   }
 
   if (pc.signalingState !== 'stable') {
@@ -295,7 +294,7 @@ export async function handleOffer(
     return;
   }
 
-  await acceptOfferAndAnswer(pc, offer, ws, peerConnections, fromPeerId, dispatch);
+  await acceptOfferAndAnswer(pc, offer, ctx, fromPeerId);
 }
 
 /**
@@ -304,17 +303,16 @@ export async function handleOffer(
  *
  * @param pc - Peer connection that sent the offer
  * @param answer - Remote SDP answer to apply
- * @param peerConnections - Map of all peer connections (used for staleness checks)
+ * @param ctx - Shared mesh state (peer connections map, dispatch)
  * @param fromPeerId - ID of the peer that sent the answer
- * @param dispatch - State machine dispatch function
  */
 export async function handleAnswer(
   pc: RTCPeerConnection,
   answer: RTCSessionDescriptionInit,
-  peerConnections: Map<string, RTCPeerConnection>,
+  ctx: MeshContext,
   fromPeerId: string,
-  dispatch: Dispatch,
 ): Promise<void> {
+  const { peerConnections, dispatch } = ctx;
   if (peerConnections.get(fromPeerId) !== pc) return;
 
   if (pc.signalingState !== 'have-local-offer') {

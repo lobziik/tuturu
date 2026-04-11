@@ -287,42 +287,23 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       return;
     }
 
-    const targetPeerId = msg.targetPeerId;
+    // Directed relay: substitute sender peerId and route to target
+    let relayMsg: ServerToClientMessage;
+    switch (msg.type) {
+      case 'offer':
+        relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, peerId };
+        break;
+      case 'answer':
+        relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, peerId };
+        break;
+      case 'ice-candidate':
+        relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, peerId };
+        break;
+    }
 
-    if (targetPeerId) {
-      // Targeted relay: substitute peerId
-      let relayMsg: ServerToClientMessage;
-      switch (msg.type) {
-        case 'offer':
-          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, peerId };
-          break;
-        case 'answer':
-          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, peerId };
-          break;
-        case 'ice-candidate':
-          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, peerId };
-          break;
-      }
-
-      const found = rooms.routeToPeer(roomId, targetPeerId, relayMsg);
-      if (!found) {
-        console.warn(`[RELAY] Target peer ${targetPeerId} not found in room ${roomId}`);
-      }
-    } else {
-      // Broadcast relay (v1 compatibility — single peer in room)
-      let relayMsg: ServerToClientMessage;
-      switch (msg.type) {
-        case 'offer':
-          relayMsg = { type: 'offer', v: 1, sdp: msg.sdp, peerId };
-          break;
-        case 'answer':
-          relayMsg = { type: 'answer', v: 1, sdp: msg.sdp, peerId };
-          break;
-        case 'ice-candidate':
-          relayMsg = { type: 'ice-candidate', v: 1, candidate: msg.candidate, peerId };
-          break;
-      }
-      rooms.broadcast(roomId, relayMsg, peerId);
+    const found = rooms.routeToPeer(roomId, msg.targetPeerId, relayMsg);
+    if (!found) {
+      console.warn(`[RELAY] Target peer ${msg.targetPeerId} not found in room ${roomId}`);
     }
   }
 

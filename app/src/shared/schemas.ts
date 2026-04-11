@@ -85,21 +85,24 @@ const ClientOfferSchema = z.object({
   type: z.literal('offer'),
   v: z.literal(1),
   sdp: z.string(),
-  targetPeerId: z.string().optional(),
+  /** Target peer for directed relay (mesh signaling) */
+  targetPeerId: z.string(),
 });
 
 const ClientAnswerSchema = z.object({
   type: z.literal('answer'),
   v: z.literal(1),
   sdp: z.string(),
-  targetPeerId: z.string().optional(),
+  /** Target peer for directed relay (mesh signaling) */
+  targetPeerId: z.string(),
 });
 
 const ClientIceCandidateSchema = z.object({
   type: z.literal('ice-candidate'),
   v: z.literal(1),
   candidate: z.unknown(),
-  targetPeerId: z.string().optional(),
+  /** Target peer for directed relay (mesh signaling) */
+  targetPeerId: z.string(),
 });
 
 const LeaveSchema = z.object({

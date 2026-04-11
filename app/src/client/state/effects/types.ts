@@ -88,7 +88,7 @@ export function getScreen(state: AppState): Screen | null {
 }
 
 /** ICE configuration extracted from room-phase state */
-interface IceConfig {
+export interface IceConfig {
   iceServers: IceServerConfig[] | null;
   iceTransportPolicy: IceTransportPolicy;
 }

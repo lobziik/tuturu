@@ -32,6 +32,11 @@ export function VideoTile({
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
     }
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
   }, [stream]);
 
   const isConnected = connectionStatus === 'connected';
@@ -45,7 +50,9 @@ export function VideoTile({
         autoplay
         playsinline
         class={`video-tile-video ${!isConnected || !hasVideo ? 'hidden-video' : ''}`}
-      />
+      >
+        <track kind="captions" />
+      </video>
       {!isConnected && (
         <div class="video-tile-status">
           <span class="video-tile-status-text">

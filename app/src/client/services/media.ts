@@ -145,12 +145,17 @@ export async function flipCamera(
     stream.removeTrack(videoTrack);
     stream.addTrack(newVideoTrack);
 
-    // Replace track in ALL peer connections (mesh)
+    // Replace track in ALL peer connections (mesh).
+    // try/catch per-PC: a connection may close mid-iteration (JS yields at await).
     for (const [peerId, pc] of peerConnections) {
       const videoSender = pc.getSenders().find((sender) => sender.track?.kind === 'video');
       if (videoSender) {
-        await videoSender.replaceTrack(newVideoTrack);
-        console.log(`[MEDIA] Replaced track in peer connection ${peerId}`);
+        try {
+          await videoSender.replaceTrack(newVideoTrack);
+          console.log(`[MEDIA] Replaced track in peer connection ${peerId}`);
+        } catch (replaceError) {
+          console.warn(`[MEDIA] Failed to replace track for peer ${peerId}:`, replaceError);
+        }
       }
     }
 

@@ -511,7 +511,9 @@ function handleCallPeersReceived(
     };
   }
 
-  // In call but all remote peers left → go back to waiting-for-peer (stay in call)
+  // In call but all remote peers left → go back to waiting-for-peer (stay in call).
+  // Intentional UX: keep camera active so the user can wait for peers to rejoin
+  // without re-acquiring media. User can hang up manually to release the camera.
   if (state.screen.type === 'call' && remotePeers.length === 0) {
     return {
       ...state,
@@ -571,10 +573,13 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
     case 'SERVER_ERROR':
       return toErrorScreen(state, action.error, false);
 
-    // Per-peer RTC lifecycle — update peerConnectionStates
+    // Per-peer RTC lifecycle — update peerConnectionStates.
+    // Note: waiting-for-peer → call transition can happen via two paths:
+    //   1. CALL_PEERS_RECEIVED (normal: server notifies us of remote peers)
+    //   2. RTC_CONNECTED below (race: offer arrived before CALL_PEERS_RECEIVED,
+    //      PC was created on-demand in effects, and connected before server update)
     case 'RTC_CONNECTED': {
       const newStates = { ...state.peerConnectionStates, [action.peerId]: 'connected' as const };
-      // If we're in waiting-for-peer and a peer connected, transition to call
       if (state.screen.type === 'waiting-for-peer') {
         return {
           ...state,

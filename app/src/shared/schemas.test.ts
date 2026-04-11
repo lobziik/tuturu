@@ -117,18 +117,18 @@ describe('ClientToServerMessageSchema', () => {
       type: 'offer',
       v: 1,
       sdp: 'v=0\r\no=...',
+      targetPeerId: 'peer-uuid',
     });
     expect(result.success).toBe(true);
   });
 
-  test('parses offer with targetPeerId', () => {
+  test('rejects offer without targetPeerId', () => {
     const result = ClientToServerMessageSchema.safeParse({
       type: 'offer',
       v: 1,
       sdp: 'v=0\r\no=...',
-      targetPeerId: 'peer-uuid',
     });
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   test('parses answer message', () => {
@@ -136,8 +136,18 @@ describe('ClientToServerMessageSchema', () => {
       type: 'answer',
       v: 1,
       sdp: 'v=0\r\no=...',
+      targetPeerId: 'peer-uuid',
     });
     expect(result.success).toBe(true);
+  });
+
+  test('rejects answer without targetPeerId', () => {
+    const result = ClientToServerMessageSchema.safeParse({
+      type: 'answer',
+      v: 1,
+      sdp: 'v=0\r\no=...',
+    });
+    expect(result.success).toBe(false);
   });
 
   test('parses ice-candidate message', () => {
@@ -145,8 +155,18 @@ describe('ClientToServerMessageSchema', () => {
       type: 'ice-candidate',
       v: 1,
       candidate: { candidate: 'candidate:...', sdpMLineIndex: 0 },
+      targetPeerId: 'peer-uuid',
     });
     expect(result.success).toBe(true);
+  });
+
+  test('rejects ice-candidate without targetPeerId', () => {
+    const result = ClientToServerMessageSchema.safeParse({
+      type: 'ice-candidate',
+      v: 1,
+      candidate: { candidate: 'candidate:...', sdpMLineIndex: 0 },
+    });
+    expect(result.success).toBe(false);
   });
 
   test('parses leave message', () => {

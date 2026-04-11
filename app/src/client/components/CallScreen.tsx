@@ -32,6 +32,124 @@ interface CallScreenProps {
   dispatch: Dispatch;
 }
 
+/** Derive the status bar text from call state */
+function getStatusText(isWaiting: boolean, connectedCount: number): string {
+  if (isWaiting) return 'Waiting for peers...';
+  if (connectedCount === 0) return 'Connecting...';
+  return `${connectedCount + 1} in call`;
+}
+
+/** Remote video grid or waiting overlay when no peers */
+function VideoArea({
+  remotePeerIds,
+  remoteStreams,
+  peerConnectionStates,
+  peers,
+}: Readonly<{
+  remotePeerIds: string[];
+  remoteStreams: Map<string, MediaStream>;
+  peerConnectionStates: Record<string, PeerConnectionStatus>;
+  peers: Record<string, PeerState>;
+}>) {
+  if (remotePeerIds.length === 0) {
+    return (
+      <div class="waiting-overlay">
+        <span class="waiting-overlay-text">WAITING FOR PEERS</span>
+      </div>
+    );
+  }
+
+  return (
+    <div class="video-grid" data-count={remotePeerIds.length}>
+      {remotePeerIds.map((peerId) => (
+        <VideoTile
+          key={peerId}
+          peerId={peerId}
+          stream={remoteStreams.get(peerId) ?? null}
+          connectionStatus={peerConnectionStates[peerId] ?? 'connecting'}
+          nickname={peers[peerId]?.nickname}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Call control button bar */
+function CallControls({
+  screen,
+  showFlip,
+  dispatch,
+}: Readonly<{
+  screen: CallScreenState;
+  showFlip: boolean;
+  dispatch: Dispatch;
+}>) {
+  return (
+    <div class="controls">
+      <button
+        id="mute-btn"
+        class={`control-btn ${screen.muted ? 'active' : ''}`}
+        title={screen.muted ? 'Unmute' : 'Mute'}
+        onClick={() => dispatch({ type: 'TOGGLE_MUTE' })}
+      >
+        <span class="icon">{screen.muted ? '\uD83D\uDD07' : '\uD83C\uDF99'}</span>
+        <span class="label">{screen.muted ? 'Unmute' : 'Mute'}</span>
+      </button>
+
+      <button
+        id="video-btn"
+        class={`control-btn ${screen.videoOff ? 'active' : ''}`}
+        title="Video On/Off"
+        onClick={() => dispatch({ type: 'TOGGLE_VIDEO' })}
+      >
+        <span class="icon">{screen.videoOff ? '\uD83D\uDEAB' : '\uD83D\uDCF9'}</span>
+        <span class="label">{screen.videoOff ? 'Video On' : 'Video Off'}</span>
+      </button>
+
+      <button
+        id="pip-toggle-btn"
+        class="control-btn visible"
+        title="Toggle Preview"
+        onClick={() => dispatch({ type: 'TOGGLE_PIP_VISIBILITY' })}
+      >
+        <span class="icon">{screen.pipHidden ? '\uD83D\uDC41' : '\uD83D\uDC64'}</span>
+        <span class="label">{screen.pipHidden ? 'Show' : 'Hide'}</span>
+      </button>
+
+      {showFlip && (
+        <button
+          id="flip-btn"
+          class="control-btn visible"
+          title="Flip Camera"
+          onClick={() => dispatch({ type: 'FLIP_CAMERA' })}
+        >
+          <span class="icon">{'\uD83D\uDD04'}</span>
+          <span class="label">Flip</span>
+        </button>
+      )}
+
+      <button
+        class="control-btn"
+        title="Minimize to chat"
+        onClick={() => dispatch({ type: 'SWITCH_TO_CHAT' })}
+      >
+        <span class="icon">{'\u2B07'}</span>
+        <span class="label">Minimize</span>
+      </button>
+
+      <button
+        id="hangup-btn"
+        class="control-btn danger"
+        title="Hang Up"
+        onClick={() => dispatch({ type: 'HANGUP' })}
+      >
+        <span class="icon">{'\uD83D\uDCDE'}</span>
+        <span class="label">Hang Up</span>
+      </button>
+    </div>
+  );
+}
+
 /** Full-screen call interface for waiting and active call states */
 export function CallScreen({
   screen,
@@ -112,12 +230,7 @@ export function CallScreen({
     };
   }, [isCall, isMobile]);
 
-  const statusText = isWaiting
-    ? 'Waiting for peers...'
-    : connectedCount === 0
-      ? 'Connecting...'
-      : `${connectedCount + 1} in call`;
-
+  const statusText = getStatusText(isWaiting, connectedCount);
   const isAudioOnly = localStream !== null && localStream.getVideoTracks().length === 0;
   const showFlip = isCall && hasMultiCams && !screen.videoOff && !isAudioOnly;
   const layoutClass = isMobile ? 'mobile-call' : 'desktop-call';
@@ -129,25 +242,12 @@ export function CallScreen({
       </div>
 
       <div class="video-container">
-        {remotePeerIds.length === 0 ? (
-          // No remote peers — show waiting overlay on empty container
-          <div class="waiting-overlay">
-            <span class="waiting-overlay-text">WAITING FOR PEERS</span>
-          </div>
-        ) : (
-          // Video grid for remote peers
-          <div class="video-grid" data-count={Math.min(remotePeerIds.length, 5)}>
-            {remotePeerIds.map((peerId) => (
-              <VideoTile
-                key={peerId}
-                peerId={peerId}
-                stream={remoteStreams.get(peerId) ?? null}
-                connectionStatus={peerConnectionStates[peerId] ?? 'connecting'}
-                nickname={peers[peerId]?.nickname}
-              />
-            ))}
-          </div>
-        )}
+        <VideoArea
+          remotePeerIds={remotePeerIds}
+          remoteStreams={remoteStreams}
+          peerConnectionStates={peerConnectionStates}
+          peers={peers}
+        />
 
         {/* Local video PiP overlay */}
         <video
@@ -161,70 +261,7 @@ export function CallScreen({
         />
       </div>
 
-      <div class="controls">
-        <button
-          id="mute-btn"
-          class={`control-btn ${screen.muted ? 'active' : ''}`}
-          title={screen.muted ? 'Unmute' : 'Mute'}
-          onClick={() => dispatch({ type: 'TOGGLE_MUTE' })}
-        >
-          <span class="icon">{screen.muted ? '\uD83D\uDD07' : '\uD83C\uDF99'}</span>
-          <span class="label">{screen.muted ? 'Unmute' : 'Mute'}</span>
-        </button>
-
-        <button
-          id="video-btn"
-          class={`control-btn ${screen.videoOff ? 'active' : ''}`}
-          title={isAudioOnly ? 'No camera available' : 'Video On/Off'}
-          disabled={isAudioOnly}
-          style={isAudioOnly ? 'opacity: 0.5' : ''}
-          onClick={() => dispatch({ type: 'TOGGLE_VIDEO' })}
-        >
-          <span class="icon">{screen.videoOff ? '\uD83D\uDEAB' : '\uD83D\uDCF9'}</span>
-          <span class="label">{screen.videoOff ? 'Video On' : 'Video Off'}</span>
-        </button>
-
-        <button
-          id="pip-toggle-btn"
-          class="control-btn visible"
-          title="Toggle Preview"
-          onClick={() => dispatch({ type: 'TOGGLE_PIP_VISIBILITY' })}
-        >
-          <span class="icon">{screen.pipHidden ? '\uD83D\uDC41' : '\uD83D\uDC64'}</span>
-          <span class="label">{screen.pipHidden ? 'Show' : 'Hide'}</span>
-        </button>
-
-        {showFlip && (
-          <button
-            id="flip-btn"
-            class="control-btn visible"
-            title="Flip Camera"
-            onClick={() => dispatch({ type: 'FLIP_CAMERA' })}
-          >
-            <span class="icon">{'\uD83D\uDD04'}</span>
-            <span class="label">Flip</span>
-          </button>
-        )}
-
-        <button
-          class="control-btn"
-          title="Minimize to chat"
-          onClick={() => dispatch({ type: 'SWITCH_TO_CHAT' })}
-        >
-          <span class="icon">{'\u2B07'}</span>
-          <span class="label">Minimize</span>
-        </button>
-
-        <button
-          id="hangup-btn"
-          class="control-btn danger"
-          title="Hang Up"
-          onClick={() => dispatch({ type: 'HANGUP' })}
-        >
-          <span class="icon">{'\uD83D\uDCDE'}</span>
-          <span class="label">Hang Up</span>
-        </button>
-      </div>
+      <CallControls screen={screen} showFlip={showFlip} dispatch={dispatch} />
     </div>
   );
 }

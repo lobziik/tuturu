@@ -1156,7 +1156,8 @@ video {
   grid-template: 1fr 1fr / 1fr 1fr;
 }
 
-.video-grid[data-count="5"] {
+.video-grid[data-count="5"],
+.video-grid[data-count="6"] {
   grid-template: 1fr 1fr / 1fr 1fr 1fr;
 }
 

@@ -7,10 +7,13 @@
  * - Room: leave room (nulls aesKey, returns to login screen)
  * - About: version and project link
  *
+ * Uses native `<dialog>` for built-in Escape handling, focus trapping,
+ * and proper ARIA semantics.
+ *
  * @module components/SettingsOverlay
  */
 
-import { useState, useCallback, useEffect } from 'preact/hooks';
+import { useState, useCallback, useEffect, useRef } from 'preact/hooks';
 import type { Dispatch } from '../state/context';
 
 interface SettingsOverlayProps {
@@ -24,12 +27,30 @@ interface SettingsOverlayProps {
 
 /** Settings modal overlay */
 export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<SettingsOverlayProps>) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [nicknameInput, setNicknameInput] = useState(nickname);
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
 
   const trimmed = nicknameInput.trim();
   const nicknameChanged = trimmed.length > 0 && trimmed !== nickname;
+
+  // Show as modal on mount, handle native Escape via cancel event
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+
+    const handleCancel = (e: Event) => {
+      e.preventDefault();
+      onClose();
+    };
+    dialog.addEventListener('cancel', handleCancel);
+    return () => {
+      dialog.removeEventListener('cancel', handleCancel);
+      dialog.close();
+    };
+  }, [onClose]);
 
   const handleSaveNickname = useCallback(() => {
     if (!nicknameChanged) return;
@@ -52,21 +73,13 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
     dispatch({ type: 'LEAVE_ROOM' });
   }, [confirmLeave, dispatch]);
 
+  // Close when clicking the backdrop area (dialog element itself, not its children)
   const handleBackdropClick = useCallback(
     (e: MouseEvent) => {
-      if (e.target === e.currentTarget) onClose();
+      if (e.target === dialogRef.current) onClose();
     },
     [onClose],
   );
-
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 
   const handleNicknameKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -79,8 +92,13 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
   );
 
   return (
-    <div class="overlay-backdrop settings-backdrop" onClick={handleBackdropClick}>
-      <div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
+    <dialog
+      ref={dialogRef}
+      class="overlay-backdrop settings-backdrop"
+      aria-label="Settings"
+      onClick={handleBackdropClick}
+    >
+      <div class="settings-modal">
         <div class="settings-header">
           <span>Settings</span>
           <button
@@ -184,6 +202,6 @@ export function SettingsOverlay({ nickname, dispatch, onClose }: Readonly<Settin
           </div>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

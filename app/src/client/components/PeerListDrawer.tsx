@@ -4,10 +4,13 @@
  * Displays the current user first ("you"), followed by all connected peers.
  * Peers show their decrypted nickname, or a truncated peerId as fallback.
  *
+ * Uses native `<dialog>` for built-in Escape handling, focus trapping,
+ * and proper ARIA semantics.
+ *
  * @module components/PeerListDrawer
  */
 
-import { useCallback, useEffect } from 'preact/hooks';
+import { useCallback, useEffect, useRef } from 'preact/hooks';
 import type { PeerState } from '../../shared/types';
 
 interface PeerListDrawerProps {
@@ -27,29 +30,43 @@ function formatPeerName(peer: PeerState): string {
 
 /** Slide-from-right drawer listing all online users in the room */
 export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerListDrawerProps>) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const peerEntries = Object.values(peers);
   const totalCount = peerEntries.length + 1; // +1 for self
 
+  // Show as modal on mount, handle native Escape via cancel event
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+
+    const handleCancel = (e: Event) => {
+      e.preventDefault();
+      onClose();
+    };
+    dialog.addEventListener('cancel', handleCancel);
+    return () => {
+      dialog.removeEventListener('cancel', handleCancel);
+      dialog.close();
+    };
+  }, [onClose]);
+
+  // Close when clicking the backdrop area (dialog element itself, not its children)
   const handleBackdropClick = useCallback(
     (e: MouseEvent) => {
-      // Only close when clicking the backdrop itself, not the drawer content
-      if (e.target === e.currentTarget) onClose();
+      if (e.target === dialogRef.current) onClose();
     },
     [onClose],
   );
 
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
   return (
-    <div class="overlay-backdrop peer-list-backdrop" onClick={handleBackdropClick}>
-      <div class="peer-list-drawer" role="dialog" aria-modal="true" aria-label="Online users">
+    <dialog
+      ref={dialogRef}
+      class="overlay-backdrop peer-list-backdrop"
+      aria-label="Online users"
+      onClick={handleBackdropClick}
+    >
+      <div class="peer-list-drawer">
         <div class="peer-list-header">
           <span>Online ({totalCount})</span>
           <button
@@ -75,6 +92,6 @@ export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerLi
           ))}
         </ul>
       </div>
-    </div>
+    </dialog>
   );
 }

@@ -10,7 +10,7 @@
  * @module components/PeerListDrawer
  */
 
-import { useCallback, useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import type { PeerState } from '../../shared/types';
 
 interface PeerListDrawerProps {
@@ -34,7 +34,7 @@ export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerLi
   const peerEntries = Object.values(peers);
   const totalCount = peerEntries.length + 1; // +1 for self
 
-  // Show as modal on mount, handle native Escape via cancel event
+  // Show as modal on mount, handle native Escape and backdrop click
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -44,28 +44,20 @@ export function PeerListDrawer({ peers, selfNickname, onClose }: Readonly<PeerLi
       e.preventDefault();
       onClose();
     };
+    const handleClick = (e: MouseEvent) => {
+      if (e.target === dialog) onClose();
+    };
     dialog.addEventListener('cancel', handleCancel);
+    dialog.addEventListener('click', handleClick);
     return () => {
       dialog.removeEventListener('cancel', handleCancel);
+      dialog.removeEventListener('click', handleClick);
       dialog.close();
     };
   }, [onClose]);
 
-  // Close when clicking the backdrop area (dialog element itself, not its children)
-  const handleBackdropClick = useCallback(
-    (e: MouseEvent) => {
-      if (e.target === dialogRef.current) onClose();
-    },
-    [onClose],
-  );
-
   return (
-    <dialog
-      ref={dialogRef}
-      class="overlay-backdrop peer-list-backdrop"
-      aria-label="Online users"
-      onClick={handleBackdropClick}
-    >
+    <dialog ref={dialogRef} class="overlay-backdrop peer-list-backdrop" aria-label="Online users">
       <div class="peer-list-drawer">
         <div class="peer-list-header">
           <span>Online ({totalCount})</span>

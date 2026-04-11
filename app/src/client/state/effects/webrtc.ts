@@ -143,7 +143,7 @@ function handleReceivedOfferEffect(
   iceConfig: IceConfig,
 ): void {
   const { fromPeerId } = action;
-  let pc = refs.peerConnections.current.get(fromPeerId);
+  let pc = meshCtx.peerConnections.get(fromPeerId);
   if (!pc) {
     pc = createPeerConnection(
       {
@@ -151,11 +151,11 @@ function handleReceivedOfferEffect(
         iceTransportPolicy: iceConfig.iceTransportPolicy,
       },
       refs.localStream.current,
-      refs.ws.current,
+      meshCtx.ws,
       meshCtx.dispatch,
       fromPeerId,
     );
-    refs.peerConnections.current.set(fromPeerId, pc);
+    meshCtx.peerConnections.set(fromPeerId, pc);
   }
 
   const isPolite = selfPeerId < fromPeerId;
@@ -165,10 +165,9 @@ function handleReceivedOfferEffect(
 /** Handle RECEIVED_ANSWER: route to correct PC */
 function handleReceivedAnswerEffect(
   action: Extract<Action, { type: 'RECEIVED_ANSWER' }>,
-  refs: ResourceRefs,
   meshCtx: MeshContext,
 ): void {
-  const pc = refs.peerConnections.current.get(action.fromPeerId);
+  const pc = meshCtx.peerConnections.get(action.fromPeerId);
   if (!pc) return;
 
   void handleAnswer(pc, action.answer, meshCtx, action.fromPeerId);
@@ -177,10 +176,9 @@ function handleReceivedAnswerEffect(
 /** Handle RECEIVED_ICE_CANDIDATE: route to correct PC */
 function handleReceivedIceCandidateEffect(
   action: Extract<Action, { type: 'RECEIVED_ICE_CANDIDATE' }>,
-  refs: ResourceRefs,
   meshCtx: MeshContext,
 ): void {
-  const pc = refs.peerConnections.current.get(action.fromPeerId);
+  const pc = meshCtx.peerConnections.get(action.fromPeerId);
   if (!pc) return;
 
   void handleIceCandidate(pc, action.candidate, meshCtx, action.fromPeerId);
@@ -209,10 +207,10 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
   }
 
   if (action.type === 'RECEIVED_ANSWER') {
-    handleReceivedAnswerEffect(action, refs, meshCtx);
+    handleReceivedAnswerEffect(action, meshCtx);
   }
 
   if (action.type === 'RECEIVED_ICE_CANDIDATE') {
-    handleReceivedIceCandidateEffect(action, refs, meshCtx);
+    handleReceivedIceCandidateEffect(action, meshCtx);
   }
 }

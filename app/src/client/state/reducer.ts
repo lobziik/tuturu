@@ -364,6 +364,8 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
         wsStatus: 'disconnected',
         reconnectAttempt: 0,
         callActive: false,
+        callPeers: [],
+        peerConnectionStates: {},
         screen: inLocalCall
           ? {
               type: 'error',

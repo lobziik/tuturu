@@ -164,11 +164,18 @@ describe('reducer', () => {
     test('WS_ROOM_DISCONNECTED sets wsStatus and errors active call', () => {
       const state = roomState(
         { type: 'call', muted: false, videoOff: false, pipHidden: false },
-        { wsStatus: 'connected' },
+        {
+          wsStatus: 'connected',
+          callPeers: ['peer-a', 'peer-b'],
+          peerConnectionStates: { 'peer-a': 'connected', 'peer-b': 'connecting' },
+        },
       );
       const room = expectRoom(reducer(state, { type: 'WS_ROOM_DISCONNECTED' }));
       expect(room.wsStatus).toBe('disconnected');
       expect(room.screen.type).toBe('error');
+      expect(room.callActive).toBe(false);
+      expect(room.callPeers).toEqual([]);
+      expect(room.peerConnectionStates).toEqual({});
     });
 
     test('WS_ROOM_DISCONNECTED does not affect chat view screen', () => {

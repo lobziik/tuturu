@@ -49,12 +49,13 @@ function buildMeshContext(refs: ResourceRefs, dispatch: (action: Action) => void
 function handleCallPeersEffect(
   action: Extract<Action, { type: 'CALL_PEERS_RECEIVED' }>,
   refs: ResourceRefs,
-  dispatch: (action: Action) => void,
+  meshCtx: MeshContext,
   selfPeerId: string,
   iceConfig: IceConfig,
 ): void {
+  const { peerConnections, makingOfferPeers, dispatch } = meshCtx;
   const remotePeers = new Set(action.callPeers.filter((id: string) => id !== selfPeerId));
-  const currentPeers = new Set(refs.peerConnections.current.keys());
+  const currentPeers = new Set(peerConnections.keys());
 
   // Create PCs for new peers
   for (const peerId of remotePeers) {
@@ -66,15 +67,15 @@ function handleCallPeersEffect(
         iceTransportPolicy: iceConfig.iceTransportPolicy,
       },
       refs.localStream.current,
-      refs.ws.current,
+      meshCtx.ws,
       dispatch,
       peerId,
     );
-    refs.peerConnections.current.set(peerId, pc);
+    peerConnections.set(peerId, pc);
 
     // Impolite peer (higher peerId) sends offer
     if (selfPeerId > peerId) {
-      sendOfferToPeer(pc, peerId, refs, dispatch);
+      sendOfferToPeer(pc, peerId, meshCtx);
     }
     // Polite peer (lower peerId) waits for offer — PC is ready for incoming offer
   }
@@ -82,42 +83,38 @@ function handleCallPeersEffect(
   // Close PCs for peers that left the call
   for (const peerId of currentPeers) {
     if (!remotePeers.has(peerId)) {
-      const pc = refs.peerConnections.current.get(peerId);
+      const pc = peerConnections.get(peerId);
       if (pc) closePeerConnection(pc);
-      refs.peerConnections.current.delete(peerId);
+      peerConnections.delete(peerId);
       refs.remoteStreams.current.delete(peerId);
-      refs.makingOfferPeers.current.delete(peerId);
+      makingOfferPeers.delete(peerId);
       console.log(`[RTC:${peerId}] Peer left call, closed connection`);
     }
   }
 }
 
 /** Create and send an SDP offer for a specific peer (impolite side) */
-function sendOfferToPeer(
-  pc: RTCPeerConnection,
-  peerId: string,
-  refs: ResourceRefs,
-  dispatch: (action: Action) => void,
-): void {
-  refs.makingOfferPeers.current.add(peerId);
+function sendOfferToPeer(pc: RTCPeerConnection, peerId: string, meshCtx: MeshContext): void {
+  const { peerConnections, makingOfferPeers, ws, dispatch } = meshCtx;
+  makingOfferPeers.add(peerId);
   pc.createOffer()
     .then((offer) => {
-      if (refs.peerConnections.current.get(peerId) !== pc) return;
-      if (!refs.makingOfferPeers.current.has(peerId)) {
+      if (peerConnections.get(peerId) !== pc) return;
+      if (!makingOfferPeers.has(peerId)) {
         console.log(`[RTC:${peerId}] Offer creation aborted (glare resolution yielded)`);
         return;
       }
       return pc.setLocalDescription(offer);
     })
     .then(() => {
-      refs.makingOfferPeers.current.delete(peerId);
-      if (refs.peerConnections.current.get(peerId) !== pc) return;
+      makingOfferPeers.delete(peerId);
+      if (peerConnections.get(peerId) !== pc) return;
       if (pc.signalingState !== 'have-local-offer') return;
       const sdp = pc.localDescription?.sdp;
       if (!sdp) {
         throw new Error('localDescription has no SDP after setLocalDescription');
       }
-      sendMessage(refs.ws.current, {
+      sendMessage(ws, {
         type: 'offer',
         v: 1,
         sdp,
@@ -126,8 +123,8 @@ function sendOfferToPeer(
       console.log(`[RTC:${peerId}] Sent offer`);
     })
     .catch((error: Error) => {
-      refs.makingOfferPeers.current.delete(peerId);
-      if (refs.peerConnections.current.get(peerId) !== pc) return;
+      makingOfferPeers.delete(peerId);
+      if (peerConnections.get(peerId) !== pc) return;
       console.error(`[RTC:${peerId}] Failed to create offer:`, error);
       dispatch({
         type: 'RTC_FAILED',
@@ -204,7 +201,7 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
   const meshCtx = buildMeshContext(refs, dispatch);
 
   if (action.type === 'CALL_PEERS_RECEIVED' && selfPeerId && iceConfig) {
-    handleCallPeersEffect(action, refs, dispatch, selfPeerId, iceConfig);
+    handleCallPeersEffect(action, refs, meshCtx, selfPeerId, iceConfig);
   }
 
   if (action.type === 'RECEIVED_OFFER' && iceConfig && selfPeerId) {

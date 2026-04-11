@@ -23,12 +23,15 @@ const reactCompatPlugin: BunPlugin = {
   },
 };
 
+const isMinify = process.argv.includes('--minify');
+const noSourcemap = process.argv.includes('--no-sourcemap');
+
 const result = await Bun.build({
   entrypoints: ['src/client/index.tsx'],
   outdir: 'public',
   target: 'browser',
-  sourcemap: 'inline',
-  minify: process.argv.includes('--minify'),
+  sourcemap: noSourcemap ? 'none' : 'inline',
+  minify: isMinify,
   plugins: [reactCompatPlugin],
   alias: {
     react: 'preact/compat',

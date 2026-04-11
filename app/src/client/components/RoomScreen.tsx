@@ -38,8 +38,8 @@ interface RoomScreenProps {
   screen: Screen;
   /** Whether a call is active in the room (from server broadcast) */
   callActive: boolean;
-  /** Remote peer's media stream (for floating PiP) */
-  remoteStream: MediaStream | null;
+  /** Remote peers' media streams keyed by peerId (for floating PiP) */
+  remoteStreams: Map<string, MediaStream>;
   /** Currently open overlay panel */
   overlay: 'peers' | 'settings' | null;
   /** State dispatch function */
@@ -57,7 +57,7 @@ export function RoomScreen({
   peers,
   screen,
   callActive,
-  remoteStream,
+  remoteStreams,
   overlay,
   dispatch,
 }: Readonly<RoomScreenProps>) {
@@ -103,8 +103,7 @@ export function RoomScreen({
   const callDisabled = screen.type !== 'idle' || wsStatus !== 'connected';
 
   // Show floating PiP when call is active but view is chat (minimized)
-  const showFloatingPiP =
-    screen.type === 'waiting-for-peer' || screen.type === 'negotiating' || screen.type === 'call';
+  const showFloatingPiP = screen.type === 'waiting-for-peer' || screen.type === 'call';
 
   return (
     <div ref={screenRef} class="room-screen">
@@ -128,7 +127,7 @@ export function RoomScreen({
         onRefocusInput={handleRefocusInput}
       />
       <ChatInput onSend={handleSend} inputRef={inputRef} disabled={wsStatus !== 'connected'} />
-      {showFloatingPiP && <FloatingCallPiP remoteStream={remoteStream} dispatch={dispatch} />}
+      {showFloatingPiP && <FloatingCallPiP remoteStreams={remoteStreams} dispatch={dispatch} />}
       {overlay === 'peers' && (
         <PeerListDrawer peers={peers} selfNickname={nickname} onClose={handleCloseOverlay} />
       )}

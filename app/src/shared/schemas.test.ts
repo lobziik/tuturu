@@ -364,6 +364,7 @@ describe('ServerToClientMessageSchema', () => {
       type: 'answer',
       v: 1,
       sdp: 'v=0\r\no=...',
+      peerId: 'uuid-123',
     });
     expect(result.success).toBe(true);
   });
@@ -373,6 +374,7 @@ describe('ServerToClientMessageSchema', () => {
       type: 'ice-candidate',
       v: 1,
       candidate: { candidate: 'candidate:...' },
+      peerId: 'uuid-123',
     });
     expect(result.success).toBe(true);
   });

@@ -14,6 +14,7 @@ import type { MessageStore } from './database';
 import type { RoomManager, ServerClientData, SendFn } from './rooms';
 import type { Heartbeat } from './heartbeat';
 import { createHeartbeat } from './heartbeat';
+import { MAX_CALL_PARTICIPANTS } from '../shared/constants';
 
 /** ICE configuration provider */
 interface IceConfig {
@@ -346,7 +347,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
           type: 'error',
           v: 1,
           code: 'CALL_FULL',
-          message: 'Call is full (max 2 participants)',
+          message: `Call is full (max ${MAX_CALL_PARTICIPANTS} participants)`,
         });
         return;
       }

@@ -95,10 +95,13 @@ function resetFacingMode(): void {
   currentFacingMode = 'user';
 }
 
-/** Flip camera between front and back with applyConstraints fallback to getUserMedia */
+/**
+ * Flip camera between front and back with applyConstraints fallback to getUserMedia.
+ * Replaces the video track in ALL peer connections (mesh support).
+ */
 export async function flipCamera(
   stream: MediaStream,
-  pc: RTCPeerConnection | null,
+  peerConnections: Map<string, RTCPeerConnection>,
   dispatch: Dispatch,
 ): Promise<void> {
   const videoTrack = stream.getVideoTracks()[0];
@@ -142,11 +145,12 @@ export async function flipCamera(
     stream.removeTrack(videoTrack);
     stream.addTrack(newVideoTrack);
 
-    if (pc) {
+    // Replace track in ALL peer connections (mesh)
+    for (const [peerId, pc] of peerConnections) {
       const videoSender = pc.getSenders().find((sender) => sender.track?.kind === 'video');
       if (videoSender) {
         await videoSender.replaceTrack(newVideoTrack);
-        console.log('[MEDIA] Replaced track in peer connection');
+        console.log(`[MEDIA] Replaced track in peer connection ${peerId}`);
       }
     }
 

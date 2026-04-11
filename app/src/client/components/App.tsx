@@ -33,9 +33,9 @@ export function App() {
 
   // Mutable resource refs — individual useRef calls for hook-order stability
   const wsRef = useRef<WebSocket | null>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const peerConnectionsRef = useRef(new Map<string, RTCPeerConnection>());
   const localStreamRef = useRef<MediaStream | null>(null);
-  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamsRef = useRef(new Map<string, MediaStream>());
   const errorTimeoutRef = useRef<number | null>(null);
   const aesKeyRef = useRef<CryptoKey | null>(null);
   const dbRef = useRef<IDBDatabase | null>(null);
@@ -44,16 +44,16 @@ export function App() {
   const reconnectAttemptRef = useRef<number>(0);
   const seqRef = useRef<number>(0);
   const seqLoadedRef = useRef<boolean>(false);
-  const makingOfferRef = useRef<boolean>(false);
+  const makingOfferPeersRef = useRef(new Set<string>());
   const inCallRef = useRef<boolean>(false);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
     () => ({
       ws: wsRef,
-      pc: pcRef,
+      peerConnections: peerConnectionsRef,
       localStream: localStreamRef,
-      remoteStream: remoteStreamRef,
+      remoteStreams: remoteStreamsRef,
       errorTimeout: errorTimeoutRef,
       aesKey: aesKeyRef,
       db: dbRef,
@@ -62,7 +62,7 @@ export function App() {
       reconnectAttempt: reconnectAttemptRef,
       seq: seqRef,
       seqLoaded: seqLoadedRef,
-      makingOffer: makingOfferRef,
+      makingOfferPeers: makingOfferPeersRef,
       inCall: inCallRef,
     }),
     [],
@@ -88,7 +88,7 @@ export function App() {
       refs.localStream.current = action.stream;
     }
     if (action.type === 'RTC_TRACK_RECEIVED') {
-      refs.remoteStream.current = action.stream;
+      refs.remoteStreams.current.set(action.peerId, action.stream);
     }
     if (action.type === 'SUBMIT_LOGIN') {
       refs.aesKey.current = action.aesKey;
@@ -154,7 +154,7 @@ export function App() {
           peers={roomState.peers}
           screen={roomState.screen}
           callActive={roomState.callActive}
-          remoteStream={refs.remoteStream.current}
+          remoteStreams={refs.remoteStreams.current}
           overlay={roomState.overlay}
           dispatch={dispatch}
         />
@@ -171,13 +171,14 @@ export function App() {
         return <AcquiringMediaScreen />;
 
       case 'waiting-for-peer':
-      case 'negotiating':
       case 'call':
         return (
           <CallScreen
             screen={roomState.screen}
             localStream={refs.localStream.current}
-            remoteStream={refs.remoteStream.current}
+            remoteStreams={refs.remoteStreams.current}
+            peerConnectionStates={roomState.peerConnectionStates}
+            peers={roomState.peers}
             dispatch={dispatch}
           />
         );

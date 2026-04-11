@@ -12,7 +12,7 @@
  * Screen Transition Flow (Happy Path):
  * ```
  * idle -> (SWITCH_TO_CALL) -> acquiring-media -> waiting-for-peer ->
- * negotiating -> call -> (HANGUP) -> idle
+ * (CALL_PEERS_RECEIVED) -> call -> (HANGUP) -> idle
  * ```
  *
  * Error States:
@@ -25,22 +25,24 @@
 import type { IceServerConfig, IceTransportPolicy, PeerState } from '../../shared/types';
 import type { ChatMessage } from '../../shared/schemas';
 
+/** Per-peer WebRTC connection status for mesh calls */
+export type PeerConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'failed';
+
 // ============================================================================
 // Screen types — video call sub-state machine (within room phase)
 // ============================================================================
 
-/** Screen types - discriminated union for type-safe state transitions */
+/**
+ * Screen types - discriminated union for type-safe state transitions.
+ *
+ * Mesh call flow: idle → acquiring-media → waiting-for-peer → call → idle.
+ * Per-peer negotiation state is tracked in {@link PeerConnectionStatus},
+ * not as a global screen type.
+ */
 export type Screen =
   | { type: 'idle' }
   | { type: 'acquiring-media' }
   | { type: 'waiting-for-peer'; muted: boolean; videoOff: boolean; pipHidden: boolean }
-  | {
-      type: 'negotiating';
-      role: 'caller' | 'callee';
-      muted: boolean;
-      videoOff: boolean;
-      pipHidden: boolean;
-    }
   | { type: 'call'; muted: boolean; videoOff: boolean; pipHidden: boolean }
   | { type: 'error'; message: string; canRetry: boolean; previousScreen?: Screen };
 
@@ -105,6 +107,10 @@ export type AppState =
       iceTransportPolicy: IceTransportPolicy;
       /** Whether a call is currently active in the room (from server call-peers broadcast) */
       callActive: boolean;
+      /** List of peer IDs currently in the video call (from server call-peers broadcast) */
+      callPeers: string[];
+      /** Per-peer WebRTC connection status for rendering video grid */
+      peerConnectionStates: Record<string, PeerConnectionStatus>;
       /** Currently open overlay panel (null = none) */
       overlay: 'peers' | 'settings' | null;
     };
@@ -196,11 +202,11 @@ export type Action =
   // Server responses — call signaling
   | { type: 'CALL_PEERS_RECEIVED'; callPeers: string[] }
 
-  // Server responses — signaling / ICE
+  // Server responses — signaling / ICE (peerId identifies which peer in mesh)
   | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy }
-  | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit; fromPeerId?: string }
-  | { type: 'RECEIVED_ANSWER'; answer: RTCSessionDescriptionInit }
-  | { type: 'RECEIVED_ICE_CANDIDATE'; candidate: RTCIceCandidateInit }
+  | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit; fromPeerId: string }
+  | { type: 'RECEIVED_ANSWER'; answer: RTCSessionDescriptionInit; fromPeerId: string }
+  | { type: 'RECEIVED_ICE_CANDIDATE'; candidate: RTCIceCandidateInit; fromPeerId: string }
   | { type: 'SERVER_ERROR'; error: string }
 
   // Heartbeat
@@ -210,11 +216,11 @@ export type Action =
   | { type: 'MEDIA_ACQUIRED'; stream: MediaStream; audioOnly: boolean }
   | { type: 'MEDIA_ERROR'; error: string }
 
-  // WebRTC lifecycle
-  | { type: 'RTC_CONNECTED' }
-  | { type: 'RTC_DISCONNECTED' }
-  | { type: 'RTC_FAILED'; reason: string }
-  | { type: 'RTC_TRACK_RECEIVED'; stream: MediaStream };
+  // WebRTC lifecycle (peerId identifies which peer connection in mesh)
+  | { type: 'RTC_CONNECTED'; peerId: string }
+  | { type: 'RTC_DISCONNECTED'; peerId: string }
+  | { type: 'RTC_FAILED'; reason: string; peerId: string }
+  | { type: 'RTC_TRACK_RECEIVED'; stream: MediaStream; peerId: string };
 
 /**
  * Initial state — app starts on nickname screen.

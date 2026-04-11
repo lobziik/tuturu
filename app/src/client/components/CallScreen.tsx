@@ -1,41 +1,59 @@
 /**
- * Call screen — handles waiting-for-peer, negotiating, and call states.
- * Renders full-screen video interface with controls.
+ * Call screen — handles waiting-for-peer and call states for mesh video.
+ * Renders full-screen video interface with responsive grid layout and controls.
+ *
+ * Grid layout by remote peer count:
+ * - 1: single tile, full container
+ * - 2: 1x2 vertical stack
+ * - 3-4: 2x2 grid
+ * - 5: 3x2 grid
  *
  * @module components/CallScreen
  */
 
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { Screen } from '../state/types';
+import type { Screen, PeerConnectionStatus } from '../state/types';
+import type { PeerState } from '../../shared/types';
 import type { Dispatch } from '../state/context';
 import { hasMultipleCameras } from '../services/media';
 import { setupPipDrag, cleanupPipDrag } from '../services/pip-drag';
+import { VideoTile } from './VideoTile';
 
 /** Screen types that this component handles */
-type CallScreenState = Extract<
-  Screen,
-  { type: 'waiting-for-peer' } | { type: 'negotiating' } | { type: 'call' }
->;
+type CallScreenState = Extract<Screen, { type: 'waiting-for-peer' } | { type: 'call' }>;
 
 interface CallScreenProps {
   screen: CallScreenState;
   localStream: MediaStream | null;
-  remoteStream: MediaStream | null;
+  remoteStreams: Map<string, MediaStream>;
+  peerConnectionStates: Record<string, PeerConnectionStatus>;
+  /** Room peers (for nickname resolution) */
+  peers: Record<string, PeerState>;
   dispatch: Dispatch;
 }
 
-/** Full-screen call interface for waiting, negotiating, and active call states */
-export function CallScreen({ screen, localStream, remoteStream, dispatch }: CallScreenProps) {
+/** Full-screen call interface for waiting and active call states */
+export function CallScreen({
+  screen,
+  localStream,
+  remoteStreams,
+  peerConnectionStates,
+  peers,
+  dispatch,
+}: Readonly<CallScreenProps>) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const statusBarRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hasMultiCams, setHasMultiCams] = useState(false);
   const statusHideTimeoutRef = useRef<number | null>(null);
 
   const isCall = screen.type === 'call';
-  const isNegotiating = screen.type === 'negotiating';
   const isWaiting = screen.type === 'waiting-for-peer';
+
+  const remotePeerIds = Object.keys(peerConnectionStates);
+  const connectedCount = Object.values(peerConnectionStates).filter(
+    (s) => s === 'connected',
+  ).length;
 
   // Responsive layout
   useEffect(() => {
@@ -59,13 +77,6 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream]);
-
-  // Set remote video srcObject
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-    }
-  }, [remoteStream]);
 
   // PiP drag
   useEffect(() => {
@@ -102,12 +113,10 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
   }, [isCall, isMobile]);
 
   const statusText = isWaiting
-    ? 'Waiting for peer...'
-    : isNegotiating
-      ? (screen as Extract<Screen, { type: 'negotiating' }>).role === 'caller'
-        ? 'Calling peer...'
-        : 'Answering call...'
-      : 'Connected';
+    ? 'Waiting for peers...'
+    : connectedCount === 0
+      ? 'Connecting...'
+      : `${connectedCount + 1} in call`;
 
   const isAudioOnly = localStream !== null && localStream.getVideoTracks().length === 0;
   const showFlip = isCall && hasMultiCams && !screen.videoOff && !isAudioOnly;
@@ -120,7 +129,27 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
       </div>
 
       <div class="video-container">
-        <video id="remote-video" ref={remoteVideoRef} autoplay playsinline />
+        {remotePeerIds.length === 0 ? (
+          // No remote peers — show waiting overlay on empty container
+          <div class="waiting-overlay">
+            <span class="waiting-overlay-text">WAITING FOR PEERS</span>
+          </div>
+        ) : (
+          // Video grid for remote peers
+          <div class="video-grid" data-count={Math.min(remotePeerIds.length, 5)}>
+            {remotePeerIds.map((peerId) => (
+              <VideoTile
+                key={peerId}
+                peerId={peerId}
+                stream={remoteStreams.get(peerId) ?? null}
+                connectionStatus={peerConnectionStates[peerId] ?? 'connecting'}
+                nickname={peers[peerId]?.nickname}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Local video PiP overlay */}
         <video
           id="local-video"
           ref={localVideoRef}
@@ -130,13 +159,6 @@ export function CallScreen({ screen, localStream, remoteStream, dispatch }: Call
           class={screen.pipHidden ? 'pip-hidden' : ''}
           style={isAudioOnly ? 'display: none' : ''}
         />
-        {(isWaiting || isNegotiating) && (
-          <div class="waiting-overlay">
-            <span class="waiting-overlay-text">
-              {isWaiting ? 'WAITING FOR PEER' : 'CONNECTING TO PEER'}
-            </span>
-          </div>
-        )}
       </div>
 
       <div class="controls">

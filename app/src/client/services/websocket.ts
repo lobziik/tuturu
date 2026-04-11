@@ -211,7 +211,7 @@ function handleServerMessage(
       dispatch({
         type: 'RECEIVED_OFFER',
         offer: { type: 'offer', sdp: message.sdp },
-        ...(message.peerId != null && { fromPeerId: message.peerId }),
+        fromPeerId: message.peerId,
       });
       break;
 
@@ -219,6 +219,7 @@ function handleServerMessage(
       dispatch({
         type: 'RECEIVED_ANSWER',
         answer: { type: 'answer', sdp: message.sdp },
+        fromPeerId: message.peerId,
       });
       break;
 
@@ -226,6 +227,7 @@ function handleServerMessage(
       dispatch({
         type: 'RECEIVED_ICE_CANDIDATE',
         candidate: message.candidate as RTCIceCandidateInit,
+        fromPeerId: message.peerId,
       });
       break;
 
@@ -329,6 +331,7 @@ function handleHistory(
  * Used for history messages where replay/dedup checks are not appropriate.
  *
  * @param wire - Raw encrypted bytes (caller handles base64 decoding)
+ * @param aesKey - AES-GCM decryption key
  */
 async function decryptAndValidateBlob(
   wire: Uint8Array,

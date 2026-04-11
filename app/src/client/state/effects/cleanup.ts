@@ -2,7 +2,7 @@
  * Cleanup side effects — resource teardown for calls and room exit.
  *
  * Two levels of cleanup:
- * - Call: tears down WebRTC + media, keeps WS alive for chat
+ * - Call: tears down all WebRTC connections + media, keeps WS alive for chat
  * - Room: tears down everything including WS and timers
  *
  * @module state/effects/cleanup
@@ -15,13 +15,13 @@ import type { EffectContext, EffectArgs, ResourceRefs } from './types';
 import { getScreen } from './types';
 
 /**
- * Release video call resources (peer connection, media streams).
+ * Release video call resources (all peer connections, media streams).
  * Also notifies the server via leave-call if we previously joined.
  * Does NOT close the room-level WebSocket — chat stays alive.
  */
 function cleanupCallResources(refs: ResourceRefs): void {
   console.log('[CLEANUP] Cleaning up call resources');
-  refs.makingOffer.current = false;
+  refs.makingOfferPeers.current.clear();
 
   // Notify server so it removes us from callPeers.
   // Without this, the server would still consider us in-call,
@@ -31,15 +31,17 @@ function cleanupCallResources(refs: ResourceRefs): void {
   }
   refs.inCall.current = false;
 
-  if (refs.pc.current) {
-    closePeerConnection(refs.pc.current);
-    refs.pc.current = null;
+  // Close ALL peer connections (mesh)
+  for (const [, pc] of refs.peerConnections.current) {
+    closePeerConnection(pc);
   }
+  refs.peerConnections.current.clear();
+  refs.remoteStreams.current.clear();
+
   if (refs.localStream.current) {
     stopMediaStream(refs.localStream.current);
     refs.localStream.current = null;
   }
-  refs.remoteStream.current = null;
 }
 
 /**
@@ -76,12 +78,11 @@ export function handleCleanupEffects(ctx: EffectContext, args: EffectArgs): void
     cleanupCallResources(refs);
   }
 
-  // Remote peer left (CALL_PEERS_RECEIVED with empty remote list) — reducer
-  // transitions call/negotiating → idle, so we detect the screen change here.
-  const wasInCall =
-    prevScreen?.type === 'call' ||
-    prevScreen?.type === 'negotiating' ||
-    prevScreen?.type === 'waiting-for-peer';
+  // All remote peers left (call → waiting-for-peer) — per-peer cleanup is handled
+  // by the webrtc effects diff logic, NOT here. Full cleanup only when going to idle.
+
+  // Transition from active call state to idle → full cleanup
+  const wasInCall = prevScreen?.type === 'call' || prevScreen?.type === 'waiting-for-peer';
   if (wasInCall && newScreen?.type === 'idle') {
     cleanupCallResources(refs);
   }

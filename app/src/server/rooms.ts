@@ -9,6 +9,7 @@
 
 import type { ServerWebSocket } from 'bun';
 import type { ServerToClientMessage } from '../shared/schemas';
+import { MAX_CALL_PARTICIPANTS } from '../shared/constants';
 
 /** WebSocket data attached to each connection */
 export interface ServerClientData {
@@ -215,8 +216,8 @@ export function createRoomManager(options: { maxParticipants: number; send: Send
       return { error: 'not_in_room' };
     }
 
-    // 1-to-1 guard: reject if call already has 2 participants
-    if (room.callPeers.size >= 2) {
+    // Full mesh guard: reject if call is at capacity
+    if (room.callPeers.size >= MAX_CALL_PARTICIPANTS) {
       return { error: 'call_full' };
     }
 
@@ -241,12 +242,11 @@ export function createRoomManager(options: { maxParticipants: number; send: Send
 
     room.callPeers.delete(peerId);
 
-    // Broadcast updated call peer list to ALL room peers (except the leaver)
+    // Broadcast updated call peer list to ALL room peers (including the leaver,
+    // so they know a call is still active and can show the indicator)
     const updatedCallPeers = Array.from(room.callPeers);
-    for (const [existingPeerId, peer] of room.peers) {
-      if (existingPeerId !== peerId) {
-        send(peer.ws, { type: 'call-peers', v: 1, callPeers: updatedCallPeers });
-      }
+    for (const [, peer] of room.peers) {
+      send(peer.ws, { type: 'call-peers', v: 1, callPeers: updatedCallPeers });
     }
 
     console.log(`[CALL] Peer ${peerId} left call in room ${roomId}`);

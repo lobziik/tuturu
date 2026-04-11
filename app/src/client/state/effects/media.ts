@@ -49,8 +49,8 @@ export function handleMediaEffects(ctx: EffectContext, args: EffectArgs): void {
     }
   }
 
-  // Flip camera → Switch camera facing mode
+  // Flip camera → Switch camera facing mode (replaces track in all mesh PCs)
   if (action.type === 'FLIP_CAMERA' && refs.localStream.current) {
-    void flipCamera(refs.localStream.current, refs.pc.current, dispatch);
+    void flipCamera(refs.localStream.current, refs.peerConnections.current, dispatch);
   }
 }

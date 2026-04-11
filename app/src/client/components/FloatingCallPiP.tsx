@@ -1,6 +1,7 @@
 /**
- * Floating Picture-in-Picture for minimized call — shows remote video
- * (or phone icon for audio-only) as a small draggable overlay on the chat screen.
+ * Floating Picture-in-Picture for minimized call — shows the first connected
+ * remote video (or phone icon for audio-only/no peers) as a small draggable
+ * overlay on the chat screen.
  *
  * @module components/FloatingCallPiP
  */
@@ -9,26 +10,39 @@ import { useEffect, useRef, useCallback } from 'preact/hooks';
 import type { Dispatch } from '../state/context';
 
 interface FloatingCallPiPProps {
-  /** Remote peer's media stream (null if not yet received) */
-  remoteStream: MediaStream | null;
+  /** Remote peers' media streams keyed by peerId */
+  remoteStreams: Map<string, MediaStream>;
   /** State dispatch function */
   dispatch: Dispatch;
 }
 
-/** Small floating window showing the remote video during a minimized call */
-export function FloatingCallPiP({ remoteStream, dispatch }: Readonly<FloatingCallPiPProps>) {
+/** Small floating window showing the first remote video during a minimized call */
+export function FloatingCallPiP({ remoteStreams, dispatch }: Readonly<FloatingCallPiPProps>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(
     null,
   );
 
+  // Pick the first remote stream with video tracks
+  let firstStream: MediaStream | null = null;
+  for (const stream of remoteStreams.values()) {
+    if (stream.getVideoTracks().length > 0) {
+      firstStream = stream;
+      break;
+    }
+  }
+  // Fallback: any stream (audio-only)
+  if (!firstStream && remoteStreams.size > 0) {
+    firstStream = remoteStreams.values().next().value ?? null;
+  }
+
   // Set remote video srcObject
   useEffect(() => {
-    if (videoRef.current && remoteStream) {
-      videoRef.current.srcObject = remoteStream;
+    if (videoRef.current && firstStream) {
+      videoRef.current.srcObject = firstStream;
     }
-  }, [remoteStream]);
+  }, [firstStream]);
 
   // Pointer event handlers for drag
   const onPointerDown = useCallback((e: PointerEvent) => {
@@ -75,7 +89,7 @@ export function FloatingCallPiP({ remoteStream, dispatch }: Readonly<FloatingCal
     [dispatch],
   );
 
-  const hasVideo = remoteStream !== null && remoteStream.getVideoTracks().length > 0;
+  const hasVideo = firstStream !== null && firstStream.getVideoTracks().length > 0;
 
   return (
     <div

@@ -85,21 +85,24 @@ const ClientOfferSchema = z.object({
   type: z.literal('offer'),
   v: z.literal(1),
   sdp: z.string(),
-  targetPeerId: z.string().optional(),
+  /** Target peer for directed relay (mesh signaling) */
+  targetPeerId: z.string(),
 });
 
 const ClientAnswerSchema = z.object({
   type: z.literal('answer'),
   v: z.literal(1),
   sdp: z.string(),
-  targetPeerId: z.string().optional(),
+  /** Target peer for directed relay (mesh signaling) */
+  targetPeerId: z.string(),
 });
 
 const ClientIceCandidateSchema = z.object({
   type: z.literal('ice-candidate'),
   v: z.literal(1),
   candidate: z.unknown(),
-  targetPeerId: z.string().optional(),
+  /** Target peer for directed relay (mesh signaling) */
+  targetPeerId: z.string(),
 });
 
 const LeaveSchema = z.object({
@@ -206,7 +209,7 @@ const ServerOfferSchema = z.object({
   v: z.literal(1),
   sdp: z.string(),
   /** Peer that sent this offer — set by server during relay */
-  peerId: z.string().optional(),
+  peerId: z.string(),
 });
 
 const ServerAnswerSchema = z.object({
@@ -214,7 +217,7 @@ const ServerAnswerSchema = z.object({
   v: z.literal(1),
   sdp: z.string(),
   /** Peer that sent this answer — set by server during relay */
-  peerId: z.string().optional(),
+  peerId: z.string(),
 });
 
 const ServerIceCandidateSchema = z.object({
@@ -222,7 +225,7 @@ const ServerIceCandidateSchema = z.object({
   v: z.literal(1),
   candidate: z.unknown(),
   /** Peer that sent this candidate — set by server during relay */
-  peerId: z.string().optional(),
+  peerId: z.string(),
 });
 
 const ChatBroadcastSchema = z.object({

@@ -16,12 +16,17 @@ import type { IceServerConfig, IceTransportPolicy } from '../../../shared/types'
 /**
  * Mutable resource refs that effect handlers read and write.
  * Each field mirrors a `useRef` container from App.tsx.
+ *
+ * Mesh calling uses Maps keyed by peerId for per-peer resources:
+ * peerConnections, remoteStreams, and makingOfferPeers.
  */
 export interface ResourceRefs {
   ws: { current: WebSocket | null };
-  pc: { current: RTCPeerConnection | null };
+  /** Active RTCPeerConnections keyed by remote peerId (mesh: one per peer) */
+  peerConnections: { current: Map<string, RTCPeerConnection> };
   localStream: { current: MediaStream | null };
-  remoteStream: { current: MediaStream | null };
+  /** Remote media streams keyed by peerId (mesh: one per peer) */
+  remoteStreams: { current: Map<string, MediaStream> };
   errorTimeout: { current: number | null };
   aesKey: { current: CryptoKey | null };
   /** IndexedDB connection for chat protocol operations */
@@ -37,12 +42,12 @@ export interface ResourceRefs {
   /** Whether seq counter has been loaded from IDB (guards against sending with seq=0) */
   seqLoaded: { current: boolean };
   /**
-   * True while createOffer() → setLocalDescription() is in flight.
-   * Used by handleOffer for glare detection: if makingOffer is true but
+   * Set of peerIds for which createOffer() → setLocalDescription() is in flight.
+   * Used by handleOffer for glare detection: if peerId is in this set but
    * signalingState is still 'stable', we know an offer is pending and
    * must treat incoming offers as collisions (perfect negotiation pattern).
    */
-  makingOffer: { current: boolean };
+  makingOfferPeers: { current: Set<string> };
   /**
    * True after join-call is sent to the server, false after leave-call
    * is sent or WS disconnects. Guards against sending leave-call when
@@ -83,7 +88,7 @@ export function getScreen(state: AppState): Screen | null {
 }
 
 /** ICE configuration extracted from room-phase state */
-interface IceConfig {
+export interface IceConfig {
   iceServers: IceServerConfig[] | null;
   iceTransportPolicy: IceTransportPolicy;
 }

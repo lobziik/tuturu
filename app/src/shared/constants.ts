@@ -24,6 +24,9 @@ export const WS_DEAD_DETECTION_MS = 100_000;
 /** Maximum number of WebSocket reconnect attempts before giving up */
 export const MAX_RECONNECT_ATTEMPTS = 20;
 
+/** Maximum number of participants in a single video call (full mesh topology) */
+export const MAX_CALL_PARTICIPANTS = 6;
+
 /** IndexedDB database name */
 export const DB_NAME = 'tuturu';
 

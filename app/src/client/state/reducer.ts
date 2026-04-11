@@ -6,7 +6,7 @@
  * @module state/reducer
  */
 
-import type { AppState, Action, RoomState, Screen } from './types';
+import type { AppState, Action, RoomState, Screen, PeerConnectionStatus } from './types';
 import type { ChatMessage } from '../../shared/schemas';
 import type { PeerState } from '../../shared/types';
 
@@ -73,6 +73,8 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       iceServers: null,
       iceTransportPolicy: 'all',
       callActive: false,
+      callPeers: [],
+      peerConnectionStates: {},
       overlay: null,
     };
   }
@@ -84,12 +86,10 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
 // ============================================================================
 
 /** Screen types that support media controls (mute, video, PiP) */
-type MediaControlScreen = Extract<Screen, { type: 'waiting-for-peer' | 'negotiating' | 'call' }>;
+type MediaControlScreen = Extract<Screen, { type: 'waiting-for-peer' | 'call' }>;
 
 function isMediaControlScreen(screen: Screen): screen is MediaControlScreen {
-  return (
-    screen.type === 'waiting-for-peer' || screen.type === 'negotiating' || screen.type === 'call'
-  );
+  return screen.type === 'waiting-for-peer' || screen.type === 'call';
 }
 
 /** Toggle a boolean media-control field, guarded by screen type */
@@ -193,11 +193,7 @@ function roomReducer(state: RoomState, action: Action): AppState {
     // View switching
     case 'SWITCH_TO_CALL': {
       // If a call is already in progress, just switch the view back — don't restart
-      if (
-        state.screen.type === 'waiting-for-peer' ||
-        state.screen.type === 'negotiating' ||
-        state.screen.type === 'call'
-      ) {
+      if (state.screen.type === 'waiting-for-peer' || state.screen.type === 'call') {
         return { ...state, view: 'call' };
       }
       if (state.wsStatus !== 'connected') {
@@ -362,12 +358,14 @@ function roomConnectionReducer(state: RoomState, action: ConnectionAction): AppS
 
     case 'WS_ROOM_DISCONNECTED':
     case 'WS_RECONNECT_EXHAUSTED': {
-      const inLocalCall = ['call', 'negotiating', 'waiting-for-peer'].includes(state.screen.type);
+      const inLocalCall = ['call', 'waiting-for-peer'].includes(state.screen.type);
       return {
         ...state,
         wsStatus: 'disconnected',
         reconnectAttempt: 0,
         callActive: false,
+        callPeers: [],
+        peerConnectionStates: {},
         screen: inLocalCall
           ? {
               type: 'error',
@@ -478,7 +476,14 @@ type CallAction = Extract<
   }
 >;
 
-/** Handle CALL_PEERS_RECEIVED: update callActive + screen transitions based on remote peer list */
+/**
+ * Handle CALL_PEERS_RECEIVED: update callPeers, peerConnectionStates, and screen transitions.
+ *
+ * Mesh logic:
+ * - waiting-for-peer + remote peers → call screen (per-peer negotiation handled in effects)
+ * - call + all remote peers left → waiting-for-peer (stay in call, wait for others)
+ * - call + peers changed → update callPeers and peerConnectionStates (add/remove entries)
+ */
 function handleCallPeersReceived(
   state: RoomState,
   action: Extract<CallAction, { type: 'CALL_PEERS_RECEIVED' }>,
@@ -486,61 +491,52 @@ function handleCallPeersReceived(
   const remotePeers = action.callPeers.filter((id) => id !== state.selfPeerId);
   const callActive = action.callPeers.length > 0;
 
-  // Waiting for someone to negotiate with — deterministic role assignment
-  // prevents glare: higher peerId creates the offer, lower waits for it.
-  // Mirrors the polite/impolite split used in glare resolution as a fallback.
-  if (state.screen.type === 'waiting-for-peer' && remotePeers.length > 0) {
-    const shouldBecomeCaller =
-      state.selfPeerId != null && remotePeers[0] != null && state.selfPeerId > remotePeers[0];
-    if (shouldBecomeCaller) {
-      return {
-        ...state,
-        callActive,
-        screen: {
-          type: 'negotiating',
-          role: 'caller',
-          muted: state.screen.muted,
-          videoOff: state.screen.videoOff,
-          pipHidden: state.screen.pipHidden,
-        },
-      };
-    }
-    // Lower peerId: stay on waiting-for-peer, remote peer will send the offer
-    return { ...state, callActive };
+  // Build updated peerConnectionStates: keep existing states, add 'connecting' for new peers
+  const updatedStates: Record<string, PeerConnectionStatus> = {};
+  for (const peerId of remotePeers) {
+    updatedStates[peerId] = state.peerConnectionStates[peerId] ?? 'connecting';
   }
 
-  // Remote peer left during active call or negotiation — call is over.
-  // Force callActive=false because cleanup will send leave-call, but
-  // the server broadcasts call-peers:[] to everyone EXCEPT us.
-  if (
-    (state.screen.type === 'call' || state.screen.type === 'negotiating') &&
-    remotePeers.length === 0
-  ) {
+  // Waiting for someone → remote peers arrived → transition to call screen
+  if (state.screen.type === 'waiting-for-peer' && remotePeers.length > 0) {
     return {
       ...state,
-      callActive: false,
-      view: 'chat',
-      screen: { type: 'idle' },
+      callActive,
+      callPeers: action.callPeers,
+      peerConnectionStates: updatedStates,
+      screen: {
+        type: 'call',
+        muted: state.screen.muted,
+        videoOff: state.screen.videoOff,
+        pipHidden: state.screen.pipHidden,
+      },
     };
   }
 
-  // All other cases: just update callActive
-  return { ...state, callActive };
-}
+  // In call but all remote peers left → go back to waiting-for-peer (stay in call).
+  // Intentional UX: keep camera active so the user can wait for peers to rejoin
+  // without re-acquiring media. User can hang up manually to release the camera.
+  if (state.screen.type === 'call' && remotePeers.length === 0) {
+    return {
+      ...state,
+      callActive,
+      callPeers: action.callPeers,
+      peerConnectionStates: {},
+      screen: {
+        type: 'waiting-for-peer',
+        muted: state.screen.muted,
+        videoOff: state.screen.videoOff,
+        pipHidden: state.screen.pipHidden,
+      },
+    };
+  }
 
-/** Handle RECEIVED_OFFER: only transition to callee negotiation from waiting-for-peer */
-function handleReceivedOffer(state: RoomState): AppState {
-  // Only waiting-for-peer transitions to callee negotiation
-  if (state.screen.type !== 'waiting-for-peer') return state;
+  // All other cases: update callPeers and peerConnectionStates
   return {
     ...state,
-    screen: {
-      type: 'negotiating',
-      role: 'callee',
-      muted: state.screen.muted,
-      videoOff: state.screen.videoOff,
-      pipHidden: state.screen.pipHidden,
-    },
+    callActive,
+    callPeers: action.callPeers,
+    peerConnectionStates: updatedStates,
   };
 }
 
@@ -569,35 +565,60 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         iceTransportPolicy: action.iceTransportPolicy,
       };
 
+    // Signaling actions — no state transitions, handled purely in effects
     case 'RECEIVED_OFFER':
-      return handleReceivedOffer(state);
-
     case 'RECEIVED_ANSWER':
     case 'RECEIVED_ICE_CANDIDATE':
     case 'RTC_TRACK_RECEIVED':
-    case 'RTC_DISCONNECTED':
       return state;
 
     case 'SERVER_ERROR':
       return toErrorScreen(state, action.error, false);
 
+    // Per-peer RTC lifecycle — update peerConnectionStates.
+    // Note: waiting-for-peer → call transition can happen via two paths:
+    //   1. CALL_PEERS_RECEIVED (normal: server notifies us of remote peers)
+    //   2. RTC_CONNECTED below (race: offer arrived before CALL_PEERS_RECEIVED,
+    //      PC was created on-demand in effects, and connected before server update)
     case 'RTC_CONNECTED': {
-      if (state.screen.type !== 'negotiating') return state;
+      const newStates = { ...state.peerConnectionStates, [action.peerId]: 'connected' as const };
+      if (state.screen.type === 'waiting-for-peer') {
+        return {
+          ...state,
+          peerConnectionStates: newStates,
+          screen: {
+            type: 'call',
+            muted: state.screen.muted,
+            videoOff: state.screen.videoOff,
+            pipHidden: state.screen.pipHidden,
+          },
+        };
+      }
+      return { ...state, peerConnectionStates: newStates };
+    }
+
+    case 'RTC_DISCONNECTED': {
       return {
         ...state,
-        screen: {
-          type: 'call',
-          muted: state.screen.muted,
-          videoOff: state.screen.videoOff,
-          pipHidden: state.screen.pipHidden,
+        peerConnectionStates: {
+          ...state.peerConnectionStates,
+          [action.peerId]: 'disconnected',
         },
       };
     }
 
     case 'RTC_FAILED': {
-      const activeCallScreens = ['acquiring-media', 'waiting-for-peer', 'negotiating', 'call'];
+      const activeCallScreens = ['acquiring-media', 'waiting-for-peer', 'call'];
       if (!activeCallScreens.includes(state.screen.type)) return state;
-      return toErrorScreen(state, action.reason, false);
+
+      const newStates = { ...state.peerConnectionStates, [action.peerId]: 'failed' as const };
+      // Only show error if ALL peers have failed (or no peers tracked yet)
+      const stateValues = Object.values(newStates);
+      const allFailed = stateValues.length > 0 && stateValues.every((s) => s === 'failed');
+      if (allFailed) {
+        return toErrorScreen({ ...state, peerConnectionStates: newStates }, action.reason, false);
+      }
+      return { ...state, peerConnectionStates: newStates };
     }
 
     case 'TOGGLE_MUTE':
@@ -616,11 +637,19 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         view: 'chat',
         screen: { type: 'idle' },
         callActive: false,
+        callPeers: [],
+        peerConnectionStates: {},
       };
 
     case 'DISMISS_ERROR': {
       if (state.screen.type !== 'error') return state;
-      return { ...state, view: 'chat', screen: { type: 'idle' } };
+      return {
+        ...state,
+        view: 'chat',
+        screen: { type: 'idle' },
+        callPeers: [],
+        peerConnectionStates: {},
+      };
     }
   }
 }

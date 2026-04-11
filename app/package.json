@@ -4,7 +4,8 @@
   "description": "WebRTC signaling server for tuturu video calling app",
   "type": "module",
   "scripts": {
-    "build": "bun run build.ts --minify",
+    "build": "bun run build.ts --minify --no-sourcemap",
+    "build:dev": "bun run build.ts --minify",
     "build:watch": "bun run --watch build.ts",
     "build:server": "bun build --compile --minify --sourcemap ./src/server/index.ts --outfile ./dist/server",
     "build:prod": "bun run build && bun run build:server",

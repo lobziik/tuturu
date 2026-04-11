@@ -92,17 +92,27 @@ export async function loadAssets(): Promise<LoadedAssets> {
   const clientJsStr = clientJs as unknown as string;
   const webmanifestStr = webmanifest as unknown as string;
 
-  // Compute ETags from content hashes
+  // Compute content hashes once (reused for both ETags and cache-busting query params)
+  const jsHash = Bun.hash(clientJsStr).toString(16);
+  const cssHash = Bun.hash(stylesStr).toString(16);
+
+  // Inject cache-busting query params into HTML so browsers fetch fresh assets on deploy.
+  // Coupled to the attribute format in public/index.html: src="index.js" and href="styles.css"
+  const indexHtmlBusted = indexHtmlStr
+    .replace('src="index.js"', `src="index.js?v=${jsHash}"`)
+    .replace('href="styles.css"', `href="styles.css?v=${cssHash}"`);
+
+  // Compute ETags — HTML ETag uses modified content (what we actually serve)
   const etags: AssetEtags = {
-    html: `"${Bun.hash(indexHtmlStr).toString(16)}"`,
-    css: `"${Bun.hash(stylesStr).toString(16)}"`,
-    js: `"${Bun.hash(clientJsStr).toString(16)}"`,
+    html: `"${Bun.hash(indexHtmlBusted).toString(16)}"`,
+    css: `"${cssHash}"`,
+    js: `"${jsHash}"`,
     manifest: `"${Bun.hash(webmanifestStr).toString(16)}"`,
   };
 
   return {
     text: {
-      indexHtml: indexHtmlStr,
+      indexHtml: indexHtmlBusted,
       styles: stylesStr,
       clientJs: clientJsStr,
       webmanifest: webmanifestStr,

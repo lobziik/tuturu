@@ -143,7 +143,7 @@ function serveStaticAsset(
     return new Response(text.styles, {
       headers: {
         'Content-Type': 'text/css',
-        'Cache-Control': 'public, max-age=0, must-revalidate',
+        'Cache-Control': 'public, max-age=31536000, immutable',
         ETag: etags.css,
       },
     });
@@ -156,7 +156,7 @@ function serveStaticAsset(
     return new Response(text.clientJs, {
       headers: {
         'Content-Type': 'application/javascript',
-        'Cache-Control': 'public, max-age=0, must-revalidate',
+        'Cache-Control': 'public, max-age=31536000, immutable',
         ETag: etags.js,
       },
     });

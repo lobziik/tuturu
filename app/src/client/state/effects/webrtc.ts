@@ -23,8 +23,14 @@ import {
 import type { MeshContext } from '../../services/webrtc';
 import { sendMessage } from '../../services/websocket';
 import type { Action } from '../types';
-import type { EffectContext, EffectArgs, ResourceRefs } from './types';
-import { getScreen, getIceConfig, type IceConfig } from './types';
+import {
+  getScreen,
+  getIceConfig,
+  type EffectContext,
+  type EffectArgs,
+  type ResourceRefs,
+  type IceConfig,
+} from './types';
 
 /** Build a MeshContext from ResourceRefs */
 function buildMeshContext(refs: ResourceRefs, dispatch: (action: Action) => void): MeshContext {
@@ -135,7 +141,7 @@ function sendOfferToPeer(
 function handleReceivedOfferEffect(
   action: Extract<Action, { type: 'RECEIVED_OFFER' }>,
   refs: ResourceRefs,
-  dispatch: (action: Action) => void,
+  meshCtx: MeshContext,
   selfPeerId: string,
   iceConfig: IceConfig,
 ): void {
@@ -149,39 +155,38 @@ function handleReceivedOfferEffect(
       },
       refs.localStream.current,
       refs.ws.current,
-      dispatch,
+      meshCtx.dispatch,
       fromPeerId,
     );
     refs.peerConnections.current.set(fromPeerId, pc);
   }
 
   const isPolite = selfPeerId < fromPeerId;
-  const ctx = buildMeshContext(refs, dispatch);
-  void handleOffer(pc, action.offer, ctx, fromPeerId, isPolite);
+  void handleOffer(pc, action.offer, meshCtx, fromPeerId, isPolite);
 }
 
 /** Handle RECEIVED_ANSWER: route to correct PC */
 function handleReceivedAnswerEffect(
   action: Extract<Action, { type: 'RECEIVED_ANSWER' }>,
   refs: ResourceRefs,
-  dispatch: (action: Action) => void,
+  meshCtx: MeshContext,
 ): void {
   const pc = refs.peerConnections.current.get(action.fromPeerId);
   if (!pc) return;
 
-  const ctx = buildMeshContext(refs, dispatch);
-  void handleAnswer(pc, action.answer, ctx, action.fromPeerId);
+  void handleAnswer(pc, action.answer, meshCtx, action.fromPeerId);
 }
 
 /** Handle RECEIVED_ICE_CANDIDATE: route to correct PC */
 function handleReceivedIceCandidateEffect(
   action: Extract<Action, { type: 'RECEIVED_ICE_CANDIDATE' }>,
   refs: ResourceRefs,
+  meshCtx: MeshContext,
 ): void {
   const pc = refs.peerConnections.current.get(action.fromPeerId);
   if (!pc) return;
 
-  void handleIceCandidate(pc, action.candidate, refs.peerConnections.current, action.fromPeerId);
+  void handleIceCandidate(pc, action.candidate, meshCtx, action.fromPeerId);
 }
 
 /** Handle WebRTC-related side effects for mesh calls */
@@ -194,20 +199,23 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
 
   // Guard: only process during call-related screens
   const callScreenActive = newScreen?.type === 'waiting-for-peer' || newScreen?.type === 'call';
+  if (!callScreenActive) return;
 
-  if (action.type === 'CALL_PEERS_RECEIVED' && callScreenActive && selfPeerId && iceConfig) {
+  const meshCtx = buildMeshContext(refs, dispatch);
+
+  if (action.type === 'CALL_PEERS_RECEIVED' && selfPeerId && iceConfig) {
     handleCallPeersEffect(action, refs, dispatch, selfPeerId, iceConfig);
   }
 
-  if (action.type === 'RECEIVED_OFFER' && callScreenActive && iceConfig && selfPeerId) {
-    handleReceivedOfferEffect(action, refs, dispatch, selfPeerId, iceConfig);
+  if (action.type === 'RECEIVED_OFFER' && iceConfig && selfPeerId) {
+    handleReceivedOfferEffect(action, refs, meshCtx, selfPeerId, iceConfig);
   }
 
-  if (action.type === 'RECEIVED_ANSWER' && callScreenActive) {
-    handleReceivedAnswerEffect(action, refs, dispatch);
+  if (action.type === 'RECEIVED_ANSWER') {
+    handleReceivedAnswerEffect(action, refs, meshCtx);
   }
 
-  if (action.type === 'RECEIVED_ICE_CANDIDATE' && callScreenActive) {
-    handleReceivedIceCandidateEffect(action, refs);
+  if (action.type === 'RECEIVED_ICE_CANDIDATE') {
+    handleReceivedIceCandidateEffect(action, refs, meshCtx);
   }
 }

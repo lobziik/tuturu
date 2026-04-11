@@ -345,15 +345,16 @@ export async function handleAnswer(
  *
  * @param pc - Peer connection to add the candidate to
  * @param candidate - ICE candidate from the remote peer
- * @param peerConnections - Map of all peer connections (used for staleness checks)
+ * @param ctx - Shared mesh state (peer connections map for staleness checks)
  * @param fromPeerId - ID of the peer that sent the candidate
  */
 export async function handleIceCandidate(
   pc: RTCPeerConnection,
   candidate: RTCIceCandidateInit,
-  peerConnections: Map<string, RTCPeerConnection>,
+  ctx: MeshContext,
   fromPeerId: string,
 ): Promise<void> {
+  const { peerConnections } = ctx;
   if (peerConnections.get(fromPeerId) !== pc) return;
 
   if (!pc.remoteDescription) {

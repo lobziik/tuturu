@@ -78,10 +78,12 @@ function VideoArea({
 function CallControls({
   screen,
   showFlip,
+  isAudioOnly,
   dispatch,
 }: Readonly<{
   screen: CallScreenState;
   showFlip: boolean;
+  isAudioOnly: boolean;
   dispatch: Dispatch;
 }>) {
   return (
@@ -101,6 +103,8 @@ function CallControls({
         class={`control-btn ${screen.videoOff ? 'active' : ''}`}
         title="Video On/Off"
         onClick={() => dispatch({ type: 'TOGGLE_VIDEO' })}
+        disabled={isAudioOnly}
+        style={isAudioOnly ? 'opacity: 0.5' : ''}
       >
         <span class="icon">{screen.videoOff ? '\uD83D\uDEAB' : '\uD83D\uDCF9'}</span>
         <span class="label">{screen.videoOff ? 'Video On' : 'Video Off'}</span>
@@ -261,7 +265,12 @@ export function CallScreen({
         />
       </div>
 
-      <CallControls screen={screen} showFlip={showFlip} dispatch={dispatch} />
+      <CallControls
+        screen={screen}
+        showFlip={showFlip}
+        isAudioOnly={isAudioOnly}
+        dispatch={dispatch}
+      />
     </div>
   );
 }

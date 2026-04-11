@@ -50,9 +50,7 @@ export function VideoTile({
         autoplay
         playsinline
         class={`video-tile-video ${!isConnected || !hasVideo ? 'hidden-video' : ''}`}
-      >
-        <track kind="captions" />
-      </video>
+      />
       {!isConnected && (
         <div class="video-tile-status">
           <span class="video-tile-status-text">

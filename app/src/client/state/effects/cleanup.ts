@@ -11,6 +11,7 @@
 import { closeWebSocket, sendMessage } from '../../services/websocket';
 import { closePeerConnection } from '../../services/webrtc';
 import { stopMediaStream } from '../../services/media';
+import { resetDevice } from '../../sfu/device';
 import type { EffectContext, EffectArgs, ResourceRefs } from './types';
 import { getScreen } from './types';
 
@@ -42,6 +43,26 @@ function cleanupCallResources(refs: ResourceRefs): void {
     stopMediaStream(refs.localStream.current);
     refs.localStream.current = null;
   }
+
+  // SFU resource cleanup
+  if (refs.sfuSendTransport.current) {
+    refs.sfuSendTransport.current.close();
+    refs.sfuSendTransport.current = null;
+  }
+  if (refs.sfuRecvTransport.current) {
+    refs.sfuRecvTransport.current.close();
+    refs.sfuRecvTransport.current = null;
+  }
+  refs.sfuProducers.current.clear();
+  refs.sfuConsumers.current.clear();
+  refs.pendingProduceCallback.current = null;
+
+  if (refs.e2eeWorker.current) {
+    refs.e2eeWorker.current.terminate();
+    refs.e2eeWorker.current = null;
+  }
+
+  resetDevice();
 }
 
 /**

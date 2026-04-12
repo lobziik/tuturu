@@ -192,9 +192,11 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
   const iceConfig = getIceConfig(newState);
   const selfPeerId = newState.phase === 'room' ? newState.selfPeerId : null;
 
-  // Guard: only process during call-related screens
+  // Guard: only process during call-related screens, and not in SFU mode
   const callScreenActive = newScreen?.type === 'waiting-for-peer' || newScreen?.type === 'call';
   if (!callScreenActive) return;
+  const sfuMode = newState.phase === 'room' && newState.sfuMode;
+  if (sfuMode) return;
 
   const meshCtx = buildMeshContext(refs, dispatch);
 

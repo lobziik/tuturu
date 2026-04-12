@@ -41,6 +41,8 @@ function roomState(
     callPeers: [],
     peerConnectionStates: {},
     overlay: null,
+    sfuMode: false,
+    activeSpeakerPeerId: null,
     ...overrides,
   };
   // Keep messageUuids in sync with messages unless explicitly overridden

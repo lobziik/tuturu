@@ -22,6 +22,7 @@
  * @module state/types
  */
 
+import type { types as msTypes } from 'mediasoup-client';
 import type { IceServerConfig, IceTransportPolicy, PeerState } from '../../shared/types';
 import type { ChatMessage } from '../../shared/schemas';
 
@@ -111,6 +112,10 @@ export type AppState =
       callPeers: string[];
       /** Per-peer WebRTC connection status for rendering video grid */
       peerConnectionStates: Record<string, PeerConnectionStatus>;
+      /** Whether this room uses SFU mode (from server sfuEnabled flag) */
+      sfuMode: boolean;
+      /** Peer ID of the current active speaker (from AudioLevelObserver) */
+      activeSpeakerPeerId: string | null;
       /** Currently open overlay panel (null = none) */
       overlay: 'peers' | 'settings' | null;
     };
@@ -203,7 +208,12 @@ export type Action =
   | { type: 'CALL_PEERS_RECEIVED'; callPeers: string[] }
 
   // Server responses — signaling / ICE (peerId identifies which peer in mesh)
-  | { type: 'JOINED_ROOM'; iceServers: IceServerConfig[]; iceTransportPolicy: IceTransportPolicy }
+  | {
+      type: 'JOINED_ROOM';
+      iceServers: IceServerConfig[];
+      iceTransportPolicy: IceTransportPolicy;
+      sfuEnabled?: boolean;
+    }
   | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit; fromPeerId: string }
   | { type: 'RECEIVED_ANSWER'; answer: RTCSessionDescriptionInit; fromPeerId: string }
   | { type: 'RECEIVED_ICE_CANDIDATE'; candidate: RTCIceCandidateInit; fromPeerId: string }
@@ -220,7 +230,30 @@ export type Action =
   | { type: 'RTC_CONNECTED'; peerId: string }
   | { type: 'RTC_DISCONNECTED'; peerId: string }
   | { type: 'RTC_FAILED'; reason: string; peerId: string }
-  | { type: 'RTC_TRACK_RECEIVED'; stream: MediaStream; peerId: string };
+  | { type: 'RTC_TRACK_RECEIVED'; stream: MediaStream; peerId: string }
+
+  // SFU lifecycle
+  | { type: 'SFU_ROUTER_CAPS_RECEIVED'; rtpCapabilities: msTypes.RtpCapabilities }
+  | {
+      type: 'SFU_TRANSPORT_CREATED';
+      direction: 'send' | 'recv';
+      id: string;
+      iceParameters: msTypes.IceParameters;
+      iceCandidates: msTypes.IceCandidate[];
+      dtlsParameters: msTypes.DtlsParameters;
+      sctpParameters?: msTypes.SctpParameters;
+    }
+  | { type: 'SFU_PRODUCER_CREATED'; id: string; kind: msTypes.MediaKind }
+  | {
+      type: 'SFU_NEW_CONSUMER';
+      peerId: string;
+      producerId: string;
+      consumerId: string;
+      kind: msTypes.MediaKind;
+      rtpParameters: msTypes.RtpParameters;
+      producerPaused: boolean;
+    }
+  | { type: 'SFU_ACTIVE_SPEAKER'; peerId: string | null };
 
 /**
  * Initial state — app starts on nickname screen.

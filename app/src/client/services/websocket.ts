@@ -8,6 +8,7 @@
  * @module client/services/websocket
  */
 
+import type { types as msTypes } from 'mediasoup-client';
 import type { ClientToServerMessage } from '../../shared/types';
 import {
   ServerToClientMessageSchema,
@@ -163,6 +164,7 @@ function handleServerMessage(
         type: 'JOINED_ROOM',
         iceServers: message.iceServers,
         iceTransportPolicy: message.iceTransportPolicy,
+        ...(message.sfuEnabled !== undefined ? { sfuEnabled: message.sfuEnabled } : {}),
       });
       break;
 
@@ -244,13 +246,53 @@ function handleServerMessage(
       console.log('[WS] Received (stub):', message.type);
       break;
 
-    // SFU messages — will be fully wired in Stage 3 (client SFU integration)
+    // SFU messages — cast from z.unknown() to mediasoup types (mediasoup validates internally)
     case 'sfu-router-caps':
+      dispatch({
+        type: 'SFU_ROUTER_CAPS_RECEIVED',
+        rtpCapabilities: message.rtpCapabilities as msTypes.RtpCapabilities,
+      });
+      break;
+
     case 'sfu-transport-created':
+      dispatch({
+        type: 'SFU_TRANSPORT_CREATED',
+        direction: message.direction,
+        id: message.id,
+        iceParameters: message.iceParameters as msTypes.IceParameters,
+        iceCandidates: message.iceCandidates as msTypes.IceCandidate[],
+        dtlsParameters: message.dtlsParameters as msTypes.DtlsParameters,
+        ...(message.sctpParameters
+          ? { sctpParameters: message.sctpParameters as msTypes.SctpParameters }
+          : {}),
+      });
+      break;
+
     case 'sfu-producer-created':
+      dispatch({
+        type: 'SFU_PRODUCER_CREATED',
+        id: message.id,
+        kind: message.kind,
+      });
+      break;
+
     case 'sfu-new-consumer':
+      dispatch({
+        type: 'SFU_NEW_CONSUMER',
+        peerId: message.peerId,
+        producerId: message.producerId,
+        consumerId: message.consumerId,
+        kind: message.kind,
+        rtpParameters: message.rtpParameters as msTypes.RtpParameters,
+        producerPaused: message.producerPaused,
+      });
+      break;
+
     case 'sfu-active-speaker':
-      console.log('[WS] SFU message (stub):', message.type);
+      dispatch({
+        type: 'SFU_ACTIVE_SPEAKER',
+        peerId: message.peerId,
+      });
       break;
   }
 }

@@ -123,67 +123,59 @@ function serveStaticAsset(
   binary: BinaryAssets,
   etags: AssetEtags,
 ): Response {
-  if (pathname === '/' || pathname === '/index.html') {
-    if (req.headers.get('If-None-Match') === etags.html) {
-      return new Response(null, { status: 304 });
-    }
-    return new Response(text.indexHtml, {
-      headers: {
-        'Content-Type': 'text/html',
-        'Cache-Control': 'no-cache',
-        ETag: etags.html,
-      },
-    });
-  }
+  // Text assets — ETag-based caching
+  const textRoutes: Record<
+    string,
+    { body: string; contentType: string; etag: string; cacheControl: string }
+  > = {
+    '/': {
+      body: text.indexHtml,
+      contentType: 'text/html',
+      etag: etags.html,
+      cacheControl: 'no-cache',
+    },
+    '/index.html': {
+      body: text.indexHtml,
+      contentType: 'text/html',
+      etag: etags.html,
+      cacheControl: 'no-cache',
+    },
+    '/styles.css': {
+      body: text.styles,
+      contentType: 'text/css',
+      etag: etags.css,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+    '/index.js': {
+      body: text.clientJs,
+      contentType: 'application/javascript',
+      etag: etags.js,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+    '/e2ee-worker.js': {
+      body: text.e2eeWorkerJs,
+      contentType: 'application/javascript',
+      etag: etags.e2eeWorkerJs,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+    '/site.webmanifest': {
+      body: text.webmanifest,
+      contentType: 'application/manifest+json',
+      etag: etags.manifest,
+      cacheControl: 'public, max-age=0, must-revalidate',
+    },
+  };
 
-  if (pathname === '/styles.css') {
-    if (req.headers.get('If-None-Match') === etags.css) {
+  const textAsset = textRoutes[pathname];
+  if (textAsset) {
+    if (req.headers.get('If-None-Match') === textAsset.etag) {
       return new Response(null, { status: 304 });
     }
-    return new Response(text.styles, {
+    return new Response(textAsset.body, {
       headers: {
-        'Content-Type': 'text/css',
-        'Cache-Control': 'public, max-age=31536000, immutable',
-        ETag: etags.css,
-      },
-    });
-  }
-
-  if (pathname === '/index.js') {
-    if (req.headers.get('If-None-Match') === etags.js) {
-      return new Response(null, { status: 304 });
-    }
-    return new Response(text.clientJs, {
-      headers: {
-        'Content-Type': 'application/javascript',
-        'Cache-Control': 'public, max-age=31536000, immutable',
-        ETag: etags.js,
-      },
-    });
-  }
-
-  if (pathname === '/e2ee-worker.js') {
-    if (req.headers.get('If-None-Match') === etags.e2eeWorkerJs) {
-      return new Response(null, { status: 304 });
-    }
-    return new Response(text.e2eeWorkerJs, {
-      headers: {
-        'Content-Type': 'application/javascript',
-        'Cache-Control': 'public, max-age=31536000, immutable',
-        ETag: etags.e2eeWorkerJs,
-      },
-    });
-  }
-
-  if (pathname === '/site.webmanifest') {
-    if (req.headers.get('If-None-Match') === etags.manifest) {
-      return new Response(null, { status: 304 });
-    }
-    return new Response(text.webmanifest, {
-      headers: {
-        'Content-Type': 'application/manifest+json',
-        'Cache-Control': 'public, max-age=0, must-revalidate',
-        ETag: etags.manifest,
+        'Content-Type': textAsset.contentType,
+        'Cache-Control': textAsset.cacheControl,
+        ETag: textAsset.etag,
       },
     });
   }

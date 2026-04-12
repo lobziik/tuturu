@@ -9,7 +9,7 @@
     "build:watch": "bun run --watch build.ts",
     "build:server": "bun build --compile --minify --sourcemap ./src/server/index.ts --outfile ./dist/server",
     "build:prod": "bun run build && bun run worker:prepare && bun run build:server",
-    "dev": "bun run --hot src/server/index.ts ",
+    "dev": "bun run build && bun run --hot src/server/index.ts",
     "start": "bun run src/server/index.ts",
     "start:prod": "./dist/server",
     "worker:build": "cd node_modules/mediasoup && PYTHONPATH=\"$PWD/worker/pip_invoke${PYTHONPATH:+:$PYTHONPATH}\" MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true bun npm-scripts.mjs worker:build",

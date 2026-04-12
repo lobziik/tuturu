@@ -70,13 +70,7 @@ const configSchema = z.object({
   /** IP for mediasoup WebRtcTransport to bind on. */
   sfuListenIp: z.string().default('0.0.0.0'),
   /** External IP announced in ICE candidates (for TURN relay). Falls back to EXTERNAL_IP. */
-  sfuAnnouncedIp: z
-    .string()
-    .regex(
-      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-      'SFU announced IP must be a valid IPv4 address',
-    )
-    .optional(),
+  sfuAnnouncedIp: z.string().ipv4('SFU announced IP must be a valid IPv4 address').optional(),
   /** Number of mediasoup workers to spawn. Defaults to CPU core count (max 8). */
   sfuNumWorkers: z.coerce.number().int().min(1).max(16).optional(),
 });

@@ -398,6 +398,11 @@ async function createSingleConsumer(
 ): Promise<void> {
   if (!consumerPeer.recvTransport || !consumerPeer.rtpCapabilities) return;
 
+  // Skip if this peer already has a consumer for this producer (dedup guard)
+  for (const existing of consumerPeer.consumers.values()) {
+    if (existing.producerId === producer.id) return;
+  }
+
   if (
     !room.router.canConsume({
       producerId: producer.id,

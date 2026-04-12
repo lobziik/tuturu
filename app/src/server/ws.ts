@@ -92,6 +92,27 @@ export function createWebSocketHandlers(
       case 'chat-received':
         handlers.handleChatReceived(ws, peerId, msg);
         break;
+      case 'sfu-join':
+        handlers.handleSfuJoin(ws, peerId, msg);
+        break;
+      case 'sfu-create-transport':
+        handlers.handleSfuCreateTransport(ws, peerId, msg);
+        break;
+      case 'sfu-connect-transport':
+        handlers.handleSfuConnectTransport(ws, peerId, msg);
+        break;
+      case 'sfu-produce':
+        handlers.handleSfuProduce(ws, peerId, msg);
+        break;
+      case 'sfu-consume-resume':
+        handlers.handleSfuConsumeResume(ws, peerId, msg);
+        break;
+      case 'sfu-producer-pause':
+        handlers.handleSfuProducerPause(ws, peerId, msg);
+        break;
+      case 'sfu-producer-resume':
+        handlers.handleSfuProducerResume(ws, peerId, msg);
+        break;
     }
   }
 

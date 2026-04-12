@@ -154,6 +154,65 @@ const ChatReceivedSchema = z.object({
   peerId: z.string(),
 });
 
+// ============================================================================
+// Client → Server: SFU Messages
+// ============================================================================
+
+/** Client joins SFU call, sends its RTP capabilities for consumer compatibility check. */
+const SfuJoinSchema = z.object({
+  type: z.literal('sfu-join'),
+  v: z.literal(1),
+  /** mediasoup-client Device rtpCapabilities — validated by mediasoup internally */
+  rtpCapabilities: z.unknown(),
+});
+
+/** Request a send or recv WebRtcTransport from the server. */
+const SfuCreateTransportSchema = z.object({
+  type: z.literal('sfu-create-transport'),
+  v: z.literal(1),
+  direction: z.enum(['send', 'recv']),
+});
+
+/** Provide DTLS parameters to connect a previously created transport. */
+const SfuConnectTransportSchema = z.object({
+  type: z.literal('sfu-connect-transport'),
+  v: z.literal(1),
+  transportId: z.string(),
+  /** mediasoup DtlsParameters — validated by mediasoup internally */
+  dtlsParameters: z.unknown(),
+});
+
+/** Start producing a media track (audio or video) on a send transport. */
+const SfuProduceSchema = z.object({
+  type: z.literal('sfu-produce'),
+  v: z.literal(1),
+  transportId: z.string(),
+  kind: z.enum(['audio', 'video']),
+  /** mediasoup RtpParameters — validated by mediasoup internally */
+  rtpParameters: z.unknown(),
+});
+
+/** Client created its local Consumer and is ready to receive media. */
+const SfuConsumeResumeSchema = z.object({
+  type: z.literal('sfu-consume-resume'),
+  v: z.literal(1),
+  consumerId: z.string(),
+});
+
+/** Client pauses a Producer (mute audio or disable video). */
+const SfuProducerPauseSchema = z.object({
+  type: z.literal('sfu-producer-pause'),
+  v: z.literal(1),
+  producerId: z.string(),
+});
+
+/** Client resumes a paused Producer (unmute audio or enable video). */
+const SfuProducerResumeSchema = z.object({
+  type: z.literal('sfu-producer-resume'),
+  v: z.literal(1),
+  producerId: z.string(),
+});
+
 export const ClientToServerMessageSchema = z.discriminatedUnion('type', [
   JoinSchema,
   ClientOfferSchema,
@@ -166,6 +225,13 @@ export const ClientToServerMessageSchema = z.discriminatedUnion('type', [
   JoinCallSchema,
   LeaveCallSchema,
   ChatReceivedSchema,
+  SfuJoinSchema,
+  SfuCreateTransportSchema,
+  SfuConnectTransportSchema,
+  SfuProduceSchema,
+  SfuConsumeResumeSchema,
+  SfuProducerPauseSchema,
+  SfuProducerResumeSchema,
 ]);
 
 export type ClientToServerMessage = z.infer<typeof ClientToServerMessageSchema>;
@@ -179,6 +245,8 @@ const JoinResponseSchema = z.object({
   v: z.literal(1),
   iceServers: z.array(IceServerSchema),
   iceTransportPolicy: IceTransportPolicySchema,
+  /** Whether this server supports SFU mode (mediasoup workers are running). */
+  sfuEnabled: z.boolean().optional(),
 });
 
 const PeerJoinedSchema = z.object({
@@ -288,6 +356,60 @@ const ServerErrorSchema = z.object({
   message: z.string(),
 });
 
+// ============================================================================
+// Server → Client: SFU Messages
+// ============================================================================
+
+/** Router RTP capabilities — client needs these to load its mediasoup-client Device. */
+const SfuRouterCapsSchema = z.object({
+  type: z.literal('sfu-router-caps'),
+  v: z.literal(1),
+  /** Router's RtpCapabilities — opaque to the schema, validated by mediasoup-client */
+  rtpCapabilities: z.unknown(),
+});
+
+/** Parameters for a newly created WebRtcTransport (send or recv). */
+const SfuTransportCreatedSchema = z.object({
+  type: z.literal('sfu-transport-created'),
+  v: z.literal(1),
+  direction: z.enum(['send', 'recv']),
+  id: z.string(),
+  iceParameters: z.unknown(),
+  iceCandidates: z.unknown(),
+  dtlsParameters: z.unknown(),
+  sctpParameters: z.unknown().optional(),
+});
+
+/** Confirmation that a Producer was created on the server. */
+const SfuProducerCreatedSchema = z.object({
+  type: z.literal('sfu-producer-created'),
+  v: z.literal(1),
+  id: z.string(),
+  kind: z.enum(['audio', 'video']),
+});
+
+/** A new Consumer is available — client should create a local Consumer and resume it. */
+const SfuNewConsumerSchema = z.object({
+  type: z.literal('sfu-new-consumer'),
+  v: z.literal(1),
+  /** Peer that is producing this track */
+  peerId: z.string(),
+  producerId: z.string(),
+  consumerId: z.string(),
+  kind: z.enum(['audio', 'video']),
+  /** RTP parameters for the client-side Consumer */
+  rtpParameters: z.unknown(),
+  /** Whether the Producer is currently paused */
+  producerPaused: z.boolean(),
+});
+
+/** Active speaker notification from AudioLevelObserver. null = silence. */
+const SfuActiveSpeakerSchema = z.object({
+  type: z.literal('sfu-active-speaker'),
+  v: z.literal(1),
+  peerId: z.string().nullable(),
+});
+
 export const ServerToClientMessageSchema = z.discriminatedUnion('type', [
   JoinResponseSchema,
   PeerJoinedSchema,
@@ -303,6 +425,11 @@ export const ServerToClientMessageSchema = z.discriminatedUnion('type', [
   PingSchema,
   CallPeersSchema,
   ServerErrorSchema,
+  SfuRouterCapsSchema,
+  SfuTransportCreatedSchema,
+  SfuProducerCreatedSchema,
+  SfuNewConsumerSchema,
+  SfuActiveSpeakerSchema,
 ]);
 
 export type ServerToClientMessage = z.infer<typeof ServerToClientMessageSchema>;

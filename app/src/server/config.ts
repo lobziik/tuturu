@@ -65,6 +65,20 @@ const configSchema = z.object({
   blobDir: z.string().default('./blobs'),
   dbPath: z.string().default('./messages.db'),
   maxParticipants: z.coerce.number().int().min(2).max(10).default(6),
+
+  // SFU configuration
+  /** IP for mediasoup WebRtcTransport to bind on. */
+  sfuListenIp: z.string().default('0.0.0.0'),
+  /** External IP announced in ICE candidates (for TURN relay). Falls back to EXTERNAL_IP. */
+  sfuAnnouncedIp: z
+    .string()
+    .regex(
+      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
+      'SFU announced IP must be a valid IPv4 address',
+    )
+    .optional(),
+  /** Number of mediasoup workers to spawn. Defaults to CPU core count (max 8). */
+  sfuNumWorkers: z.coerce.number().int().min(1).max(16).optional(),
 });
 
 /**
@@ -87,6 +101,9 @@ function loadConfig() {
     blobDir: process.env.BLOB_DIR,
     dbPath: process.env.DB_PATH,
     maxParticipants: process.env.MAX_PARTICIPANTS,
+    sfuListenIp: process.env.TUTURU_SFU_LISTEN_IP,
+    sfuAnnouncedIp: process.env.TUTURU_SFU_ANNOUNCED_IP,
+    sfuNumWorkers: process.env.TUTURU_SFU_NUM_WORKERS,
   });
 
   if (!parseResult.success) {

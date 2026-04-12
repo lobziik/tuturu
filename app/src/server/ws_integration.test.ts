@@ -7,12 +7,13 @@
  * @module server/ws_integration.test
  */
 
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
 import { serve, type ServerWebSocket } from 'bun';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { ServerToClientMessage, ClientToServerMessage } from '../shared/schemas';
+import type { SfuPeerHandler } from './sfu/types';
 import { createDatabase } from './database';
 import { createBlobStore } from './blob';
 import { createRoomManager, type ServerClientData } from './rooms';
@@ -762,5 +763,280 @@ describe('call', () => {
     ws1.close();
     ws2.close();
     ws3.close();
+  });
+});
+
+// ============================================================================
+// SFU signaling integration tests
+// ============================================================================
+
+describe('SFU signaling', () => {
+  let sfuServer: ReturnType<typeof serve<ServerClientData>>;
+  let sfuPort: number;
+  let sfuTempBlobDir: string;
+
+  // Call-tracking mock for SfuPeerHandler
+  type SfuCall = { method: string; args: unknown[] };
+  let sfuCalls: SfuCall[];
+  let sfuJoinShouldThrow: boolean;
+
+  function createMockSfuPeerHandler(): SfuPeerHandler {
+    return {
+      handleSfuJoin: async (_ws, peerId, roomId, rtpCaps) => {
+        if (sfuJoinShouldThrow) throw new Error('test-sfu-error');
+        sfuCalls.push({ method: 'handleSfuJoin', args: [peerId, roomId, rtpCaps] });
+      },
+      handleCreateTransport: async (_ws, peerId, roomId, direction) => {
+        sfuCalls.push({ method: 'handleCreateTransport', args: [peerId, roomId, direction] });
+      },
+      handleConnectTransport: async (_ws, peerId, roomId, transportId, dtlsParams) => {
+        sfuCalls.push({
+          method: 'handleConnectTransport',
+          args: [peerId, roomId, transportId, dtlsParams],
+        });
+      },
+      handleProduce: async (_ws, peerId, roomId, transportId, kind, rtpParams) => {
+        sfuCalls.push({
+          method: 'handleProduce',
+          args: [peerId, roomId, transportId, kind, rtpParams],
+        });
+      },
+      handleConsumeResume: async (_ws, peerId, roomId, consumerId) => {
+        sfuCalls.push({ method: 'handleConsumeResume', args: [peerId, roomId, consumerId] });
+      },
+      handleProducerPause: async (_ws, peerId, roomId, producerId) => {
+        sfuCalls.push({ method: 'handleProducerPause', args: [peerId, roomId, producerId] });
+      },
+      handleProducerResume: async (_ws, peerId, roomId, producerId) => {
+        sfuCalls.push({ method: 'handleProducerResume', args: [peerId, roomId, producerId] });
+      },
+      handlePeerLeave: (peerId, roomId) => {
+        sfuCalls.push({ method: 'handlePeerLeave', args: [peerId, roomId] });
+      },
+    };
+  }
+
+  beforeAll(async () => {
+    sfuTempBlobDir = mkdtempSync(join(tmpdir(), 'tuturu-sfu-integration-'));
+
+    const db = createDatabase(':memory:');
+    const blobStore = createBlobStore(sfuTempBlobDir);
+
+    function sfuSend(ws: ServerWebSocket<ServerClientData>, message: ServerToClientMessage): void {
+      try {
+        ws.send(JSON.stringify(message));
+      } catch {
+        // Connection closed
+      }
+    }
+
+    const rooms = createRoomManager({ maxParticipants: 6, send: sfuSend });
+
+    const handlers = createHandlers({
+      rooms,
+      db,
+      iceConfig: {
+        buildIceServers: () => [{ urls: 'stun:stun.test:19302' }],
+        forceRelay: false,
+      },
+      historyBatchSize: 5,
+      send: sfuSend,
+      pingIntervalMs: 60000, // Long — don't interfere with tests
+      pongTimeoutMs: 60000,
+      sfuPeerHandler: createMockSfuPeerHandler(),
+    });
+
+    const wsHandlers = createWebSocketHandlers(handlers, sfuSend);
+
+    const assets = await loadAssets();
+    const fetch = createFetchHandler({
+      assets,
+      blobStore,
+      blobMaxBytes: 1024 * 1024,
+      blobRateLimitMs: 100,
+      blobUploadToken: 'sfu-test-token',
+      getRoomCount: () => rooms.getRoomCount(),
+    });
+
+    sfuServer = serve<ServerClientData>({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch,
+      websocket: {
+        open: wsHandlers.open,
+        message: wsHandlers.message,
+        close: wsHandlers.close,
+      },
+    });
+
+    if (!sfuServer.port) throw new Error('SFU test server failed to bind');
+    sfuPort = sfuServer.port;
+  });
+
+  afterAll(async () => {
+    await sfuServer.stop(true);
+    rmSync(sfuTempBlobDir, { recursive: true, force: true });
+  });
+
+  // Reset call tracker before each test
+  beforeEach(() => {
+    sfuCalls = [];
+    sfuJoinShouldThrow = false;
+  });
+
+  // -- SFU-specific helpers --
+
+  function sfuConnect(): Promise<WebSocket> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${sfuPort}/ws`);
+      ws.addEventListener('open', () => resolve(ws));
+      ws.addEventListener('error', () => reject(new Error('WebSocket connect failed')));
+    });
+  }
+
+  async function sfuConnectAndJoin(roomId: string): Promise<WebSocket> {
+    const ws = await sfuConnect();
+    const messagesPromise = collectMessages(ws, 3);
+    sendMsg(ws, { type: 'join', v: 1, roomId, encryptedNickname: 'sfu-test' });
+    await messagesPromise;
+    return ws;
+  }
+
+  /** Wait briefly for async fire-and-forget handlers to complete */
+  function tick(ms = 50): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // -- Tests --
+
+  test('join response includes sfuEnabled: true', async () => {
+    const ws = await sfuConnect();
+    const msgPromise = waitForMessage(ws, 'join');
+    sendMsg(ws, {
+      type: 'join',
+      v: 1,
+      roomId: `sfu-enabled-${Date.now()}`,
+      encryptedNickname: 'nick',
+    });
+    const joinMsg = await msgPromise;
+    expect(joinMsg.sfuEnabled).toBe(true);
+    ws.close();
+  });
+
+  test('sfu-join dispatches to handleSfuJoin', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-join-${Date.now()}`);
+    sendMsg(ws, { type: 'sfu-join', v: 1, rtpCapabilities: { codecs: [], headerExtensions: [] } });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handleSfuJoin');
+    expect(call).toBeDefined();
+    ws.close();
+  });
+
+  test('sfu-create-transport dispatches to handleCreateTransport', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-transport-${Date.now()}`);
+    sendMsg(ws, { type: 'sfu-create-transport', v: 1, direction: 'send' });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handleCreateTransport');
+    expect(call).toBeDefined();
+    expect(call!.args[2]).toBe('send');
+    ws.close();
+  });
+
+  test('sfu-connect-transport dispatches to handleConnectTransport', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-conn-${Date.now()}`);
+    sendMsg(ws, {
+      type: 'sfu-connect-transport',
+      v: 1,
+      transportId: 't1',
+      dtlsParameters: { fingerprints: [] },
+    });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handleConnectTransport');
+    expect(call).toBeDefined();
+    expect(call!.args[2]).toBe('t1');
+    ws.close();
+  });
+
+  test('sfu-produce dispatches to handleProduce', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-produce-${Date.now()}`);
+    sendMsg(ws, {
+      type: 'sfu-produce',
+      v: 1,
+      transportId: 'tp1',
+      kind: 'audio',
+      rtpParameters: {},
+    });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handleProduce');
+    expect(call).toBeDefined();
+    expect(call!.args[3]).toBe('audio');
+    ws.close();
+  });
+
+  test('sfu-consume-resume dispatches to handleConsumeResume', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-resume-${Date.now()}`);
+    sendMsg(ws, { type: 'sfu-consume-resume', v: 1, consumerId: 'c1' });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handleConsumeResume');
+    expect(call).toBeDefined();
+    expect(call!.args[2]).toBe('c1');
+    ws.close();
+  });
+
+  test('sfu-producer-pause dispatches to handleProducerPause', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-pause-${Date.now()}`);
+    sendMsg(ws, { type: 'sfu-producer-pause', v: 1, producerId: 'p1' });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handleProducerPause');
+    expect(call).toBeDefined();
+    expect(call!.args[2]).toBe('p1');
+    ws.close();
+  });
+
+  test('sfu-producer-resume dispatches to handleProducerResume', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-resume-prod-${Date.now()}`);
+    sendMsg(ws, { type: 'sfu-producer-resume', v: 1, producerId: 'p2' });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handleProducerResume');
+    expect(call).toBeDefined();
+    expect(call!.args[2]).toBe('p2');
+    ws.close();
+  });
+
+  test('SFU message before joining room returns NOT_IN_ROOM error', async () => {
+    const ws = await sfuConnect();
+    const errorPromise = waitForMessage(ws, 'error');
+    sendMsg(ws, { type: 'sfu-join', v: 1, rtpCapabilities: null });
+    const errorMsg = await errorPromise;
+    expect(errorMsg.code).toBe('NOT_IN_ROOM');
+    ws.close();
+  });
+
+  test('SFU handler async error returns UNKNOWN error', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-err-${Date.now()}`);
+    sfuJoinShouldThrow = true;
+    const errorPromise = waitForMessage(ws, 'error');
+    sendMsg(ws, { type: 'sfu-join', v: 1, rtpCapabilities: { codecs: [], headerExtensions: [] } });
+    const errorMsg = await errorPromise;
+    expect(errorMsg.code).toBe('UNKNOWN');
+    expect(errorMsg.message).toContain('test-sfu-error');
+    ws.close();
+  });
+
+  test('leave message calls sfuPeerHandler.handlePeerLeave', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-leave-${Date.now()}`);
+    sendMsg(ws, { type: 'leave', v: 1 });
+    await tick();
+    const call = sfuCalls.find((c) => c.method === 'handlePeerLeave');
+    expect(call).toBeDefined();
+    ws.close();
+  });
+
+  test('WebSocket close calls sfuPeerHandler.handlePeerLeave', async () => {
+    const ws = await sfuConnectAndJoin(`sfu-disconnect-${Date.now()}`);
+    ws.close();
+    await tick(200); // Slightly longer wait for close event propagation
+    const call = sfuCalls.find((c) => c.method === 'handlePeerLeave');
+    expect(call).toBeDefined();
   });
 });

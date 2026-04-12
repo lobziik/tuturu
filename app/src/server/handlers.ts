@@ -10,9 +10,11 @@
 
 import type { ServerWebSocket } from 'bun';
 import type { ClientToServerMessage, ServerToClientMessage } from '../shared/schemas';
+import type { types as mediasoupTypes } from 'mediasoup';
 import type { MessageStore } from './database';
 import type { RoomManager, ServerClientData, SendFn } from './rooms';
 import type { Heartbeat } from './heartbeat';
+import type { SfuPeerHandler } from './sfu/types';
 import { createHeartbeat } from './heartbeat';
 import { MAX_CALL_PARTICIPANTS } from '../shared/constants';
 
@@ -35,6 +37,8 @@ interface HandlerDeps {
   send: SendFn;
   pingIntervalMs: number;
   pongTimeoutMs: number;
+  /** SFU peer handler — optional, SFU features disabled when absent. */
+  sfuPeerHandler?: SfuPeerHandler;
 }
 
 /** Public handler interface used by the WS router */
@@ -73,6 +77,43 @@ export interface Handlers {
   handlePong(ws: ServerWebSocket<ServerClientData>, peerId: string): void;
   /** Called on WS close — cleanup heartbeat and room membership */
   handleDisconnect(ws: ServerWebSocket<ServerClientData>, peerId: string): void;
+
+  // SFU handlers
+  handleSfuJoin(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-join' }>,
+  ): void;
+  handleSfuCreateTransport(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-create-transport' }>,
+  ): void;
+  handleSfuConnectTransport(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-connect-transport' }>,
+  ): void;
+  handleSfuProduce(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-produce' }>,
+  ): void;
+  handleSfuConsumeResume(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-consume-resume' }>,
+  ): void;
+  handleSfuProducerPause(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-producer-pause' }>,
+  ): void;
+  handleSfuProducerResume(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-producer-resume' }>,
+  ): void;
 }
 
 /**
@@ -132,13 +173,14 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     // Store roomId on WebSocket data
     ws.data.roomId = msg.roomId;
 
-    // Send ICE configuration
+    // Send ICE configuration + SFU availability flag
     const iceServers = iceConfig.buildIceServers(peerId);
     send(ws, {
       type: 'join',
       v: 1,
       iceServers,
       iceTransportPolicy: iceConfig.forceRelay ? 'relay' : 'all',
+      sfuEnabled: !!deps.sfuPeerHandler,
     });
 
     // Send peers list to the new peer
@@ -178,6 +220,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   function handleLeave(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
     const roomId = ws.data.roomId;
     if (roomId) {
+      deps.sfuPeerHandler?.handlePeerLeave(peerId, roomId);
       rooms.leave(roomId, peerId);
       ws.data.roomId = null;
     }
@@ -378,6 +421,146 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     handleLeave(ws, peerId);
   }
 
+  // ============================================================================
+  // SFU handlers — thin wrappers: guard "not in room", delegate to sfuPeerHandler
+  // ============================================================================
+
+  /** Guard: peer must be in a room for SFU operations. Returns roomId or sends error. */
+  function requireRoomId(ws: ServerWebSocket<ServerClientData>, peerId: string): string | null {
+    const roomId = ws.data.roomId;
+    if (!roomId) {
+      console.warn(`[HANDLER] ${peerId} SFU operation rejected: not in room`);
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'NOT_IN_ROOM',
+        message: 'Must join a room before SFU operations',
+      });
+      return null;
+    }
+    return roomId;
+  }
+
+  /** Wrap an async SFU handler call — log and send error on failure. */
+  function wrapSfuAsync(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    fn: () => Promise<void>,
+  ): void {
+    fn().catch((error: unknown) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[HANDLER] SFU error for peer ${peerId}: ${msg}`);
+      send(ws, {
+        type: 'error',
+        v: 1,
+        code: 'UNKNOWN',
+        message: `SFU operation failed: ${msg}`,
+      });
+    });
+  }
+
+  function handleSfuJoin(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-join' }>,
+  ): void {
+    const roomId = requireRoomId(ws, peerId);
+    if (!roomId || !deps.sfuPeerHandler) return;
+    wrapSfuAsync(ws, peerId, () =>
+      deps.sfuPeerHandler!.handleSfuJoin(
+        ws,
+        peerId,
+        roomId,
+        msg.rtpCapabilities as mediasoupTypes.RtpCapabilities,
+      ),
+    );
+  }
+
+  function handleSfuCreateTransport(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-create-transport' }>,
+  ): void {
+    const roomId = requireRoomId(ws, peerId);
+    if (!roomId || !deps.sfuPeerHandler) return;
+    wrapSfuAsync(ws, peerId, () =>
+      deps.sfuPeerHandler!.handleCreateTransport(ws, peerId, roomId, msg.direction),
+    );
+  }
+
+  function handleSfuConnectTransport(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-connect-transport' }>,
+  ): void {
+    const roomId = requireRoomId(ws, peerId);
+    if (!roomId || !deps.sfuPeerHandler) return;
+    wrapSfuAsync(ws, peerId, () =>
+      deps.sfuPeerHandler!.handleConnectTransport(
+        ws,
+        peerId,
+        roomId,
+        msg.transportId,
+        msg.dtlsParameters as mediasoupTypes.DtlsParameters,
+      ),
+    );
+  }
+
+  function handleSfuProduce(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-produce' }>,
+  ): void {
+    const roomId = requireRoomId(ws, peerId);
+    if (!roomId || !deps.sfuPeerHandler) return;
+    wrapSfuAsync(ws, peerId, () =>
+      deps.sfuPeerHandler!.handleProduce(
+        ws,
+        peerId,
+        roomId,
+        msg.transportId,
+        msg.kind,
+        msg.rtpParameters as mediasoupTypes.RtpParameters,
+      ),
+    );
+  }
+
+  function handleSfuConsumeResume(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-consume-resume' }>,
+  ): void {
+    const roomId = requireRoomId(ws, peerId);
+    if (!roomId || !deps.sfuPeerHandler) return;
+    wrapSfuAsync(ws, peerId, () =>
+      deps.sfuPeerHandler!.handleConsumeResume(ws, peerId, roomId, msg.consumerId),
+    );
+  }
+
+  function handleSfuProducerPause(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-producer-pause' }>,
+  ): void {
+    const roomId = requireRoomId(ws, peerId);
+    if (!roomId || !deps.sfuPeerHandler) return;
+    wrapSfuAsync(ws, peerId, () =>
+      deps.sfuPeerHandler!.handleProducerPause(ws, peerId, roomId, msg.producerId),
+    );
+  }
+
+  function handleSfuProducerResume(
+    ws: ServerWebSocket<ServerClientData>,
+    peerId: string,
+    msg: Extract<ClientToServerMessage, { type: 'sfu-producer-resume' }>,
+  ): void {
+    const roomId = requireRoomId(ws, peerId);
+    if (!roomId || !deps.sfuPeerHandler) return;
+    wrapSfuAsync(ws, peerId, () =>
+      deps.sfuPeerHandler!.handleProducerResume(ws, peerId, roomId, msg.producerId),
+    );
+  }
+
   return {
     handleJoin,
     handleLeave,
@@ -389,5 +572,12 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     handleChatReceived,
     handlePong,
     handleDisconnect,
+    handleSfuJoin,
+    handleSfuCreateTransport,
+    handleSfuConnectTransport,
+    handleSfuProduce,
+    handleSfuConsumeResume,
+    handleSfuProducerPause,
+    handleSfuProducerResume,
   };
 }

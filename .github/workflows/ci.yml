@@ -5,8 +5,9 @@ permissions:
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 jobs:
   lint_typecheck_format:
@@ -110,6 +111,9 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   build_verify:
+    if: >-
+      github.event_name == 'push'
+      || contains(github.event.pull_request.labels.*.name, 'build-verify')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -125,7 +129,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: app
-        run: bun install
+        run: MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true bun install
 
       - name: Build mediasoup worker from source
         working-directory: app
@@ -146,8 +150,12 @@ jobs:
       - name: Smoke test compiled binary
         working-directory: app
         run: |
-          ./dist/server &
+          TUTURU_SMOKE_TEST=1 ./dist/server &
           SERVER_PID=$!
-          sleep 5
-          curl -sf http://localhost:3000/health || (kill $SERVER_PID 2>/dev/null; exit 1)
-          kill $SERVER_PID 2>/dev/null
+          trap 'kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null' EXIT
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:3000/health && exit 0
+            sleep 1
+          done
+          echo "Health check failed after 10s"
+          exit 1

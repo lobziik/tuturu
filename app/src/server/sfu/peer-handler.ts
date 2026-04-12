@@ -110,6 +110,13 @@ export function createSfuPeerHandler(deps: SfuPeerHandlerDeps): SfuPeerHandler {
     console.log(
       `[SFU:PeerHandler] Created ${direction} transport ${transport.id} for peer ${peerId}`,
     );
+
+    // When recv transport is created and peer has capabilities, create consumers
+    // for all existing producers from other peers. This handles the case where
+    // the peer joined before having a recv transport (two-step join flow).
+    if (direction === 'recv' && peer.rtpCapabilities) {
+      await createConsumersForNewPeer(room, peer, roomId, routeToPeer);
+    }
   }
 
   async function handleConnectTransport(

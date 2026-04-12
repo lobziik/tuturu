@@ -9,6 +9,7 @@
  * @module state/effects/types
  */
 
+import type { types as msTypes } from 'mediasoup-client';
 import type { AppState, Action, Screen } from '../types';
 import type { Dispatch } from '../context';
 import type { IceServerConfig, IceTransportPolicy } from '../../../shared/types';
@@ -54,6 +55,20 @@ export interface ResourceRefs {
    * we never joined (e.g. media error before waiting-for-peer).
    */
   inCall: { current: boolean };
+
+  // SFU-specific refs
+  /** mediasoup-client send Transport */
+  sfuSendTransport: { current: msTypes.Transport | null };
+  /** mediasoup-client recv Transport */
+  sfuRecvTransport: { current: msTypes.Transport | null };
+  /** kind ('audio'|'video') → Producer */
+  sfuProducers: { current: Map<string, msTypes.Producer> };
+  /** consumerId → Consumer */
+  sfuConsumers: { current: Map<string, msTypes.Consumer> };
+  /** E2EE Web Worker for frame-level encryption */
+  e2eeWorker: { current: Worker | null };
+  /** Pending callback resolved by SFU_PRODUCER_CREATED to complete produce handshake */
+  pendingProduceCallback: { current: ((id: string) => void) | null };
 }
 
 /**

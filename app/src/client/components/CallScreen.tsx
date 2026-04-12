@@ -29,6 +29,8 @@ interface CallScreenProps {
   peerConnectionStates: Record<string, PeerConnectionStatus>;
   /** Room peers (for nickname resolution) */
   peers: Record<string, PeerState>;
+  /** Active speaker peer ID (from SFU AudioLevelObserver) */
+  activeSpeakerPeerId?: string | null | undefined;
   dispatch: Dispatch;
 }
 
@@ -45,11 +47,13 @@ function VideoArea({
   remoteStreams,
   peerConnectionStates,
   peers,
+  activeSpeakerPeerId,
 }: Readonly<{
   remotePeerIds: string[];
   remoteStreams: Map<string, MediaStream>;
   peerConnectionStates: Record<string, PeerConnectionStatus>;
   peers: Record<string, PeerState>;
+  activeSpeakerPeerId?: string | null | undefined;
 }>) {
   if (remotePeerIds.length === 0) {
     return (
@@ -68,6 +72,7 @@ function VideoArea({
           stream={remoteStreams.get(peerId) ?? null}
           connectionStatus={peerConnectionStates[peerId] ?? 'connecting'}
           nickname={peers[peerId]?.nickname}
+          isActiveSpeaker={activeSpeakerPeerId === peerId}
         />
       ))}
     </div>
@@ -161,6 +166,7 @@ export function CallScreen({
   remoteStreams,
   peerConnectionStates,
   peers,
+  activeSpeakerPeerId,
   dispatch,
 }: Readonly<CallScreenProps>) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -251,6 +257,7 @@ export function CallScreen({
           remoteStreams={remoteStreams}
           peerConnectionStates={peerConnectionStates}
           peers={peers}
+          activeSpeakerPeerId={activeSpeakerPeerId}
         />
 
         {/* Local video PiP overlay */}

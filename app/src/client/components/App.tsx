@@ -10,6 +10,7 @@
  * @module components/App
  */
 
+import type { types as msTypes } from 'mediasoup-client';
 import { useReducer, useEffect, useRef, useCallback, useMemo } from 'preact/hooks';
 import { reducer } from '../state/reducer';
 import { initialState, type AppState, type Action, type RoomState } from '../state/types';
@@ -47,6 +48,14 @@ export function App() {
   const makingOfferPeersRef = useRef(new Set<string>());
   const inCallRef = useRef<boolean>(false);
 
+  // SFU refs
+  const sfuSendTransportRef = useRef<msTypes.Transport | null>(null);
+  const sfuRecvTransportRef = useRef<msTypes.Transport | null>(null);
+  const sfuProducersRef = useRef(new Map<string, msTypes.Producer>());
+  const sfuConsumersRef = useRef(new Map<string, msTypes.Consumer>());
+  const e2eeWorkerRef = useRef<Worker | null>(null);
+  const pendingProduceCallbackRef = useRef<((id: string) => void) | null>(null);
+
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
     () => ({
@@ -64,6 +73,12 @@ export function App() {
       seqLoaded: seqLoadedRef,
       makingOfferPeers: makingOfferPeersRef,
       inCall: inCallRef,
+      sfuSendTransport: sfuSendTransportRef,
+      sfuRecvTransport: sfuRecvTransportRef,
+      sfuProducers: sfuProducersRef,
+      sfuConsumers: sfuConsumersRef,
+      e2eeWorker: e2eeWorkerRef,
+      pendingProduceCallback: pendingProduceCallbackRef,
     }),
     [],
   );
@@ -179,6 +194,7 @@ export function App() {
             remoteStreams={refs.remoteStreams.current}
             peerConnectionStates={roomState.peerConnectionStates}
             peers={roomState.peers}
+            activeSpeakerPeerId={roomState.activeSpeakerPeerId}
             dispatch={dispatch}
           />
         );

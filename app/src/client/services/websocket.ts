@@ -164,7 +164,7 @@ function handleServerMessage(
         type: 'JOINED_ROOM',
         iceServers: message.iceServers,
         iceTransportPolicy: message.iceTransportPolicy,
-        ...(message.sfuEnabled !== undefined ? { sfuEnabled: message.sfuEnabled } : {}),
+        ...(message.sfuEnabled === undefined ? {} : { sfuEnabled: message.sfuEnabled }),
       });
       break;
 

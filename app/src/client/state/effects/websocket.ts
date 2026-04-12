@@ -18,8 +18,9 @@ export function handleWebSocketEffects(ctx: EffectContext, args: EffectArgs): vo
   const { action, newState } = args;
   const newScreen = getScreen(newState);
 
-  // Media acquired + now waiting → Send join-call to server
-  if (action.type === 'MEDIA_ACQUIRED' && newScreen?.type === 'waiting-for-peer') {
+  // Media acquired + now waiting → Send join-call to server (mesh mode only — SFU sends its own)
+  const sfuMode = newState.phase === 'room' && newState.sfuMode;
+  if (action.type === 'MEDIA_ACQUIRED' && newScreen?.type === 'waiting-for-peer' && !sfuMode) {
     sendMessage(refs.ws.current, { type: 'join-call', v: 1 });
     refs.inCall.current = true;
   }

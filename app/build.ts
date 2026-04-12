@@ -45,3 +45,20 @@ if (!result.success) {
   }
   process.exit(1);
 }
+
+// E2EE worker — separate entrypoint (runs in Web Worker context, no React/Preact)
+const e2eeResult = await Bun.build({
+  entrypoints: ['src/client/e2ee/e2ee-worker.ts'],
+  outdir: 'public',
+  target: 'browser',
+  sourcemap: noSourcemap ? 'none' : 'inline',
+  minify: isMinify,
+  naming: 'e2ee-worker.js',
+});
+
+if (!e2eeResult.success) {
+  for (const log of e2eeResult.logs) {
+    console.error(log);
+  }
+  process.exit(1);
+}

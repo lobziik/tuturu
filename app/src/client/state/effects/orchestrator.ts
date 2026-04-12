@@ -18,6 +18,7 @@ import { handleSettingsEffects } from './settings';
 import { handleWebSocketEffects } from './websocket';
 import { handleMediaEffects } from './media';
 import { handleWebRTCEffects } from './webrtc';
+import { handleSfuEffects } from './sfu';
 import { handleErrorEffects } from './error';
 
 /**
@@ -33,5 +34,6 @@ export function runEffects(ctx: EffectContext, args: EffectArgs): void {
   handleWebSocketEffects(ctx, args);
   handleMediaEffects(ctx, args);
   handleWebRTCEffects(ctx, args);
+  handleSfuEffects(ctx, args);
   handleErrorEffects(ctx, args);
 }

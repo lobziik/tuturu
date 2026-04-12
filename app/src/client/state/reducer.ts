@@ -75,6 +75,8 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       callActive: false,
       callPeers: [],
       peerConnectionStates: {},
+      sfuMode: false,
+      activeSpeakerPeerId: null,
       overlay: null,
     };
   }
@@ -274,6 +276,44 @@ function roomReducer(state: RoomState, action: Action): AppState {
       };
     case 'LEAVE_ROOM':
       return { phase: 'login', nickname: state.nickname };
+
+    // SFU lifecycle
+    case 'SFU_ACTIVE_SPEAKER':
+      return { ...state, activeSpeakerPeerId: action.peerId };
+    // SFU actions handled purely in effects — no state change (except SFU_NEW_CONSUMER)
+    case 'SFU_ROUTER_CAPS_RECEIVED':
+    case 'SFU_TRANSPORT_CREATED':
+    case 'SFU_PRODUCER_CREATED':
+      return state;
+    // SFU_NEW_CONSUMER: transition waiting-for-peer → call when first consumer arrives
+    case 'SFU_NEW_CONSUMER': {
+      if (state.screen.type === 'waiting-for-peer') {
+        return {
+          ...state,
+          peerConnectionStates: {
+            ...state.peerConnectionStates,
+            [action.peerId]: 'connected',
+          },
+          screen: {
+            type: 'call',
+            muted: state.screen.muted,
+            videoOff: state.screen.videoOff,
+            pipHidden: state.screen.pipHidden,
+          },
+        };
+      }
+      // In call: track peer as connected
+      if (state.screen.type === 'call') {
+        return {
+          ...state,
+          peerConnectionStates: {
+            ...state.peerConnectionStates,
+            [action.peerId]: 'connected',
+          },
+        };
+      }
+      return state;
+    }
 
     // Phase transition actions — not applicable in room phase
     case 'SUBMIT_NICKNAME':
@@ -563,6 +603,7 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         ...state,
         iceServers: action.iceServers,
         iceTransportPolicy: action.iceTransportPolicy,
+        sfuMode: !!action.sfuEnabled,
       };
 
     // Signaling actions — no state transitions, handled purely in effects
@@ -639,6 +680,7 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         callActive: false,
         callPeers: [],
         peerConnectionStates: {},
+        activeSpeakerPeerId: null,
       };
 
     case 'DISMISS_ERROR': {

@@ -1074,6 +1074,12 @@ video {
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 2px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.video-tile.active-speaker {
+  border-color: var(--primary, #22d3ee);
 }
 
 .video-tile-video {

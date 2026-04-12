@@ -20,10 +20,11 @@ export function handleMediaEffects(ctx: EffectContext, args: EffectArgs): void {
     void getUserMedia(dispatch);
   }
 
-  // Toggle mute → Update audio track enabled state
-  // 'in' operator narrows newScreen to variants that have 'muted' (waiting-for-peer | negotiating | call)
+  // Toggle mute → Update audio track enabled state (mesh mode only — SFU uses producer pause)
+  const sfuMode = newState.phase === 'room' && newState.sfuMode;
   if (
     action.type === 'TOGGLE_MUTE' &&
+    !sfuMode &&
     refs.localStream.current &&
     newScreen &&
     'muted' in newScreen
@@ -35,9 +36,10 @@ export function handleMediaEffects(ctx: EffectContext, args: EffectArgs): void {
     }
   }
 
-  // Toggle video → Update video track enabled state
+  // Toggle video → Update video track enabled state (mesh mode only — SFU uses producer pause)
   if (
     action.type === 'TOGGLE_VIDEO' &&
+    !sfuMode &&
     refs.localStream.current &&
     newScreen &&
     'videoOff' in newScreen

@@ -1025,7 +1025,7 @@ describe('reducer', () => {
       expect(result).toBe(state);
     });
 
-    test('SFU_NEW_CONSUMER transitions waiting-for-peer to call', () => {
+    test('SFU_NEW_CONSUMER transitions waiting-for-peer to call with connecting status', () => {
       const state = roomState({
         type: 'waiting-for-peer',
         muted: false,
@@ -1044,10 +1044,12 @@ describe('reducer', () => {
         }),
       );
       expect(room.screen.type).toBe('call');
-      expect(room.peerConnectionStates['peer-a']).toBe('connected');
+      // 'connecting' not 'connected' — consumer creation is async, RTC_CONNECTED
+      // will promote to 'connected' after the stream is ready in refs
+      expect(room.peerConnectionStates['peer-a']).toBe('connecting');
     });
 
-    test('SFU_NEW_CONSUMER in call state adds peer as connected', () => {
+    test('SFU_NEW_CONSUMER in call state adds peer as connecting', () => {
       const state = roomState(
         { type: 'call', muted: false, videoOff: false, pipHidden: false },
         { peerConnectionStates: { 'peer-a': 'connected' } },
@@ -1065,7 +1067,8 @@ describe('reducer', () => {
       );
       expect(room.screen.type).toBe('call');
       expect(room.peerConnectionStates['peer-a']).toBe('connected');
-      expect(room.peerConnectionStates['peer-b']).toBe('connected');
+      // New peer starts as 'connecting' until consumer is created
+      expect(room.peerConnectionStates['peer-b']).toBe('connecting');
     });
 
     test('SFU_NEW_CONSUMER in idle state returns state unchanged', () => {

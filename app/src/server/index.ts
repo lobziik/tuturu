@@ -77,12 +77,19 @@ async function main(): Promise<void> {
     send,
   });
 
+  // In dev mode, default announcedIp to 127.0.0.1 so browsers can reach the
+  // mediasoup WebRtcTransport (0.0.0.0 is not routable from the browser).
+  const sfuAnnouncedIp =
+    config.sfuAnnouncedIp ??
+    config.externalIp ??
+    (config.nodeEnv === 'development' ? '127.0.0.1' : undefined);
+
   // Create SFU room manager and peer handler
   const sfuRoomManager = createSfuRoomManager({
     workerManager,
     broadcast: (roomId, message, excludePeerId) => rooms.broadcast(roomId, message, excludePeerId),
     listenIp: config.sfuListenIp,
-    announcedIp: config.sfuAnnouncedIp ?? config.externalIp,
+    announcedIp: sfuAnnouncedIp,
   });
 
   const sfuPeerHandler = createSfuPeerHandler({
@@ -91,7 +98,7 @@ async function main(): Promise<void> {
     routeToPeer: (roomId, targetPeerId, message) =>
       rooms.routeToPeer(roomId, targetPeerId, message),
     listenIp: config.sfuListenIp,
-    announcedIp: config.sfuAnnouncedIp ?? config.externalIp,
+    announcedIp: sfuAnnouncedIp,
   });
 
   // Create handlers with all dependencies

@@ -16,8 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (layer caching).
+# MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD prevents postinstall from downloading prebuilt binaries.
 COPY app/package.json app/bun.lock ./
-RUN bun install --frozen-lockfile --production
+RUN MEDIASOUP_SKIP_WORKER_PREBUILT_DOWNLOAD=true bun install --frozen-lockfile --production
 
 # Copy source and build
 COPY app/src ./src

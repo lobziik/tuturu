@@ -45,9 +45,13 @@ declare module '*.webmanifest' {
 }
 
 /**
- * Type declaration for mediasoup worker binary embed.
- * `with { type: 'file' }` returns a string path in dev mode,
- * or a BunFile/string in compiled mode.
+ * Type declaration for the embedded mediasoup-worker binary.
+ * Imported via `with { type: 'file' }`:
+ * - Dev mode: returns string path to the file on disk
+ * - Compiled mode: returns path to Bun's auto-extracted temp file (/$bunfs/...)
+ *
+ * Uses wildcard because TS doesn't support relative paths in ambient module declarations.
+ * Only consumed by `src/server/worker-bin.ts`. No npm package matches this name.
  */
 declare module '*/mediasoup-worker' {
   const path: string;

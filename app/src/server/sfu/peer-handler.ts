@@ -39,17 +39,28 @@ export function createSfuPeerHandler(deps: SfuPeerHandlerDeps): SfuPeerHandler {
   ): Promise<void> {
     const room = await sfuRoomManager.getOrCreateRoom(roomId);
 
-    // Create or reset peer state
-    const peerState: SfuPeerState = {
-      peerId,
-      roomId,
-      rtpCapabilities,
-      sendTransport: null,
-      recvTransport: null,
-      producers: new Map(),
-      consumers: new Map(),
-    };
-    room.peers.set(peerId, peerState);
+    const existingPeer = room.peers.get(peerId);
+    let peer: SfuPeerState;
+
+    if (existingPeer) {
+      // Second sfu-join (real caps) — update capabilities only, preserve transports/producers
+      existingPeer.rtpCapabilities = rtpCapabilities;
+      peer = existingPeer;
+      console.log(`[SFU:PeerHandler] Peer ${peerId} re-joined SFU room ${roomId} (updated caps)`);
+    } else {
+      // First sfu-join — create fresh peer state
+      peer = {
+        peerId,
+        roomId,
+        rtpCapabilities,
+        sendTransport: null,
+        recvTransport: null,
+        producers: new Map(),
+        consumers: new Map(),
+      };
+      room.peers.set(peerId, peer);
+      console.log(`[SFU:PeerHandler] Peer ${peerId} joined SFU room ${roomId}`);
+    }
 
     // Send router RTP capabilities back to the client
     send(ws, {
@@ -58,10 +69,8 @@ export function createSfuPeerHandler(deps: SfuPeerHandlerDeps): SfuPeerHandler {
       rtpCapabilities: room.router.rtpCapabilities,
     });
 
-    console.log(`[SFU:PeerHandler] Peer ${peerId} joined SFU room ${roomId}`);
-
     // Create consumers for any existing producers from other peers
-    await createConsumersForNewPeer(room, peerState, roomId, routeToPeer);
+    await createConsumersForNewPeer(room, peer, roomId, routeToPeer);
   }
 
   async function handleCreateTransport(

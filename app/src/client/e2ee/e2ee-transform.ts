@@ -23,7 +23,7 @@ export function createE2eeWorker(): Worker | null {
     return null;
   }
 
-  return new Worker(new URL('./e2ee-worker.ts', import.meta.url), { type: 'module' });
+  return new Worker('/e2ee-worker.js', { type: 'module' });
 }
 
 /**

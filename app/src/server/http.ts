@@ -8,7 +8,7 @@
  */
 
 import type { Server } from 'bun';
-import type { LoadedAssets, TextAssets, BinaryAssets, AssetEtags } from './assets';
+import type { LoadedAssets } from './assets';
 import type { BlobStore } from './blob';
 import type { ServerClientData } from './rooms';
 import { isValidUuidV4 } from '../shared/validation';
@@ -38,6 +38,58 @@ export function createFetchHandler(deps: HttpDeps) {
 
   /** Rate limiter: IP → last upload timestamp */
   const uploadTimestamps = new Map<string, number>();
+
+  // Build static asset lookup tables once at init (not per-request)
+  const textRoutes: Record<
+    string,
+    { body: string; contentType: string; etag: string; cacheControl: string }
+  > = {
+    '/': {
+      body: text.indexHtml,
+      contentType: 'text/html',
+      etag: etags.html,
+      cacheControl: 'no-cache',
+    },
+    '/index.html': {
+      body: text.indexHtml,
+      contentType: 'text/html',
+      etag: etags.html,
+      cacheControl: 'no-cache',
+    },
+    '/styles.css': {
+      body: text.styles,
+      contentType: 'text/css',
+      etag: etags.css,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+    '/index.js': {
+      body: text.clientJs,
+      contentType: 'application/javascript',
+      etag: etags.js,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+    '/e2ee-worker.js': {
+      body: text.e2eeWorkerJs,
+      contentType: 'application/javascript',
+      etag: etags.e2eeWorkerJs,
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+    '/site.webmanifest': {
+      body: text.webmanifest,
+      contentType: 'application/manifest+json',
+      etag: etags.manifest,
+      cacheControl: 'public, max-age=0, must-revalidate',
+    },
+  };
+
+  const binaryRoutes: Record<string, { body: ArrayBuffer; contentType: string }> = {
+    '/favicon.ico': { body: binary.faviconIco, contentType: 'image/x-icon' },
+    '/favicon-16x16.png': { body: binary.favicon16, contentType: 'image/png' },
+    '/favicon-32x32.png': { body: binary.favicon32, contentType: 'image/png' },
+    '/apple-touch-icon.png': { body: binary.appleTouchIcon, contentType: 'image/png' },
+    '/android-chrome-192x192.png': { body: binary.androidChrome192, contentType: 'image/png' },
+    '/android-chrome-512x512.png': { body: binary.androidChrome512, contentType: 'image/png' },
+  };
 
   return function fetch(
     req: Request,
@@ -106,66 +158,27 @@ export function createFetchHandler(deps: HttpDeps) {
       return new Response('Method not allowed', { status: 405 });
     }
 
-    // Static assets (extracted to reduce cognitive complexity)
-    return serveStaticAsset(url.pathname, req, text, binary, etags);
+    // Static assets
+    return serveStaticAsset(url.pathname, req, textRoutes, binaryRoutes);
   };
 }
 
 /**
  * Serve embedded static assets with ETag-based caching.
  *
+ * Lookup tables are built once in createFetchHandler and passed in by reference.
+ *
  * @returns Response for known assets, or 404
  */
 function serveStaticAsset(
   pathname: string,
   req: Request,
-  text: TextAssets,
-  binary: BinaryAssets,
-  etags: AssetEtags,
-): Response {
-  // Text assets — ETag-based caching
-  const textRoutes: Record<
+  textRoutes: Record<
     string,
     { body: string; contentType: string; etag: string; cacheControl: string }
-  > = {
-    '/': {
-      body: text.indexHtml,
-      contentType: 'text/html',
-      etag: etags.html,
-      cacheControl: 'no-cache',
-    },
-    '/index.html': {
-      body: text.indexHtml,
-      contentType: 'text/html',
-      etag: etags.html,
-      cacheControl: 'no-cache',
-    },
-    '/styles.css': {
-      body: text.styles,
-      contentType: 'text/css',
-      etag: etags.css,
-      cacheControl: 'public, max-age=31536000, immutable',
-    },
-    '/index.js': {
-      body: text.clientJs,
-      contentType: 'application/javascript',
-      etag: etags.js,
-      cacheControl: 'public, max-age=31536000, immutable',
-    },
-    '/e2ee-worker.js': {
-      body: text.e2eeWorkerJs,
-      contentType: 'application/javascript',
-      etag: etags.e2eeWorkerJs,
-      cacheControl: 'public, max-age=31536000, immutable',
-    },
-    '/site.webmanifest': {
-      body: text.webmanifest,
-      contentType: 'application/manifest+json',
-      etag: etags.manifest,
-      cacheControl: 'public, max-age=0, must-revalidate',
-    },
-  };
-
+  >,
+  binaryRoutes: Record<string, { body: ArrayBuffer; contentType: string }>,
+): Response {
   const textAsset = textRoutes[pathname];
   if (textAsset) {
     if (req.headers.get('If-None-Match') === textAsset.etag) {
@@ -179,16 +192,6 @@ function serveStaticAsset(
       },
     });
   }
-
-  // Binary assets (favicons, icons) — long cache, no ETag
-  const binaryRoutes: Record<string, { body: ArrayBuffer; contentType: string }> = {
-    '/favicon.ico': { body: binary.faviconIco, contentType: 'image/x-icon' },
-    '/favicon-16x16.png': { body: binary.favicon16, contentType: 'image/png' },
-    '/favicon-32x32.png': { body: binary.favicon32, contentType: 'image/png' },
-    '/apple-touch-icon.png': { body: binary.appleTouchIcon, contentType: 'image/png' },
-    '/android-chrome-192x192.png': { body: binary.androidChrome192, contentType: 'image/png' },
-    '/android-chrome-512x512.png': { body: binary.androidChrome512, contentType: 'image/png' },
-  };
 
   const binaryAsset = binaryRoutes[pathname];
   if (binaryAsset) {

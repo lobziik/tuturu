@@ -1,8 +1,10 @@
 /**
- * Unit tests for worker binary resolution and extraction.
+ * Unit tests for worker binary extraction logic.
  *
- * Tests `extractWorkerBin` (compiled-mode extraction logic) using real filesystem.
- * Tests `resolveWorkerBin` dev-mode branch (returns node_modules path).
+ * Tests `extractWorkerBin` (compiled-mode extraction) using real filesystem.
+ * Imports from `worker-extract.ts` (not `worker-bin.ts`) to avoid triggering
+ * the `import ... with { type: 'file' }` side effect that requires the
+ * embedded binary to exist on disk.
  *
  * @module server/worker-bin.test
  */
@@ -11,12 +13,14 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { extractWorkerBin, resolveWorkerBin } from './worker-bin';
+import { extractWorkerBin } from './worker-extract';
 
-/** True when the prebuilt/compiled worker binary exists in node_modules. */
-const workerBinaryExists = existsSync(
-  resolve(import.meta.dir, '../../node_modules/mediasoup/worker/out/Release/mediasoup-worker'),
-);
+/** True when worker-bin.ts can be loaded — requires both the embedded file and the node_modules binary. */
+const canLoadWorkerBin =
+  existsSync(resolve(import.meta.dir, './mediasoup-worker')) &&
+  existsSync(
+    resolve(import.meta.dir, '../../node_modules/mediasoup/worker/out/Release/mediasoup-worker'),
+  );
 
 let tempDir: string;
 
@@ -136,7 +140,10 @@ describe('extractWorkerBin', () => {
 });
 
 describe('resolveWorkerBin (dev mode)', () => {
-  test.skipIf(!workerBinaryExists)('returns node_modules worker path in dev mode', async () => {
+  // Dynamic import to avoid loading worker-bin.ts (and its embedded binary import)
+  // in CI environments where the mediasoup-worker file doesn't exist.
+  test.skipIf(!canLoadWorkerBin)('returns node_modules worker path in dev mode', async () => {
+    const { resolveWorkerBin } = await import('./worker-bin');
     const result = await resolveWorkerBin();
 
     expect(result.extracted).toBe(false);

@@ -285,14 +285,17 @@ function roomReducer(state: RoomState, action: Action): AppState {
     case 'SFU_TRANSPORT_CREATED':
     case 'SFU_PRODUCER_CREATED':
       return state;
-    // SFU_NEW_CONSUMER: transition waiting-for-peer → call when first consumer arrives
+    // SFU_NEW_CONSUMER: transition waiting-for-peer → call, mark peer as 'connecting'.
+    // The peer is promoted to 'connected' by RTC_CONNECTED dispatched from the SFU
+    // effect AFTER the consumer is created and the stream is in refs — this ensures
+    // the re-render that picks up the stream happens after it's actually ready.
     case 'SFU_NEW_CONSUMER': {
       if (state.screen.type === 'waiting-for-peer') {
         return {
           ...state,
           peerConnectionStates: {
             ...state.peerConnectionStates,
-            [action.peerId]: 'connected',
+            [action.peerId]: 'connecting',
           },
           screen: {
             type: 'call',
@@ -302,13 +305,13 @@ function roomReducer(state: RoomState, action: Action): AppState {
           },
         };
       }
-      // In call: track peer as connected
+      // In call: track peer as connecting (consumer creation is async)
       if (state.screen.type === 'call') {
         return {
           ...state,
           peerConnectionStates: {
             ...state.peerConnectionStates,
-            [action.peerId]: 'connected',
+            [action.peerId]: 'connecting',
           },
         };
       }

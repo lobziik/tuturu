@@ -221,10 +221,11 @@ export function handleSfuEffects(ctx: EffectContext, args: EffectArgs): void {
         const stream = assembleRemoteStream(existingStream, consumer);
         refs.remoteStreams.current.set(action.peerId, stream);
 
-        // Dispatch so UI re-renders with the new stream
+        // Mark peer as connected — triggers re-render AFTER the stream is in the
+        // ref Map, so VideoTile picks it up. Mirrors the mesh flow where
+        // RTC_CONNECTED fires after ontrack has already populated the stream.
         dispatch({
-          type: 'RTC_TRACK_RECEIVED',
-          stream,
+          type: 'RTC_CONNECTED',
           peerId: action.peerId,
         });
 

@@ -637,3 +637,260 @@ describe('handlePeerLeave', () => {
     expect(room.peers.has('peer-1')).toBe(true);
   });
 });
+
+// ============================================================================
+// Edge cases: consumer creation, error handling
+// ============================================================================
+
+describe('consumer creation edge cases', () => {
+  test('canConsume returning false skips consumer creation', async () => {
+    const handler = createHandler();
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+
+    // Peer 1 joins and creates send transport
+    await handler.handleSfuJoin(ws1, 'peer-1', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws1, 'peer-1', 'room-1', 'send');
+
+    // Peer 2 joins and creates recv transport
+    await handler.handleSfuJoin(ws2, 'peer-2', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws2, 'peer-2', 'room-1', 'recv');
+
+    // Make canConsume return false
+    room.router.canConsume.mockReturnValue(false);
+    routedMessages.length = 0;
+
+    const peer1 = room.peers.get('peer-1')!;
+    const transport1 = peer1.sendTransport as unknown as ReturnType<typeof createMockTransport>;
+
+    await handler.handleProduce(
+      ws1,
+      'peer-1',
+      'room-1',
+      transport1.id,
+      'audio',
+      {} as mediasoupTypes.RtpParameters,
+    );
+
+    // Peer 2 should NOT receive sfu-new-consumer
+    const consumerMsgs = routedMessages.filter(
+      (r) => r.peerId === 'peer-2' && r.message.type === 'sfu-new-consumer',
+    );
+    expect(consumerMsgs).toHaveLength(0);
+
+    // Peer 2 should have no consumers
+    const peer2 = room.peers.get('peer-2')!;
+    expect(peer2.consumers.size).toBe(0);
+  });
+
+  test('consumer creation failure is caught and logged', async () => {
+    const handler = createHandler();
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+
+    // Peer 1 joins and creates send transport
+    await handler.handleSfuJoin(ws1, 'peer-1', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws1, 'peer-1', 'room-1', 'send');
+
+    // Peer 2 joins and creates recv transport
+    await handler.handleSfuJoin(ws2, 'peer-2', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws2, 'peer-2', 'room-1', 'recv');
+
+    // Make peer 2's recv transport fail on consume
+    const peer2 = room.peers.get('peer-2')!;
+    const recvTransport = peer2.recvTransport as unknown as ReturnType<typeof createMockTransport>;
+    recvTransport.consume.mockRejectedValue(new Error('consume failed'));
+
+    const peer1 = room.peers.get('peer-1')!;
+    const transport1 = peer1.sendTransport as unknown as ReturnType<typeof createMockTransport>;
+
+    // Should not throw — error is caught internally
+    await handler.handleProduce(
+      ws1,
+      'peer-1',
+      'room-1',
+      transport1.id,
+      'audio',
+      {} as mediasoupTypes.RtpParameters,
+    );
+
+    // Producer was still created successfully
+    expect(sentMessages.some((m) => m.type === 'sfu-producer-created')).toBe(true);
+
+    // Peer 2 has no consumers (creation failed)
+    expect(peer2.consumers.size).toBe(0);
+  });
+
+  test('createConsumersForNewPeer creates consumers for existing producers on recv transport creation', async () => {
+    const handler = createHandler();
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+
+    // Peer 1 joins, creates send transport, and produces audio
+    await handler.handleSfuJoin(ws1, 'peer-1', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws1, 'peer-1', 'room-1', 'send');
+
+    const peer1 = room.peers.get('peer-1')!;
+    const transport1 = peer1.sendTransport as unknown as ReturnType<typeof createMockTransport>;
+    await handler.handleProduce(
+      ws1,
+      'peer-1',
+      'room-1',
+      transport1.id,
+      'audio',
+      {} as mediasoupTypes.RtpParameters,
+    );
+
+    // Clear messages so we can check what peer 2 gets
+    routedMessages.length = 0;
+
+    // Peer 2 joins and creates recv transport — should get consumer for peer 1's producer
+    await handler.handleSfuJoin(ws2, 'peer-2', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws2, 'peer-2', 'room-1', 'recv');
+
+    // Peer 2 should receive sfu-new-consumer for peer 1's audio producer
+    const consumerMsg = routedMessages.find(
+      (r) => r.peerId === 'peer-2' && r.message.type === 'sfu-new-consumer',
+    );
+    expect(consumerMsg).toBeDefined();
+    if (consumerMsg && consumerMsg.message.type === 'sfu-new-consumer') {
+      expect(consumerMsg.message.peerId).toBe('peer-1');
+    }
+  });
+
+  test('consumer transportclose event removes consumer from peer state', async () => {
+    const handler = createHandler();
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+
+    // Peer 1 joins and creates send transport
+    await handler.handleSfuJoin(ws1, 'peer-1', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws1, 'peer-1', 'room-1', 'send');
+
+    // Peer 2 joins and creates recv transport
+    await handler.handleSfuJoin(ws2, 'peer-2', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws2, 'peer-2', 'room-1', 'recv');
+
+    // Peer 1 produces — creates consumer on peer 2
+    const peer1 = room.peers.get('peer-1')!;
+    const transport1 = peer1.sendTransport as unknown as ReturnType<typeof createMockTransport>;
+    await handler.handleProduce(
+      ws1,
+      'peer-1',
+      'room-1',
+      transport1.id,
+      'audio',
+      {} as mediasoupTypes.RtpParameters,
+    );
+
+    const peer2 = room.peers.get('peer-2')!;
+    expect(peer2.consumers.size).toBe(1);
+
+    // Get the consumer and trigger transportclose
+    const [consumerId, consumer] = [...peer2.consumers.entries()][0]!;
+    const listeners = (consumer as unknown as { _listeners: Map<string, EventListener[]> })
+      ._listeners;
+    const transportCloseHandlers = listeners.get('transportclose') ?? [];
+    expect(transportCloseHandlers.length).toBe(1);
+
+    transportCloseHandlers[0]!();
+    expect(peer2.consumers.has(consumerId)).toBe(false);
+  });
+
+  test('consumer producerclose event removes consumer from peer state', async () => {
+    const handler = createHandler();
+    const ws1 = createMockWs();
+    const ws2 = createMockWs();
+
+    await handler.handleSfuJoin(ws1, 'peer-1', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws1, 'peer-1', 'room-1', 'send');
+
+    await handler.handleSfuJoin(ws2, 'peer-2', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws2, 'peer-2', 'room-1', 'recv');
+
+    const peer1 = room.peers.get('peer-1')!;
+    const transport1 = peer1.sendTransport as unknown as ReturnType<typeof createMockTransport>;
+    await handler.handleProduce(
+      ws1,
+      'peer-1',
+      'room-1',
+      transport1.id,
+      'audio',
+      {} as mediasoupTypes.RtpParameters,
+    );
+
+    const peer2 = room.peers.get('peer-2')!;
+    expect(peer2.consumers.size).toBe(1);
+
+    const [consumerId, consumer] = [...peer2.consumers.entries()][0]!;
+    const listeners = (consumer as unknown as { _listeners: Map<string, EventListener[]> })
+      ._listeners;
+    const producerCloseHandlers = listeners.get('producerclose') ?? [];
+    expect(producerCloseHandlers.length).toBe(1);
+
+    producerCloseHandlers[0]!();
+    expect(peer2.consumers.has(consumerId)).toBe(false);
+  });
+
+  test('AudioLevelObserver addProducer failure is caught', async () => {
+    const handler = createHandler();
+    const ws = createMockWs();
+
+    await handler.handleSfuJoin(ws, 'peer-1', 'room-1', {
+      codecs: [],
+      headerExtensions: [],
+    });
+    await handler.handleCreateTransport(ws, 'peer-1', 'room-1', 'send');
+
+    // Make addProducer reject
+    room.audioLevelObserver.addProducer.mockRejectedValue(new Error('observer failed'));
+
+    const peer = room.peers.get('peer-1')!;
+    const transport = peer.sendTransport as unknown as ReturnType<typeof createMockTransport>;
+    sentMessages.length = 0;
+
+    // Should not throw — the catch in handleProduce handles the error
+    await handler.handleProduce(
+      ws,
+      'peer-1',
+      'room-1',
+      transport.id,
+      'audio',
+      {} as mediasoupTypes.RtpParameters,
+    );
+
+    // Producer was still created
+    expect(sentMessages.some((m) => m.type === 'sfu-producer-created')).toBe(true);
+    expect(peer.producers.size).toBe(1);
+  });
+});

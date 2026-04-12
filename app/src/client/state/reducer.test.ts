@@ -976,4 +976,145 @@ describe('reducer', () => {
       expect(room.view).toBe('chat');
     });
   });
+
+  // ========================================================================
+  // SFU lifecycle
+  // ========================================================================
+
+  describe('SFU lifecycle', () => {
+    test('SFU_ACTIVE_SPEAKER sets activeSpeakerPeerId', () => {
+      const state = roomState({ type: 'call', muted: false, videoOff: false, pipHidden: false });
+      const room = expectRoom(reducer(state, { type: 'SFU_ACTIVE_SPEAKER', peerId: 'peer-x' }));
+      expect(room.activeSpeakerPeerId).toBe('peer-x');
+    });
+
+    test('SFU_ACTIVE_SPEAKER with null clears activeSpeakerPeerId', () => {
+      const state = roomState(
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
+        { activeSpeakerPeerId: 'peer-x' },
+      );
+      const room = expectRoom(reducer(state, { type: 'SFU_ACTIVE_SPEAKER', peerId: null }));
+      expect(room.activeSpeakerPeerId).toBeNull();
+    });
+
+    test('SFU_ROUTER_CAPS_RECEIVED returns state unchanged', () => {
+      const state = roomState({ type: 'idle' });
+      const result = reducer(state, {
+        type: 'SFU_ROUTER_CAPS_RECEIVED',
+        rtpCapabilities: { codecs: [], headerExtensions: [] },
+      });
+      expect(result).toBe(state);
+    });
+
+    test('SFU_TRANSPORT_CREATED returns state unchanged', () => {
+      const state = roomState({ type: 'idle' });
+      const result = reducer(state, {
+        type: 'SFU_TRANSPORT_CREATED',
+        direction: 'send',
+        id: 't1',
+        iceParameters: {} as never,
+        iceCandidates: [],
+        dtlsParameters: {} as never,
+      });
+      expect(result).toBe(state);
+    });
+
+    test('SFU_PRODUCER_CREATED returns state unchanged', () => {
+      const state = roomState({ type: 'idle' });
+      const result = reducer(state, { type: 'SFU_PRODUCER_CREATED', id: 'p1', kind: 'audio' });
+      expect(result).toBe(state);
+    });
+
+    test('SFU_NEW_CONSUMER transitions waiting-for-peer to call', () => {
+      const state = roomState({
+        type: 'waiting-for-peer',
+        muted: false,
+        videoOff: false,
+        pipHidden: false,
+      });
+      const room = expectRoom(
+        reducer(state, {
+          type: 'SFU_NEW_CONSUMER',
+          peerId: 'peer-a',
+          producerId: 'prod-1',
+          consumerId: 'cons-1',
+          kind: 'audio',
+          rtpParameters: { codecs: [], headerExtensions: [], encodings: [] } as never,
+          producerPaused: false,
+        }),
+      );
+      expect(room.screen.type).toBe('call');
+      expect(room.peerConnectionStates['peer-a']).toBe('connected');
+    });
+
+    test('SFU_NEW_CONSUMER in call state adds peer as connected', () => {
+      const state = roomState(
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
+        { peerConnectionStates: { 'peer-a': 'connected' } },
+      );
+      const room = expectRoom(
+        reducer(state, {
+          type: 'SFU_NEW_CONSUMER',
+          peerId: 'peer-b',
+          producerId: 'prod-2',
+          consumerId: 'cons-2',
+          kind: 'video',
+          rtpParameters: { codecs: [], headerExtensions: [], encodings: [] } as never,
+          producerPaused: false,
+        }),
+      );
+      expect(room.screen.type).toBe('call');
+      expect(room.peerConnectionStates['peer-a']).toBe('connected');
+      expect(room.peerConnectionStates['peer-b']).toBe('connected');
+    });
+
+    test('SFU_NEW_CONSUMER in idle state returns state unchanged', () => {
+      const state = roomState({ type: 'idle' });
+      const result = reducer(state, {
+        type: 'SFU_NEW_CONSUMER',
+        peerId: 'peer-a',
+        producerId: 'prod-1',
+        consumerId: 'cons-1',
+        kind: 'audio',
+        rtpParameters: { codecs: [], headerExtensions: [], encodings: [] } as never,
+        producerPaused: false,
+      });
+      expect(result).toBe(state);
+    });
+
+    test('JOINED_ROOM with sfuEnabled sets sfuMode true', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(
+        reducer(state, {
+          type: 'JOINED_ROOM',
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+          iceTransportPolicy: 'all',
+          sfuEnabled: true,
+        }),
+      );
+      expect(room.sfuMode).toBe(true);
+    });
+
+    test('JOINED_ROOM without sfuEnabled keeps sfuMode false', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(
+        reducer(state, {
+          type: 'JOINED_ROOM',
+          iceServers: [],
+          iceTransportPolicy: 'all',
+        }),
+      );
+      expect(room.sfuMode).toBe(false);
+    });
+
+    test('HANGUP resets activeSpeakerPeerId', () => {
+      const state = roomState(
+        { type: 'call', muted: false, videoOff: false, pipHidden: false },
+        { activeSpeakerPeerId: 'peer-x' },
+      );
+      const room = expectRoom(reducer(state, { type: 'HANGUP' }));
+      expect(room.activeSpeakerPeerId).toBeNull();
+      expect(room.screen.type).toBe('idle');
+    });
+  });
 });

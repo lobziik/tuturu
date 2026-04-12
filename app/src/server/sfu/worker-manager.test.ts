@@ -98,6 +98,22 @@ describe('createWorkerManager', () => {
     manager.close();
   });
 
+  test('worker died event handler throws with descriptive error', async () => {
+    const manager = await createWorkerManager('/fake/path', 1);
+
+    const call = mockCreateWorker.mock.results[0]!;
+    const worker = (await call.value) as unknown as {
+      _listeners: Map<string, ((...args: unknown[]) => void)[]>;
+    };
+    const diedHandlers = worker._listeners.get('died') ?? [];
+    expect(diedHandlers.length).toBe(1);
+
+    // Trigger the died event — should throw with descriptive message
+    expect(() => diedHandlers[0]!(new Error('SIGKILL'))).toThrow(/mediasoup Worker died/);
+
+    manager.close();
+  });
+
   describe('getNextWorker', () => {
     test('returns workers in round-robin order', async () => {
       const manager = await createWorkerManager('/fake/path', 3);

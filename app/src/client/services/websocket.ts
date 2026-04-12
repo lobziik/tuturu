@@ -243,6 +243,15 @@ function handleServerMessage(
     case 'chat-received':
       console.log('[WS] Received (stub):', message.type);
       break;
+
+    // SFU messages — will be fully wired in Stage 3 (client SFU integration)
+    case 'sfu-router-caps':
+    case 'sfu-transport-created':
+    case 'sfu-producer-created':
+    case 'sfu-new-consumer':
+    case 'sfu-active-speaker':
+      console.log('[WS] SFU message (stub):', message.type);
+      break;
   }
 }
 

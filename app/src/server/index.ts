@@ -26,6 +26,7 @@ import { createWebSocketHandlers } from './ws';
 import { buildIceServers } from './ice';
 import { resolveWorkerBin } from './worker-bin';
 import { smokeTestWorker } from './worker-smoke-test';
+import { createWorkerManager, createSfuRoomManager, createSfuPeerHandler } from './sfu';
 
 /**
  * Send callback for all outgoing WebSocket messages.
@@ -63,6 +64,9 @@ async function main(): Promise<void> {
     await smokeTestWorker(worker.path);
   }
 
+  // Create SFU worker pool
+  const workerManager = await createWorkerManager(worker.path, config.sfuNumWorkers);
+
   // Create data layer
   const db = createDatabase(config.dbPath);
   const blobStore = createBlobStore(config.blobDir);
@@ -71,6 +75,23 @@ async function main(): Promise<void> {
   const rooms = createRoomManager({
     maxParticipants: config.maxParticipants,
     send,
+  });
+
+  // Create SFU room manager and peer handler
+  const sfuRoomManager = createSfuRoomManager({
+    workerManager,
+    broadcast: (roomId, message, excludePeerId) => rooms.broadcast(roomId, message, excludePeerId),
+    listenIp: config.sfuListenIp,
+    announcedIp: config.sfuAnnouncedIp ?? config.externalIp,
+  });
+
+  const sfuPeerHandler = createSfuPeerHandler({
+    sfuRoomManager,
+    send,
+    routeToPeer: (roomId, targetPeerId, message) =>
+      rooms.routeToPeer(roomId, targetPeerId, message),
+    listenIp: config.sfuListenIp,
+    announcedIp: config.sfuAnnouncedIp ?? config.externalIp,
   });
 
   // Create handlers with all dependencies
@@ -82,6 +103,7 @@ async function main(): Promise<void> {
     send,
     pingIntervalMs,
     pongTimeoutMs,
+    sfuPeerHandler,
   });
 
   // Create WebSocket event handlers
@@ -140,6 +162,9 @@ ${config.externalIp ? `External IP: ${config.externalIp}` : 'No EXTERNAL_IP conf
 ${isTurnConfigured() ? 'TURN server configured (ephemeral credentials, 4h TTL)' : 'No TURN server configured (STUN only)'}
 Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
 
+SFU: ${workerManager.workerCount} mediasoup worker(s)
+SFU listen: ${config.sfuListenIp}${(config.sfuAnnouncedIp ?? config.externalIp) ? ` (announced: ${config.sfuAnnouncedIp ?? config.externalIp})` : ''}
+
 Database: ${config.dbPath}
 Blob storage: ${config.blobDir}
 Retention: ${config.retentionDays} days
@@ -152,6 +177,7 @@ Press Ctrl+C to stop
   function shutdown(): void {
     console.log('\nShutting down server...');
     clearInterval(cleanupTimer);
+    workerManager.close();
     db.close();
     void server.stop();
     process.exit(0);

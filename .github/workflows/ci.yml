@@ -108,3 +108,46 @@ jobs:
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  build_verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 at 6.4.2026
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2 at 6.4.2026
+        with:
+          bun-version: latest
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3 python3-pip gcc g++ make
+
+      - name: Install dependencies
+        working-directory: app
+        run: bun install
+
+      - name: Build mediasoup worker from source
+        working-directory: app
+        run: bun run worker:build
+
+      - name: Verify and copy worker for embed
+        working-directory: app
+        run: bun run worker:verify && bun run worker:copy
+
+      - name: Build client
+        working-directory: app
+        run: bun run build
+
+      - name: Compile server binary
+        working-directory: app
+        run: bun build --compile --minify ./src/server/index.ts --outfile ./dist/server
+
+      - name: Smoke test compiled binary
+        working-directory: app
+        run: |
+          ./dist/server &
+          SERVER_PID=$!
+          sleep 5
+          curl -sf http://localhost:3000/health || (kill $SERVER_PID 2>/dev/null; exit 1)
+          kill $SERVER_PID 2>/dev/null

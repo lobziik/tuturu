@@ -2,20 +2,23 @@ FROM oven/bun:latest
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json bunfig.toml ./
+# Install mediasoup worker build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip gcc g++ make \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
-RUN bun install
+# Copy package files
+COPY package.json bun.lock bunfig.toml ./
+
+# Install dependencies (worker is built later via build:prod → worker:prepare)
+RUN bun install --frozen-lockfile
 
 # Copy source code
 COPY src/ ./src/
 COPY public/ ./public/
+COPY build.ts tsconfig.json ./
 
-# Build client
-RUN bun run build
-
-# Build server with embedded assets
+# Build client + prepare worker + compile server
 RUN mkdir -p dist && bun run build:prod
 
 # Expose port

@@ -2,5 +2,6 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/client/index.tsx"],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignoreDependencies": ["bun"]
+  "ignoreDependencies": ["bun"],
+  "ignoreBinaries": ["npm-scripts.mjs"]
 }

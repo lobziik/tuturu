@@ -14,12 +14,15 @@ const IV_LENGTH = 12;
 
 /**
  * Process a single encoded frame: encrypt or decrypt.
+ *
+ * @returns `true` if the frame was processed successfully and should be enqueued,
+ *          `false` if the frame should be dropped (decrypt failure).
  */
 async function processFrame(
   operation: 'encrypt' | 'decrypt',
   key: CryptoKey,
   frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,
-): Promise<void> {
+): Promise<boolean> {
   const data = frame.data;
 
   if (operation === 'encrypt') {
@@ -30,20 +33,23 @@ async function processFrame(
     resultView.set(iv, 0);
     resultView.set(new Uint8Array(ciphertext), IV_LENGTH);
     frame.data = result;
-  } else {
-    if (data.byteLength < IV_LENGTH + 16) {
-      // Too short to contain IV + GCM tag — pass through unmodified
-      return;
-    }
-    const iv = new Uint8Array(data, 0, IV_LENGTH);
-    const ciphertext = new Uint8Array(data, IV_LENGTH);
-    try {
-      const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
-      frame.data = plaintext;
-    } catch {
-      // Decryption failed (wrong key, corrupted frame) — drop the frame
-      // by leaving it encrypted. The decoder will discard it gracefully.
-    }
+    return true;
+  }
+
+  if (data.byteLength < IV_LENGTH + 16) {
+    // Too short to contain IV + GCM tag — drop frame
+    return false;
+  }
+  const iv = new Uint8Array(data, 0, IV_LENGTH);
+  const ciphertext = new Uint8Array(data, IV_LENGTH);
+  try {
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    frame.data = plaintext;
+    return true;
+  } catch {
+    // Decryption failed (wrong key, corrupted frame) — drop the frame.
+    // The decoder handles missing frames gracefully (brief artifact, then recovers).
+    return false;
   }
 }
 
@@ -61,8 +67,11 @@ function setupTransform(
     RTCEncodedVideoFrame | RTCEncodedAudioFrame
   >({
     async transform(frame, controller) {
-      await processFrame(operation, key, frame);
-      controller.enqueue(frame);
+      const ok = await processFrame(operation, key, frame);
+      if (ok) {
+        controller.enqueue(frame);
+      }
+      // else: frame dropped — decoder handles missing frames gracefully
     },
   });
 

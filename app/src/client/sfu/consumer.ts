@@ -59,6 +59,12 @@ export function assembleRemoteStream(
   consumer: msTypes.Consumer,
 ): MediaStream {
   const stream = existingStream ?? new MediaStream();
+  // Remove existing track of the same kind to avoid duplicates (e.g., camera flip restarts producer)
+  for (const track of stream.getTracks()) {
+    if (track.kind === consumer.track.kind) {
+      stream.removeTrack(track);
+    }
+  }
   stream.addTrack(consumer.track);
   return stream;
 }

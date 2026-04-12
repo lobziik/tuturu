@@ -41,9 +41,8 @@ export async function createWorkerManager(
 
     worker.on('died', (error) => {
       console.error(`[SFU:WorkerManager] Worker ${worker.pid} died unexpectedly: ${error.message}`);
-      throw new Error(
-        `[SFU:WorkerManager] mediasoup Worker died (pid ${worker.pid}): ${error.message}`,
-      );
+      console.error('[SFU:WorkerManager] Terminating process — worker death is unrecoverable');
+      process.exit(1);
     });
 
     workers.push(worker);

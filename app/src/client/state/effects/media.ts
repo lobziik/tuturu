@@ -51,8 +51,26 @@ export function handleMediaEffects(ctx: EffectContext, args: EffectArgs): void {
     }
   }
 
-  // Flip camera → Switch camera facing mode (replaces track in all mesh PCs)
+  // Flip camera → Switch camera facing mode
   if (action.type === 'FLIP_CAMERA' && refs.localStream.current) {
-    void flipCamera(refs.localStream.current, refs.peerConnections.current, dispatch);
+    if (sfuMode) {
+      // SFU mode: flip camera, then replace track on video producer
+      void (async () => {
+        try {
+          await flipCamera(refs.localStream.current!, new Map(), dispatch);
+          const videoProducer = refs.sfuProducers.current.get('video');
+          const newVideoTrack = refs.localStream.current?.getVideoTracks()[0];
+          if (videoProducer && newVideoTrack) {
+            await videoProducer.replaceTrack({ track: newVideoTrack });
+            console.log('[MEDIA] Replaced track on SFU video producer');
+          }
+        } catch (error) {
+          console.error('[MEDIA] Failed to replace track on SFU producer:', error);
+        }
+      })();
+    } else {
+      // Mesh mode: replaces track in all peer connections
+      void flipCamera(refs.localStream.current, refs.peerConnections.current, dispatch);
+    }
   }
 }

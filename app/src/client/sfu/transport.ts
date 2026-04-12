@@ -11,6 +11,7 @@
 
 import type { Device, types as msTypes } from 'mediasoup-client';
 import { sendMessage } from '../services/websocket';
+import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
 
 /** Parameters received from server for transport creation. */
 export interface TransportParams {
@@ -21,8 +22,23 @@ export interface TransportParams {
   sctpParameters?: msTypes.SctpParameters;
 }
 
-/** Ref for the pending produce callback (resolved by SFU_PRODUCER_CREATED). */
-type PendingProduceCallback = { current: ((id: string) => void) | null };
+/** ICE configuration for mediasoup-client transports. */
+interface TransportIceConfig {
+  iceServers: IceServerConfig[];
+  iceTransportPolicy: IceTransportPolicy;
+}
+
+/** Map IceServerConfig[] to RTCIceServer[] with exactOptionalPropertyTypes safety. */
+function toRtcIceServers(servers: IceServerConfig[]): RTCIceServer[] {
+  return servers.map((s) => ({
+    urls: s.urls,
+    ...(s.username !== undefined && { username: s.username }),
+    ...(s.credential !== undefined && { credential: s.credential }),
+  }));
+}
+
+/** Ref for the pending produce callback queue (resolved by SFU_PRODUCER_CREATED, FIFO). */
+type PendingProduceCallbacks = { current: ((id: string) => void)[] };
 
 /**
  * Create a mediasoup-client send transport, wired to server signaling.
@@ -30,13 +46,15 @@ type PendingProduceCallback = { current: ((id: string) => void) | null };
  * @param device - Loaded mediasoup-client Device.
  * @param ws - WebSocket for sending signaling messages.
  * @param params - Transport parameters from server.
- * @param pendingProduceCallback - Ref for the pending produce callback.
+ * @param pendingProduceCallbacks - Ref for the pending produce callback queue.
+ * @param iceConfig - ICE servers and transport policy (TURN relay support).
  */
 export function createSfuSendTransport(
   device: Device,
   ws: WebSocket | null,
   params: TransportParams,
-  pendingProduceCallback: PendingProduceCallback,
+  pendingProduceCallbacks: PendingProduceCallbacks,
+  iceConfig: TransportIceConfig,
 ): msTypes.Transport {
   const transport = device.createSendTransport({
     id: params.id,
@@ -44,24 +62,30 @@ export function createSfuSendTransport(
     iceCandidates: params.iceCandidates,
     dtlsParameters: params.dtlsParameters,
     ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
+    iceServers: toRtcIceServers(iceConfig.iceServers),
+    iceTransportPolicy: iceConfig.iceTransportPolicy,
   });
 
-  transport.on('connect', ({ dtlsParameters }, callback, _errback) => {
-    sendMessage(ws, {
-      type: 'sfu-connect-transport',
-      v: 1,
-      transportId: transport.id,
-      dtlsParameters: dtlsParameters as unknown,
-    });
-    // Resolve immediately — server handles DTLS connection asynchronously
-    callback();
+  transport.on('connect', ({ dtlsParameters }, callback, errback) => {
+    try {
+      sendMessage(ws, {
+        type: 'sfu-connect-transport',
+        v: 1,
+        transportId: transport.id,
+        dtlsParameters: dtlsParameters as unknown,
+      });
+      // Resolve immediately — server handles DTLS connection asynchronously
+      callback();
+    } catch (error) {
+      errback(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 
   transport.on('produce', ({ kind, rtpParameters }, callback, _errback) => {
-    // Store callback — will be resolved when SFU_PRODUCER_CREATED arrives
-    pendingProduceCallback.current = (id: string) => {
+    // Enqueue callback — will be resolved in FIFO order when SFU_PRODUCER_CREATED arrives
+    pendingProduceCallbacks.current.push((id: string) => {
       callback({ id });
-    };
+    });
 
     sendMessage(ws, {
       type: 'sfu-produce',
@@ -82,11 +106,13 @@ export function createSfuSendTransport(
  * @param device - Loaded mediasoup-client Device.
  * @param ws - WebSocket for sending signaling messages.
  * @param params - Transport parameters from server.
+ * @param iceConfig - ICE servers and transport policy (TURN relay support).
  */
 export function createSfuRecvTransport(
   device: Device,
   ws: WebSocket | null,
   params: TransportParams,
+  iceConfig: TransportIceConfig,
 ): msTypes.Transport {
   const transport = device.createRecvTransport({
     id: params.id,
@@ -94,16 +120,22 @@ export function createSfuRecvTransport(
     iceCandidates: params.iceCandidates,
     dtlsParameters: params.dtlsParameters,
     ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
+    iceServers: toRtcIceServers(iceConfig.iceServers),
+    iceTransportPolicy: iceConfig.iceTransportPolicy,
   });
 
-  transport.on('connect', ({ dtlsParameters }, callback, _errback) => {
-    sendMessage(ws, {
-      type: 'sfu-connect-transport',
-      v: 1,
-      transportId: transport.id,
-      dtlsParameters: dtlsParameters as unknown,
-    });
-    callback();
+  transport.on('connect', ({ dtlsParameters }, callback, errback) => {
+    try {
+      sendMessage(ws, {
+        type: 'sfu-connect-transport',
+        v: 1,
+        transportId: transport.id,
+        dtlsParameters: dtlsParameters as unknown,
+      });
+      callback();
+    } catch (error) {
+      errback(error instanceof Error ? error : new Error(String(error)));
+    }
   });
 
   console.log(`[SFU:Transport] Created recv transport ${transport.id}`);

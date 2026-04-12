@@ -12,6 +12,7 @@ import type { BunFile } from 'bun';
 import indexHtml from '../../public/index.html' with { type: 'text' };
 import styles from '../../public/styles.css' with { type: 'text' };
 import clientJs from '../../public/index.js' with { type: 'text' };
+import e2eeWorkerJs from '../../public/e2ee-worker.js' with { type: 'text' };
 
 // Favicon assets - embedded as BunFile in compiled mode, string path in dev mode
 import webmanifest from '../../public/site.webmanifest' with { type: 'text' };
@@ -40,6 +41,7 @@ export interface TextAssets {
   indexHtml: string;
   styles: string;
   clientJs: string;
+  e2eeWorkerJs: string;
   webmanifest: string;
 }
 
@@ -58,6 +60,7 @@ export interface AssetEtags {
   html: string;
   css: string;
   js: string;
+  e2eeWorkerJs: string;
   manifest: string;
 }
 
@@ -90,6 +93,7 @@ export async function loadAssets(): Promise<LoadedAssets> {
   const indexHtmlStr = indexHtml as unknown as string;
   const stylesStr = styles as unknown as string;
   const clientJsStr = clientJs as unknown as string;
+  const e2eeWorkerJsStr = e2eeWorkerJs as unknown as string;
   const webmanifestStr = webmanifest as unknown as string;
 
   // Compute content hashes once (reused for both ETags and cache-busting query params)
@@ -102,11 +106,14 @@ export async function loadAssets(): Promise<LoadedAssets> {
     .replace('src="index.js"', `src="index.js?v=${jsHash}"`)
     .replace('href="styles.css"', `href="styles.css?v=${cssHash}"`);
 
+  const e2eeWorkerJsHash = Bun.hash(e2eeWorkerJsStr).toString(16);
+
   // Compute ETags — HTML ETag uses modified content (what we actually serve)
   const etags: AssetEtags = {
     html: `"${Bun.hash(indexHtmlBusted).toString(16)}"`,
     css: `"${cssHash}"`,
     js: `"${jsHash}"`,
+    e2eeWorkerJs: `"${e2eeWorkerJsHash}"`,
     manifest: `"${Bun.hash(webmanifestStr).toString(16)}"`,
   };
 
@@ -115,6 +122,7 @@ export async function loadAssets(): Promise<LoadedAssets> {
       indexHtml: indexHtmlBusted,
       styles: stylesStr,
       clientJs: clientJsStr,
+      e2eeWorkerJs: e2eeWorkerJsStr,
       webmanifest: webmanifestStr,
     },
     binary: {

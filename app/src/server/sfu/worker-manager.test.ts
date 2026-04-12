@@ -98,20 +98,31 @@ describe('createWorkerManager', () => {
     manager.close();
   });
 
-  test('worker died event handler throws with descriptive error', async () => {
-    const manager = await createWorkerManager('/fake/path', 1);
+  test('worker died event handler calls process.exit(1)', async () => {
+    const originalExit = process.exit;
+    const exitMock = mock((_code?: number) => {
+      throw new Error('process.exit called');
+    });
+    process.exit = exitMock as unknown as typeof process.exit;
 
-    const call = mockCreateWorker.mock.results[0]!;
-    const worker = (await call.value) as unknown as {
-      _listeners: Map<string, ((...args: unknown[]) => void)[]>;
-    };
-    const diedHandlers = worker._listeners.get('died') ?? [];
-    expect(diedHandlers.length).toBe(1);
+    try {
+      const manager = await createWorkerManager('/fake/path', 1);
 
-    // Trigger the died event — should throw with descriptive message
-    expect(() => diedHandlers[0]!(new Error('SIGKILL'))).toThrow(/mediasoup Worker died/);
+      const call = mockCreateWorker.mock.results[0]!;
+      const worker = (await call.value) as unknown as {
+        _listeners: Map<string, ((...args: unknown[]) => void)[]>;
+      };
+      const diedHandlers = worker._listeners.get('died') ?? [];
+      expect(diedHandlers.length).toBe(1);
 
-    manager.close();
+      // Trigger the died event — should call process.exit(1)
+      expect(() => diedHandlers[0]!(new Error('SIGKILL'))).toThrow('process.exit called');
+      expect(exitMock).toHaveBeenCalledWith(1);
+
+      manager.close();
+    } finally {
+      process.exit = originalExit;
+    }
   });
 
   describe('getNextWorker', () => {

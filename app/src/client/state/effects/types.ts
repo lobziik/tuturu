@@ -67,8 +67,8 @@ export interface ResourceRefs {
   sfuConsumers: { current: Map<string, msTypes.Consumer> };
   /** E2EE Web Worker for frame-level encryption */
   e2eeWorker: { current: Worker | null };
-  /** Pending callback resolved by SFU_PRODUCER_CREATED to complete produce handshake */
-  pendingProduceCallback: { current: ((id: string) => void) | null };
+  /** Pending callbacks resolved by SFU_PRODUCER_CREATED to complete produce handshake (FIFO queue) */
+  pendingProduceCallbacks: { current: ((id: string) => void)[] };
 }
 
 /**

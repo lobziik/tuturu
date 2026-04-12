@@ -25,12 +25,11 @@
 
 import { existsSync, mkdirSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import type { BunFile } from 'bun';
 
 /**
  * Embedded worker binary.
  * - Dev mode: resolves to the string path of `src/server/mediasoup-worker`
- * - Compiled mode: resolves to the auto-extracted temp file (string path or BunFile)
+ * - Compiled mode: resolves to the auto-extracted temp file (`/$bunfs/...` string path)
  *
  * The file must exist at `src/server/mediasoup-worker` before `bun build --compile`.
  * Run `bun run worker:copy` to place it there.
@@ -62,13 +61,10 @@ function isCompiled(): boolean {
 
 /**
  * Read the content of the embedded worker binary.
- * Handles both dev mode (string path) and compiled mode (BunFile or string).
+ * `import with { type: 'file' }` always returns a string path — both in dev and compiled mode.
  */
-async function readEmbeddedContent(file: string | BunFile | Blob): Promise<Buffer> {
-  if (typeof file === 'string') {
-    return Buffer.from(await Bun.file(file).arrayBuffer());
-  }
-  return Buffer.from(await file.arrayBuffer());
+async function readEmbeddedContent(filePath: string): Promise<Buffer> {
+  return Buffer.from(await Bun.file(filePath).arrayBuffer());
 }
 
 /**
@@ -157,6 +153,6 @@ export async function resolveWorkerBin(extractDir?: string): Promise<WorkerBinRe
   // Compiled mode: extract the embedded binary to a stable location.
   const dir = process.env.TUTURU_WORKER_DIR ?? extractDir ?? DEFAULT_EXTRACT_DIR;
 
-  const embeddedContent = await readEmbeddedContent(workerBinFile as string | BunFile | Blob);
+  const embeddedContent = await readEmbeddedContent(workerBinFile);
   return extractWorkerBin(embeddedContent, dir);
 }

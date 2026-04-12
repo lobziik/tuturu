@@ -8,10 +8,15 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { extractWorkerBin, resolveWorkerBin } from './worker-bin';
+
+/** True when the prebuilt/compiled worker binary exists in node_modules. */
+const workerBinaryExists = existsSync(
+  resolve(import.meta.dir, '../../node_modules/mediasoup/worker/out/Release/mediasoup-worker'),
+);
 
 let tempDir: string;
 
@@ -131,10 +136,9 @@ describe('extractWorkerBin', () => {
 });
 
 describe('resolveWorkerBin (dev mode)', () => {
-  test('returns node_modules worker path in dev mode', async () => {
+  test.skipIf(!workerBinaryExists)('returns node_modules worker path in dev mode', async () => {
     const result = await resolveWorkerBin();
 
-    // In dev mode (not compiled), should return the node_modules path
     expect(result.extracted).toBe(false);
     expect(result.path).toContain('node_modules/mediasoup/worker/out/Release/mediasoup-worker');
   });

@@ -84,6 +84,16 @@ async function main(): Promise<void> {
     config.externalIp ??
     (config.nodeEnv === 'development' ? '127.0.0.1' : undefined);
 
+  // Fail fast in production — without announcedIp, mediasoup ICE candidates
+  // advertise 0.0.0.0 which browsers can't connect to. SFU calls silently fail.
+  if (!sfuAnnouncedIp && config.nodeEnv === 'production') {
+    throw new Error(
+      '[SFU] No announcedIp configured for production. ' +
+        'Set EXTERNAL_IP or TUTURU_SFU_ANNOUNCED_IP environment variable. ' +
+        'Without it, SFU ICE candidates will advertise 0.0.0.0 and calls will silently fail.',
+    );
+  }
+
   // Create SFU room manager and peer handler
   const sfuRoomManager = createSfuRoomManager({
     workerManager,
@@ -170,7 +180,7 @@ ${isTurnConfigured() ? 'TURN server configured (ephemeral credentials, 4h TTL)' 
 Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
 
 SFU: ${workerManager.workerCount} mediasoup worker(s)
-SFU listen: ${config.sfuListenIp}${(config.sfuAnnouncedIp ?? config.externalIp) ? ` (announced: ${config.sfuAnnouncedIp ?? config.externalIp})` : ''}
+SFU listen: ${config.sfuListenIp}${sfuAnnouncedIp ? ` (announced: ${sfuAnnouncedIp})` : ''}
 
 Database: ${config.dbPath}
 Blob storage: ${config.blobDir}

@@ -15,7 +15,7 @@ WorkingDirectory=/var/lib/tuturu
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/tuturu
+ReadWritePaths=/var/lib/tuturu /tmp/tuturu
 
 StandardOutput=journal+console
 StandardError=journal+console

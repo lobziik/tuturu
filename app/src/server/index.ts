@@ -55,8 +55,13 @@ function send(ws: ServerWebSocket<ServerClientData>, message: ServerToClientMess
  */
 async function main(): Promise<void> {
   // Resolve and verify mediasoup worker binary before anything else.
-  const workerBin = await resolveWorkerBin();
-  await smokeTestWorker(workerBin);
+  const worker = await resolveWorkerBin();
+
+  // Smoke test only on first extraction (binary changed) or when explicitly requested.
+  // Skipped on regular restarts — the binary doesn't change between them.
+  if (worker.extracted || process.env.TUTURU_SMOKE_TEST === '1') {
+    await smokeTestWorker(worker.path);
+  }
 
   // Create data layer
   const db = createDatabase(config.dbPath);

@@ -6,12 +6,12 @@
  *
  * The binary is embedded at compile time via `import with { type: 'file' }`.
  * At runtime in compiled mode, Bun auto-extracts it to a temp location —
- * we re-extract to a stable path with executable permissions and hash verification.
+ * we re-extract to a stable path with executable permissions and change detection.
  *
  * @module server/worker-bin
  */
 
-import { existsSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import type { BunFile } from 'bun';
 
@@ -35,6 +35,20 @@ const NODE_MODULES_WORKER_PATH = resolve(
 const EXTRACTED_WORKER_NAME = 'mediasoup-worker';
 
 /**
+ * Default directory for extracted worker in production.
+ * Separate from app data (/var/lib/tuturu) to avoid mixing with runtime state.
+ */
+const DEFAULT_EXTRACT_DIR = '/tmp/tuturu';
+
+/**
+ * Check if running as a compiled Bun executable.
+ * In compiled mode, Bun resolves embedded file imports to paths starting with `/$bunfs/`.
+ */
+function isCompiled(): boolean {
+  return typeof workerBinFile === 'string' && workerBinFile.startsWith('/$bunfs/');
+}
+
+/**
  * Read the content of the embedded worker binary.
  * Handles both dev mode (string path) and compiled mode (BunFile or string).
  */
@@ -46,21 +60,30 @@ async function readEmbeddedContent(file: string | BunFile | Blob): Promise<Buffe
 }
 
 /**
+ * Result of worker binary resolution.
+ * `extracted` is true when the binary was written to disk (first run or hash change).
+ */
+interface WorkerBinResult {
+  /** Absolute path to the worker binary. */
+  path: string;
+  /** Whether the binary was freshly extracted (new or hash changed). */
+  extracted: boolean;
+}
+
+/**
  * Resolve the mediasoup-worker binary path.
  *
  * - **Dev mode**: returns the binary from `node_modules/mediasoup/worker/out/Release/`.
  * - **Compiled mode**: extracts the embedded binary to `<extractDir>/mediasoup-worker`,
- *   verifies hash (overwrites if changed), sets executable permission, returns path.
+ *   checks hash (overwrites if changed), sets executable permission, returns path.
+ *
+ * Extract directory priority: `TUTURU_WORKER_DIR` env var > `extractDir` param > `/tmp/tuturu`.
  *
  * @param extractDir Directory to extract the worker binary into (compiled mode only).
- *   Defaults to the current working directory (which is `/var/lib/tuturu` under systemd).
  * @throws If the worker binary is not found (dev mode) or extraction fails (compiled mode).
  */
-export async function resolveWorkerBin(extractDir?: string): Promise<string> {
-  // Dev mode: use the binary from node_modules directly.
-  // Detection: in dev mode, the import returns a string pointing inside src/server/.
-  // In compiled mode, it points to Bun's internal extraction path.
-  if (typeof workerBinFile === 'string' && workerBinFile.includes('src/server/')) {
+export async function resolveWorkerBin(extractDir?: string): Promise<WorkerBinResult> {
+  if (!isCompiled()) {
     if (!existsSync(NODE_MODULES_WORKER_PATH)) {
       throw new Error(
         `[WORKER] mediasoup-worker binary not found at ${NODE_MODULES_WORKER_PATH}. ` +
@@ -69,14 +92,21 @@ export async function resolveWorkerBin(extractDir?: string): Promise<string> {
     }
 
     console.log(`[WORKER] Dev mode — using worker at ${NODE_MODULES_WORKER_PATH}`);
-    return NODE_MODULES_WORKER_PATH;
+    return { path: NODE_MODULES_WORKER_PATH, extracted: false };
   }
 
   // Compiled mode: extract the embedded binary to a stable location.
-  const dir = extractDir ?? process.cwd();
+  const dir = process.env.TUTURU_WORKER_DIR ?? extractDir ?? DEFAULT_EXTRACT_DIR;
+
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
   const extractPath = join(dir, EXTRACTED_WORKER_NAME);
 
   const embeddedContent = await readEmbeddedContent(workerBinFile as string | BunFile | Blob);
+  // Non-cryptographic hash (xxHash via Bun.hash) — sufficient for detecting binary changes
+  // between deploys, NOT for supply-chain integrity verification.
   const embeddedHash = Bun.hash(embeddedContent).toString(16);
 
   // Check if already extracted and matches hash.
@@ -86,7 +116,7 @@ export async function resolveWorkerBin(extractDir?: string): Promise<string> {
 
     if (existingHash === embeddedHash) {
       console.log(`[WORKER] Extracted worker up-to-date at ${extractPath}`);
-      return extractPath;
+      return { path: extractPath, extracted: false };
     }
 
     console.log(
@@ -99,5 +129,5 @@ export async function resolveWorkerBin(extractDir?: string): Promise<string> {
   chmodSync(extractPath, 0o755);
 
   console.log(`[WORKER] Extracted worker to ${extractPath} (hash: ${embeddedHash})`);
-  return extractPath;
+  return { path: extractPath, extracted: true };
 }

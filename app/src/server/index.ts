@@ -24,6 +24,8 @@ import { createRoomManager, type ServerClientData } from './rooms';
 import { createHandlers } from './handlers';
 import { createWebSocketHandlers } from './ws';
 import { buildIceServers } from './ice';
+import { resolveWorkerBin } from './worker-bin';
+import { smokeTestWorker } from './worker-smoke-test';
 
 /**
  * Send callback for all outgoing WebSocket messages.
@@ -52,6 +54,10 @@ function send(ws: ServerWebSocket<ServerClientData>, message: ServerToClientMess
  * Initialize and start the server.
  */
 async function main(): Promise<void> {
+  // Resolve and verify mediasoup worker binary before anything else.
+  const workerBin = await resolveWorkerBin();
+  await smokeTestWorker(workerBin);
+
   // Create data layer
   const db = createDatabase(config.dbPath);
   const blobStore = createBlobStore(config.blobDir);

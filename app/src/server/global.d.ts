@@ -43,3 +43,13 @@ declare module '*.webmanifest' {
   const content: string;
   export default content;
 }
+
+/**
+ * Type declaration for mediasoup worker binary embed.
+ * `with { type: 'file' }` returns a string path in dev mode,
+ * or a BunFile/string in compiled mode.
+ */
+declare module '*/mediasoup-worker' {
+  const path: string;
+  export default path;
+}

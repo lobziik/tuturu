@@ -1,11 +1,21 @@
 # =============================================================================
-# Stage 1: Build Bun application
+# Stage 1: Build Bun application + mediasoup worker
 # =============================================================================
 FROM oven/bun:1.3-debian AS app-builder
 
 WORKDIR /build
 
-# Install dependencies first (layer caching)
+# Install mediasoup worker build dependencies (C++ compiler, Python, make).
+# These stay in the build stage only — NOT in the runtime image.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-pip \
+        gcc \
+        g++ \
+        make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dependencies first (layer caching).
 COPY app/package.json app/bun.lock ./
 RUN bun install --frozen-lockfile --production
 
@@ -17,10 +27,16 @@ COPY app/bunfig.toml app/build.ts app/tsconfig.json ./
 # Docker provides TARGETARCH automatically (amd64, arm64)
 ARG TARGETARCH
 
-# Build client and compile server to standalone executable
+# 1. Build mediasoup C++ worker from source (bun doesn't run postinstall by default).
+# 2. Verify and copy worker for embed.
+# 3. Build client assets.
+# 4. Compile server to standalone executable with embedded worker.
 # Map TARGETARCH to Bun compile target: amd64 -> bun-linux-x64, arm64 -> bun-linux-arm64
 RUN BUN_TARGET="bun-linux-x64" && \
     if [ "$TARGETARCH" = "arm64" ]; then BUN_TARGET="bun-linux-arm64"; fi && \
+    bun run worker:build && \
+    bun run worker:verify && \
+    bun run worker:copy && \
     bun run build && \
     bun build --compile --minify --target=$BUN_TARGET \
     ./src/server/index.ts --outfile tuturu-server

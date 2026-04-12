@@ -8,6 +8,18 @@
  * At runtime in compiled mode, Bun auto-extracts it to a temp location —
  * we re-extract to a stable path with executable permissions and change detection.
  *
+ * ## Build note (worker:build script)
+ *
+ * The `worker:build` script in package.json sets PYTHONPATH as a shell env var:
+ *
+ *     PYTHONPATH="$PWD/worker/pip_invoke..." bun npm-scripts.mjs worker:build
+ *
+ * This is a workaround for Bun's `execSync` not inheriting `process.env` mutations
+ * (unlike Node.js). mediasoup's npm-scripts.mjs sets PYTHONPATH via `process.env`
+ * before calling `execSync('python3 -m invoke ...')`, but the child process never
+ * sees it under Bun. Setting it as a shell env var ensures it propagates.
+ * If mediasoup changes its build internals, this workaround may need updating.
+ *
  * @module server/worker-bin
  */
 
@@ -71,6 +83,53 @@ interface WorkerBinResult {
 }
 
 /**
+ * Extract a worker binary to a specified directory with hash-based change detection.
+ *
+ * Uses a sidecar `.hash` file to avoid re-reading the full binary on every restart.
+ * Non-cryptographic hash (xxHash via Bun.hash) — sufficient for detecting binary changes
+ * between deploys, NOT for supply-chain integrity verification.
+ *
+ * Exported for testability — `resolveWorkerBin` delegates to this in compiled mode.
+ *
+ * @param embeddedContent Raw binary content to extract.
+ * @param extractDir Directory to write the worker binary into.
+ * @returns Resolution result with path and extraction status.
+ */
+export async function extractWorkerBin(
+  embeddedContent: Uint8Array,
+  extractDir: string,
+): Promise<WorkerBinResult> {
+  if (!existsSync(extractDir)) {
+    mkdirSync(extractDir, { recursive: true });
+  }
+
+  const extractPath = join(extractDir, EXTRACTED_WORKER_NAME);
+  const hashPath = extractPath + '.hash';
+
+  const embeddedHash = Bun.hash(embeddedContent).toString(16);
+
+  // Check sidecar hash file — avoids re-reading the full ~5MB binary on every restart.
+  if (existsSync(extractPath) && existsSync(hashPath)) {
+    const savedHash = readFileSync(hashPath, 'utf8').trim();
+
+    if (savedHash === embeddedHash) {
+      console.log(`[WORKER] Extracted worker up-to-date at ${extractPath}`);
+      return { path: extractPath, extracted: false };
+    }
+
+    console.log(`[WORKER] Embedded worker changed (${savedHash} → ${embeddedHash}), overwriting`);
+  }
+
+  // Write the binary, sidecar hash, and set executable permission.
+  writeFileSync(extractPath, embeddedContent);
+  writeFileSync(hashPath, embeddedHash);
+  chmodSync(extractPath, 0o755);
+
+  console.log(`[WORKER] Extracted worker to ${extractPath} (hash: ${embeddedHash})`);
+  return { path: extractPath, extracted: true };
+}
+
+/**
  * Resolve the mediasoup-worker binary path.
  *
  * - **Dev mode**: returns the binary from `node_modules/mediasoup/worker/out/Release/`.
@@ -98,36 +157,6 @@ export async function resolveWorkerBin(extractDir?: string): Promise<WorkerBinRe
   // Compiled mode: extract the embedded binary to a stable location.
   const dir = process.env.TUTURU_WORKER_DIR ?? extractDir ?? DEFAULT_EXTRACT_DIR;
 
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-
-  const extractPath = join(dir, EXTRACTED_WORKER_NAME);
-
   const embeddedContent = await readEmbeddedContent(workerBinFile as string | BunFile | Blob);
-  // Non-cryptographic hash (xxHash via Bun.hash) — sufficient for detecting binary changes
-  // between deploys, NOT for supply-chain integrity verification.
-  const embeddedHash = Bun.hash(embeddedContent).toString(16);
-
-  // Check if already extracted and matches hash.
-  if (existsSync(extractPath)) {
-    const existingContent = readFileSync(extractPath);
-    const existingHash = Bun.hash(existingContent).toString(16);
-
-    if (existingHash === embeddedHash) {
-      console.log(`[WORKER] Extracted worker up-to-date at ${extractPath}`);
-      return { path: extractPath, extracted: false };
-    }
-
-    console.log(
-      `[WORKER] Embedded worker changed (${existingHash} → ${embeddedHash}), overwriting`,
-    );
-  }
-
-  // Write the binary and set executable permission.
-  writeFileSync(extractPath, embeddedContent);
-  chmodSync(extractPath, 0o755);
-
-  console.log(`[WORKER] Extracted worker to ${extractPath} (hash: ${embeddedHash})`);
-  return { path: extractPath, extracted: true };
+  return extractWorkerBin(embeddedContent, dir);
 }

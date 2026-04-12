@@ -11,6 +11,7 @@ node_modules/
 app/public/client.js
 app/public/client.js.map
 app/public/index.js
+app/public/e2ee-worker.js
 app/public/index.js.map
 app/dist/
 app/coverage/

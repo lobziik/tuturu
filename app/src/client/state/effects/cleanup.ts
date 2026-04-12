@@ -55,7 +55,7 @@ function cleanupCallResources(refs: ResourceRefs): void {
   }
   refs.sfuProducers.current.clear();
   refs.sfuConsumers.current.clear();
-  refs.pendingProduceCallback.current = null;
+  refs.pendingProduceCallbacks.current.length = 0;
 
   if (refs.e2eeWorker.current) {
     refs.e2eeWorker.current.terminate();

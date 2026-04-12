@@ -224,6 +224,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       rooms.leave(roomId, peerId);
       ws.data.roomId = null;
     }
+    sfuPeerQueues.delete(peerId);
     stopHeartbeat(peerId);
   }
 
@@ -392,6 +393,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   function handleLeaveCall(ws: ServerWebSocket<ServerClientData>, peerId: string): void {
     const roomId = ws.data.roomId;
     if (!roomId) return;
+    deps.sfuPeerHandler?.handlePeerLeave(peerId, roomId);
     rooms.leaveCall(roomId, peerId);
   }
 
@@ -441,22 +443,34 @@ export function createHandlers(deps: HandlerDeps): Handlers {
     return roomId;
   }
 
-  /** Wrap an async SFU handler call — log and send error on failure. */
-  function wrapSfuAsync(
+  /**
+   * Per-peer sequential queue for SFU operations.
+   * Chains promises per peerId so operations execute in order (e.g., sfu-join
+   * completes before sfu-create-transport starts). Prevents race conditions
+   * from fire-and-forget async dispatch.
+   */
+  const sfuPeerQueues = new Map<string, Promise<void>>();
+
+  /** Enqueue an async SFU operation for sequential per-peer execution. */
+  function enqueueSfuOp(
     ws: ServerWebSocket<ServerClientData>,
     peerId: string,
     fn: () => Promise<void>,
   ): void {
-    fn().catch((error: unknown) => {
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error(`[HANDLER] SFU error for peer ${peerId}: ${msg}`);
-      send(ws, {
-        type: 'error',
-        v: 1,
-        code: 'UNKNOWN',
-        message: `SFU operation failed: ${msg}`,
+    const prev = sfuPeerQueues.get(peerId) ?? Promise.resolve();
+    const next = prev
+      .then(() => fn())
+      .catch((error: unknown) => {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error(`[HANDLER] SFU error for peer ${peerId}: ${msg}`);
+        send(ws, {
+          type: 'error',
+          v: 1,
+          code: 'UNKNOWN',
+          message: `SFU operation failed: ${msg}`,
+        });
       });
-    });
+    sfuPeerQueues.set(peerId, next);
   }
 
   function handleSfuJoin(
@@ -466,7 +480,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = requireRoomId(ws, peerId);
     if (!roomId || !deps.sfuPeerHandler) return;
-    wrapSfuAsync(ws, peerId, () =>
+    enqueueSfuOp(ws, peerId, () =>
       deps.sfuPeerHandler!.handleSfuJoin(
         ws,
         peerId,
@@ -483,7 +497,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = requireRoomId(ws, peerId);
     if (!roomId || !deps.sfuPeerHandler) return;
-    wrapSfuAsync(ws, peerId, () =>
+    enqueueSfuOp(ws, peerId, () =>
       deps.sfuPeerHandler!.handleCreateTransport(ws, peerId, roomId, msg.direction),
     );
   }
@@ -495,7 +509,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = requireRoomId(ws, peerId);
     if (!roomId || !deps.sfuPeerHandler) return;
-    wrapSfuAsync(ws, peerId, () =>
+    enqueueSfuOp(ws, peerId, () =>
       deps.sfuPeerHandler!.handleConnectTransport(
         ws,
         peerId,
@@ -513,7 +527,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = requireRoomId(ws, peerId);
     if (!roomId || !deps.sfuPeerHandler) return;
-    wrapSfuAsync(ws, peerId, () =>
+    enqueueSfuOp(ws, peerId, () =>
       deps.sfuPeerHandler!.handleProduce(
         ws,
         peerId,
@@ -532,7 +546,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = requireRoomId(ws, peerId);
     if (!roomId || !deps.sfuPeerHandler) return;
-    wrapSfuAsync(ws, peerId, () =>
+    enqueueSfuOp(ws, peerId, () =>
       deps.sfuPeerHandler!.handleConsumeResume(ws, peerId, roomId, msg.consumerId),
     );
   }
@@ -544,7 +558,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = requireRoomId(ws, peerId);
     if (!roomId || !deps.sfuPeerHandler) return;
-    wrapSfuAsync(ws, peerId, () =>
+    enqueueSfuOp(ws, peerId, () =>
       deps.sfuPeerHandler!.handleProducerPause(ws, peerId, roomId, msg.producerId),
     );
   }
@@ -556,7 +570,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
   ): void {
     const roomId = requireRoomId(ws, peerId);
     if (!roomId || !deps.sfuPeerHandler) return;
-    wrapSfuAsync(ws, peerId, () =>
+    enqueueSfuOp(ws, peerId, () =>
       deps.sfuPeerHandler!.handleProducerResume(ws, peerId, roomId, msg.producerId),
     );
   }

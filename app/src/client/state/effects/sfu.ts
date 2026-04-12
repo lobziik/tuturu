@@ -32,7 +32,7 @@ import {
 } from '../../e2ee/e2ee-transform';
 import { sendMessage } from '../../services/websocket';
 import type { EffectContext, EffectArgs } from './types';
-import { getScreen } from './types';
+import { getScreen, getIceConfig } from './types';
 
 /** Check if SFU mode is active in the current state. */
 function isSfuMode(args: EffectArgs): boolean {
@@ -116,6 +116,12 @@ export function handleSfuEffects(ctx: EffectContext, args: EffectArgs): void {
       return;
     }
 
+    const iceConfig = getIceConfig(newState);
+    if (!iceConfig || !iceConfig.iceServers) {
+      console.error('[SFU:Effects] No ICE config available for transport creation');
+      return;
+    }
+
     const params: TransportParams = {
       id: action.id,
       iceParameters: action.iceParameters,
@@ -124,12 +130,18 @@ export function handleSfuEffects(ctx: EffectContext, args: EffectArgs): void {
       ...(action.sctpParameters ? { sctpParameters: action.sctpParameters } : {}),
     };
 
+    const transportIceConfig = {
+      iceServers: iceConfig.iceServers,
+      iceTransportPolicy: iceConfig.iceTransportPolicy,
+    };
+
     if (action.direction === 'send') {
       const transport = createSfuSendTransport(
         device,
         refs.ws.current,
         params,
-        refs.pendingProduceCallback,
+        refs.pendingProduceCallbacks,
+        transportIceConfig,
       );
       refs.sfuSendTransport.current = transport;
 
@@ -161,16 +173,16 @@ export function handleSfuEffects(ctx: EffectContext, args: EffectArgs): void {
         })();
       }
     } else {
-      const transport = createSfuRecvTransport(device, refs.ws.current, params);
+      const transport = createSfuRecvTransport(device, refs.ws.current, params, transportIceConfig);
       refs.sfuRecvTransport.current = transport;
     }
   }
 
-  // SFU_PRODUCER_CREATED → resolve pending produce callback
+  // SFU_PRODUCER_CREATED → resolve next pending produce callback (FIFO)
   if (action.type === 'SFU_PRODUCER_CREATED') {
-    if (refs.pendingProduceCallback.current) {
-      refs.pendingProduceCallback.current(action.id);
-      refs.pendingProduceCallback.current = null;
+    const callback = refs.pendingProduceCallbacks.current.shift();
+    if (callback) {
+      callback(action.id);
     }
   }
 

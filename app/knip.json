@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/client/index.tsx"],
+  "entry": ["src/client/index.tsx", "src/client/e2ee/e2ee-worker.ts"],
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreDependencies": ["bun"],
   "ignoreBinaries": ["npm-scripts.mjs"]

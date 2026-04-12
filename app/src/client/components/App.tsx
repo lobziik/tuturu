@@ -54,7 +54,7 @@ export function App() {
   const sfuProducersRef = useRef(new Map<string, msTypes.Producer>());
   const sfuConsumersRef = useRef(new Map<string, msTypes.Consumer>());
   const e2eeWorkerRef = useRef<Worker | null>(null);
-  const pendingProduceCallbackRef = useRef<((id: string) => void) | null>(null);
+  const pendingProduceCallbacksRef = useRef<((id: string) => void)[]>([]);
 
   // Stable container object for effect handlers (memoized so identity doesn't change)
   const refs = useMemo<ResourceRefs>(
@@ -78,7 +78,7 @@ export function App() {
       sfuProducers: sfuProducersRef,
       sfuConsumers: sfuConsumersRef,
       e2eeWorker: e2eeWorkerRef,
-      pendingProduceCallback: pendingProduceCallbackRef,
+      pendingProduceCallbacks: pendingProduceCallbacksRef,
     }),
     [],
   );

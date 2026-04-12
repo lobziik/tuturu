@@ -162,6 +162,19 @@ function serveStaticAsset(
     });
   }
 
+  if (pathname === '/e2ee-worker.js') {
+    if (req.headers.get('If-None-Match') === etags.e2eeWorkerJs) {
+      return new Response(null, { status: 304 });
+    }
+    return new Response(text.e2eeWorkerJs, {
+      headers: {
+        'Content-Type': 'application/javascript',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        ETag: etags.e2eeWorkerJs,
+      },
+    });
+  }
+
   if (pathname === '/site.webmanifest') {
     if (req.headers.get('If-None-Match') === etags.manifest) {
       return new Response(null, { status: 304 });

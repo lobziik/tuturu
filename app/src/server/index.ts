@@ -55,18 +55,6 @@ function send(ws: ServerWebSocket<ServerClientData>, message: ServerToClientMess
  * Initialize and start the server.
  */
 async function main(): Promise<void> {
-  // Resolve and verify mediasoup worker binary before anything else.
-  const worker = await resolveWorkerBin();
-
-  // Smoke test only on first extraction (binary changed) or when explicitly requested.
-  // Skipped on regular restarts — the binary doesn't change between them.
-  if (worker.extracted || process.env.TUTURU_SMOKE_TEST === '1') {
-    await smokeTestWorker(worker.path);
-  }
-
-  // Create SFU worker pool
-  const workerManager = await createWorkerManager(worker.path, config.sfuNumWorkers);
-
   // Create data layer
   const db = createDatabase(config.dbPath);
   const blobStore = createBlobStore(config.blobDir);
@@ -77,39 +65,60 @@ async function main(): Promise<void> {
     send,
   });
 
-  // In dev mode, default announcedIp to 127.0.0.1 so browsers can reach the
-  // mediasoup WebRtcTransport (0.0.0.0 is not routable from the browser).
-  const sfuAnnouncedIp =
-    config.sfuAnnouncedIp ??
-    config.externalIp ??
-    (config.nodeEnv === 'development' ? '127.0.0.1' : undefined);
+  // SFU subsystem — only initialize when enabled
+  let workerManager: Awaited<ReturnType<typeof createWorkerManager>> | null = null;
+  let sfuPeerHandler: ReturnType<typeof createSfuPeerHandler> | null = null;
 
-  // Fail fast in production — without announcedIp, mediasoup ICE candidates
-  // advertise 0.0.0.0 which browsers can't connect to. SFU calls silently fail.
-  if (!sfuAnnouncedIp && config.nodeEnv === 'production') {
-    throw new Error(
-      '[SFU] No announcedIp configured for production. ' +
-        'Set EXTERNAL_IP or TUTURU_SFU_ANNOUNCED_IP environment variable. ' +
-        'Without it, SFU ICE candidates will advertise 0.0.0.0 and calls will silently fail.',
-    );
+  if (config.sfuEnabled) {
+    // Resolve and verify mediasoup worker binary before anything else.
+    const worker = await resolveWorkerBin();
+
+    // Smoke test only on first extraction (binary changed) or when explicitly requested.
+    // Skipped on regular restarts — the binary doesn't change between them.
+    if (worker.extracted || process.env.TUTURU_SMOKE_TEST === '1') {
+      await smokeTestWorker(worker.path);
+    }
+
+    // Create SFU worker pool
+    workerManager = await createWorkerManager(worker.path, config.sfuNumWorkers);
+
+    // In dev mode, default announcedIp to 127.0.0.1 so browsers can reach the
+    // mediasoup WebRtcTransport (0.0.0.0 is not routable from the browser).
+    const sfuAnnouncedIp =
+      config.sfuAnnouncedIp ??
+      config.externalIp ??
+      (config.nodeEnv === 'development' ? '127.0.0.1' : undefined);
+
+    // Fail fast in production — without announcedIp, mediasoup ICE candidates
+    // advertise 0.0.0.0 which browsers can't connect to. SFU calls silently fail.
+    if (!sfuAnnouncedIp && config.nodeEnv === 'production') {
+      throw new Error(
+        '[SFU] No announcedIp configured for production. ' +
+          'Set EXTERNAL_IP or TUTURU_SFU_ANNOUNCED_IP environment variable. ' +
+          'Without it, SFU ICE candidates will advertise 0.0.0.0 and calls will silently fail.',
+      );
+    }
+
+    // Create SFU room manager and peer handler
+    const sfuRoomManager = createSfuRoomManager({
+      workerManager,
+      broadcast: (roomId, message, excludePeerId) =>
+        rooms.broadcast(roomId, message, excludePeerId),
+      listenIp: config.sfuListenIp,
+      announcedIp: sfuAnnouncedIp,
+    });
+
+    sfuPeerHandler = createSfuPeerHandler({
+      sfuRoomManager,
+      send,
+      routeToPeer: (roomId, targetPeerId, message) =>
+        rooms.routeToPeer(roomId, targetPeerId, message),
+      listenIp: config.sfuListenIp,
+      announcedIp: sfuAnnouncedIp,
+    });
+  } else {
+    console.log('[SFU] Disabled — all calls will use mesh (peer-to-peer) topology');
   }
-
-  // Create SFU room manager and peer handler
-  const sfuRoomManager = createSfuRoomManager({
-    workerManager,
-    broadcast: (roomId, message, excludePeerId) => rooms.broadcast(roomId, message, excludePeerId),
-    listenIp: config.sfuListenIp,
-    announcedIp: sfuAnnouncedIp,
-  });
-
-  const sfuPeerHandler = createSfuPeerHandler({
-    sfuRoomManager,
-    send,
-    routeToPeer: (roomId, targetPeerId, message) =>
-      rooms.routeToPeer(roomId, targetPeerId, message),
-    listenIp: config.sfuListenIp,
-    announcedIp: sfuAnnouncedIp,
-  });
 
   // Create handlers with all dependencies
   const handlers = createHandlers({
@@ -120,7 +129,7 @@ async function main(): Promise<void> {
     send,
     pingIntervalMs,
     pongTimeoutMs,
-    sfuPeerHandler,
+    ...(sfuPeerHandler ? { sfuPeerHandler } : {}),
   });
 
   // Create WebSocket event handlers
@@ -179,8 +188,8 @@ ${config.externalIp ? `External IP: ${config.externalIp}` : 'No EXTERNAL_IP conf
 ${isTurnConfigured() ? 'TURN server configured (ephemeral credentials, 4h TTL)' : 'No TURN server configured (STUN only)'}
 Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
 
-SFU: ${workerManager.workerCount} mediasoup worker(s)
-SFU listen: ${config.sfuListenIp}${sfuAnnouncedIp ? ` (announced: ${sfuAnnouncedIp})` : ''}
+SFU: ${workerManager ? `${workerManager.workerCount} mediasoup worker(s)` : 'disabled (mesh mode)'}
+${workerManager ? `SFU listen: ${config.sfuListenIp}` : ''}
 
 Database: ${config.dbPath}
 Blob storage: ${config.blobDir}
@@ -194,7 +203,7 @@ Press Ctrl+C to stop
   function shutdown(): void {
     console.log('\nShutting down server...');
     clearInterval(cleanupTimer);
-    workerManager.close();
+    workerManager?.close();
     db.close();
     void server.stop();
     process.exit(0);

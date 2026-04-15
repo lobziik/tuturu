@@ -150,7 +150,7 @@ jobs:
       - name: Smoke test compiled binary
         working-directory: app
         run: |
-          TUTURU_SMOKE_TEST=1 ./dist/server &
+          TUTURU_SFU_NUM_WORKERS=1 TUTURU_SMOKE_TEST=1 ./dist/server &
           SERVER_PID=$!
           trap 'kill $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null' EXIT
           for i in $(seq 1 10); do

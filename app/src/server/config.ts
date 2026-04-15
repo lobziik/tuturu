@@ -6,6 +6,17 @@
 import { z } from 'zod';
 
 /**
+ * Parse env-var strings as booleans. Treats "0", "false", and "" as false;
+ * everything else (including undefined, handled by `.default()`) as true.
+ * Unlike `z.coerce.boolean()`, this correctly handles `"false"` → false.
+ */
+const envBool = z
+  .union([z.boolean(), z.string()])
+  .transform((v) =>
+    typeof v === 'string' ? v !== '' && v !== '0' && v.toLowerCase() !== 'false' : v,
+  );
+
+/**
  * Configuration schema with strict validation
  */
 const configSchema = z.object({
@@ -52,7 +63,7 @@ const configSchema = z.object({
 
   // Force relay mode (for TURN server validation)
   // When true, clients will ONLY use TURN relay candidates (no direct P2P or STUN)
-  forceRelay: z.coerce.boolean().default(false),
+  forceRelay: envBool.default(false),
 
   // v2: Chat persistence and rooms
   retentionDays: z.coerce.number().int().min(1).default(7),
@@ -67,6 +78,8 @@ const configSchema = z.object({
   maxParticipants: z.coerce.number().int().min(2).max(10).default(6),
 
   // SFU configuration
+  /** Enable SFU mode. When false, all calls use mesh (peer-to-peer) topology. */
+  sfuEnabled: envBool.default(true),
   /** IP for mediasoup WebRtcTransport to bind on. */
   sfuListenIp: z.string().default('0.0.0.0'),
   /** External IP announced in ICE candidates (for TURN relay). Falls back to EXTERNAL_IP. */
@@ -98,6 +111,7 @@ function loadConfig() {
     blobDir: process.env.BLOB_DIR,
     dbPath: process.env.DB_PATH,
     maxParticipants: process.env.MAX_PARTICIPANTS,
+    sfuEnabled: process.env.TUTURU_SFU_ENABLED,
     sfuListenIp: process.env.TUTURU_SFU_LISTEN_IP,
     sfuAnnouncedIp: process.env.TUTURU_SFU_ANNOUNCED_IP,
     sfuNumWorkers: process.env.TUTURU_SFU_NUM_WORKERS,

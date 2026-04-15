@@ -52,8 +52,8 @@ interface DiedInfo {
  *          malformed messages — treated as a crash (no respawn).
  */
 export function parseDiedError(message: string): DiedInfo {
-  const codeMatch = message.match(/code:(\d+|null)/);
-  const signalMatch = message.match(/signal:(\w+|null)/);
+  const codeMatch = /code:(\d+|null)/.exec(message);
+  const signalMatch = /signal:(\w+|null)/.exec(message);
 
   const code = !codeMatch || codeMatch[1] === 'null' ? null : Number(codeMatch[1]);
   const signal = !signalMatch || signalMatch[1] === 'null' ? null : signalMatch[1]!;

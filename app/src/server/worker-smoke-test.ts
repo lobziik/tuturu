@@ -1,9 +1,13 @@
 /**
- * mediasoup worker smoke test.
+ * mediasoup worker binary smoke test.
  *
- * Verifies the full chain works: spawn worker process, create router,
- * create WebRTC transport, then close everything.
- * Called at server startup to fail fast if the worker binary is broken.
+ * Validates that the extracted worker binary is functional by exercising
+ * the full mediasoup chain: spawn worker → create router → create
+ * WebRtcTransport → close everything.
+ *
+ * Run once after binary extraction (or when TUTURU_SMOKE_TEST=1).
+ * Throws on failure — prevents SFU initialization if the binary is broken.
+ * Does NOT affect runtime worker-death handling (see worker-manager.ts).
  *
  * @module server/worker-smoke-test
  */
@@ -22,12 +26,12 @@ const SMOKE_TEST_CODECS: mediasoupTypes.RouterRtpCodecCapability[] = [
 ];
 
 /**
- * Run a smoke test of the mediasoup worker.
+ * Run a smoke test of the mediasoup worker binary.
  *
  * Creates worker → router → WebRtcTransport → closes everything.
- * Throws on failure — server should not start if the worker is broken.
+ * Throws on failure — SFU should not initialize if the binary is broken.
  *
- * @param workerBin Absolute path to the mediasoup-worker binary.
+ * @param workerBin - Absolute path to the mediasoup-worker binary.
  */
 export async function smokeTestWorker(workerBin: string): Promise<void> {
   console.log('[WORKER] Running smoke test...');

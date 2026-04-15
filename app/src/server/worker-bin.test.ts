@@ -142,11 +142,11 @@ describe('extractWorkerBin', () => {
 describe('resolveWorkerBin (dev mode)', () => {
   // Dynamic import to avoid loading worker-bin.ts (and its embedded binary import)
   // in CI environments where the mediasoup-worker file doesn't exist.
-  test.skipIf(!canLoadWorkerBin)('returns node_modules worker path in dev mode', async () => {
+  test.skipIf(!canLoadWorkerBin)('returns local worker copy path in dev mode', async () => {
     const { resolveWorkerBin } = await import('./worker-bin');
     const result = await resolveWorkerBin();
 
     expect(result.extracted).toBe(false);
-    expect(result.path).toContain('node_modules/mediasoup/worker/out/Release/mediasoup-worker');
+    expect(result.path).toContain('src/server/mediasoup-worker');
   });
 });

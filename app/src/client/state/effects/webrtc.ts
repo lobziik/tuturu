@@ -20,8 +20,9 @@ import {
   handleIceCandidate,
   closePeerConnection,
 } from '../../services/webrtc';
-import type { MeshContext } from '../../services/webrtc';
+import type { MeshContext, E2eeConfig } from '../../services/webrtc';
 import { sendMessage } from '../../services/websocket';
+import { isE2eeSupported, createE2eeWorker } from '../../e2ee/e2ee-transform';
 import type { Action } from '../types';
 import {
   getScreen,
@@ -42,6 +43,19 @@ function buildMeshContext(refs: ResourceRefs, dispatch: (action: Action) => void
   };
 }
 
+/** Build E2EE config from refs, lazily creating the worker if needed. */
+function buildE2eeConfig(refs: ResourceRefs): E2eeConfig | undefined {
+  if (!refs.aesKey.current) return undefined;
+
+  if (!refs.e2eeWorker.current && isE2eeSupported()) {
+    refs.e2eeWorker.current = createE2eeWorker();
+  }
+
+  if (!refs.e2eeWorker.current) return undefined;
+
+  return { worker: refs.e2eeWorker.current, key: refs.aesKey.current };
+}
+
 /**
  * Handle CALL_PEERS_RECEIVED: diff current connections vs new peer list.
  * Creates PCs for new peers (impolite sends offer), closes PCs for removed peers.
@@ -56,6 +70,7 @@ function handleCallPeersEffect(
   const { peerConnections, makingOfferPeers, dispatch } = meshCtx;
   const remotePeers = new Set(action.callPeers.filter((id: string) => id !== selfPeerId));
   const currentPeers = new Set(peerConnections.keys());
+  const e2ee = buildE2eeConfig(refs);
 
   // Create PCs for new peers
   for (const peerId of remotePeers) {
@@ -70,6 +85,7 @@ function handleCallPeersEffect(
       meshCtx.ws,
       dispatch,
       peerId,
+      e2ee,
     );
     peerConnections.set(peerId, pc);
 
@@ -145,6 +161,7 @@ function handleReceivedOfferEffect(
   const { fromPeerId } = action;
   let pc = meshCtx.peerConnections.get(fromPeerId);
   if (!pc) {
+    const e2ee = buildE2eeConfig(refs);
     pc = createPeerConnection(
       {
         iceServers: iceConfig.iceServers ?? [],
@@ -154,6 +171,7 @@ function handleReceivedOfferEffect(
       meshCtx.ws,
       meshCtx.dispatch,
       fromPeerId,
+      e2ee,
     );
     meshCtx.peerConnections.set(fromPeerId, pc);
   }

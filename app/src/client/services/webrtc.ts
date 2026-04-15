@@ -15,8 +15,17 @@ import type {
 } from '../../shared/types';
 import type { Action } from '../state/types';
 import { sendMessage } from './websocket';
+import { setupSenderTransform, setupReceiverTransform } from '../e2ee/e2ee-transform';
 
 type Dispatch = (action: Action) => void;
+
+/** E2EE configuration for frame-level encryption/decryption on RTP streams. */
+export interface E2eeConfig {
+  /** E2EE Web Worker that performs frame encryption/decryption */
+  worker: Worker;
+  /** AES-GCM CryptoKey shared by all peers in the room */
+  key: CryptoKey;
+}
 
 /**
  * Shared mesh state passed to signaling handlers.
@@ -77,6 +86,7 @@ interface PeerConnectionConfig {
  * @param ws - WebSocket for sending ICE candidates
  * @param dispatch - State machine dispatch function
  * @param targetPeerId - Remote peer this connection is for (used in signaling and actions)
+ * @param e2ee - Optional E2EE config for frame-level encryption on RTP streams
  * @returns Configured RTCPeerConnection instance
  */
 export function createPeerConnection(
@@ -85,6 +95,7 @@ export function createPeerConnection(
   ws: WebSocket | null,
   dispatch: Dispatch,
   targetPeerId: string,
+  e2ee?: E2eeConfig,
 ): RTCPeerConnection {
   console.log(`[RTC:${targetPeerId}] Creating peer connection`);
   console.log(`[RTC:${targetPeerId}] ICE transport policy:`, config.iceTransportPolicy);
@@ -107,6 +118,19 @@ export function createPeerConnection(
     if (localStream.getVideoTracks().length === 0) {
       pc.addTransceiver('video', { direction: 'recvonly' });
       console.log(`[RTC:${targetPeerId}] Added recvonly video transceiver (audio-only mode)`);
+    }
+
+    // Apply E2EE transforms to all transceivers BEFORE any SDP exchange.
+    // Transforms must be set before the receiver starts processing frames —
+    // setting them later (ontrack, onconnectionstatechange) causes frames to
+    // bypass the transform pipeline entirely.
+    if (e2ee) {
+      for (const transceiver of pc.getTransceivers()) {
+        if (transceiver.sender.track) {
+          setupSenderTransform(transceiver.sender, e2ee.key, e2ee.worker);
+        }
+        setupReceiverTransform(transceiver.receiver, e2ee.key, e2ee.worker);
+      }
     }
   }
 

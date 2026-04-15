@@ -66,7 +66,7 @@ export function createE2eeWorker(): Worker | null {
 /**
  * Apply encrypt transform to an RTCRtpSender.
  *
- * @param sender - The RTP sender (from a mediasoup Producer's rtpSender)
+ * @param sender - The RTP sender (from RTCPeerConnection or mediasoup Producer)
  * @param key - AES-GCM CryptoKey for encryption
  * @param worker - E2EE Web Worker instance
  * @param codec - Negotiated codec; determines unencrypted header size in worker
@@ -88,7 +88,7 @@ export function setupSenderTransform(
 /**
  * Apply decrypt transform to an RTCRtpReceiver.
  *
- * @param receiver - The RTP receiver (from a mediasoup Consumer's rtpReceiver)
+ * @param receiver - The RTP receiver (from RTCPeerConnection or mediasoup Consumer)
  * @param key - AES-GCM CryptoKey for decryption
  * @param worker - E2EE Web Worker instance
  * @param codec - Negotiated codec; determines unencrypted header size in worker

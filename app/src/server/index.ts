@@ -51,6 +51,119 @@ function send(ws: ServerWebSocket<ServerClientData>, message: ServerToClientMess
   }
 }
 
+/** SFU subsystem initialization result. */
+interface SfuSubsystem {
+  workerManager: Awaited<ReturnType<typeof createWorkerManager>>;
+  sfuPeerHandler: ReturnType<typeof createSfuPeerHandler>;
+}
+
+/**
+ * Initialize the SFU subsystem: resolve worker binary, create worker pool,
+ * room manager, and peer handler.
+ *
+ * @returns SFU subsystem handles, or null if SFU is disabled.
+ */
+async function initSfu(
+  rooms: ReturnType<typeof createRoomManager>,
+  sfuAnnouncedIp: string | undefined,
+): Promise<SfuSubsystem | null> {
+  if (!config.sfuEnabled) {
+    console.log('[SFU] Disabled — all calls will use mesh (peer-to-peer) topology');
+    return null;
+  }
+
+  // Fail fast in production — without announcedIp, mediasoup ICE candidates
+  // advertise 0.0.0.0 which browsers can't connect to. SFU calls silently fail.
+  if (!sfuAnnouncedIp && config.nodeEnv === 'production') {
+    throw new Error(
+      '[SFU] No announcedIp configured for production. ' +
+        'Set EXTERNAL_IP or TUTURU_SFU_ANNOUNCED_IP environment variable. ' +
+        'Without it, SFU ICE candidates will advertise 0.0.0.0 and calls will silently fail.',
+    );
+  }
+
+  // Resolve and verify mediasoup worker binary before anything else.
+  const worker = await resolveWorkerBin();
+
+  // Smoke test only on first extraction (binary changed) or when explicitly requested.
+  // Skipped on regular restarts — the binary doesn't change between them.
+  if (worker.extracted || process.env.TUTURU_SMOKE_TEST === '1') {
+    await smokeTestWorker(worker.path);
+  }
+
+  // Create SFU worker pool
+  const workerManager = await createWorkerManager(worker.path, config.sfuNumWorkers);
+
+  // Create SFU room manager and peer handler
+  const sfuRoomManager = createSfuRoomManager({
+    workerManager,
+    broadcast: (roomId, message, excludePeerId) => rooms.broadcast(roomId, message, excludePeerId),
+    listenIp: config.sfuListenIp,
+    announcedIp: sfuAnnouncedIp,
+  });
+
+  const sfuPeerHandler = createSfuPeerHandler({
+    sfuRoomManager,
+    send,
+    routeToPeer: (roomId, targetPeerId, message) =>
+      rooms.routeToPeer(roomId, targetPeerId, message),
+    listenIp: config.sfuListenIp,
+    announcedIp: sfuAnnouncedIp,
+  });
+
+  return { workerManager, sfuPeerHandler };
+}
+
+/** Format the SFU listen line for the startup banner. */
+function formatSfuListenLine(sfuAnnouncedIp: string | undefined): string {
+  const announced = sfuAnnouncedIp ? ` (announced: ${sfuAnnouncedIp})` : '';
+  return `SFU listen: ${config.sfuListenIp}${announced}`;
+}
+
+/** Print server startup banner with configuration summary. */
+function printStartupBanner(
+  server: { hostname: string | undefined; port: number | undefined },
+  workerManager: SfuSubsystem['workerManager'] | null,
+  sfuAnnouncedIp: string | undefined,
+): void {
+  const externalIpLine = config.externalIp
+    ? `External IP: ${config.externalIp}`
+    : 'No EXTERNAL_IP configured';
+  const turnLine = isTurnConfigured()
+    ? 'TURN server configured (ephemeral credentials, 4h TTL)'
+    : 'No TURN server configured (STUN only)';
+  const sfuStatus = workerManager
+    ? `${workerManager.workerCount} mediasoup worker(s)`
+    : 'disabled (mesh mode)';
+  const sfuListenLine = workerManager ? formatSfuListenLine(sfuAnnouncedIp) : '';
+
+  console.log(`
+╔═══════════════════════════════════════╗
+║         tuturu v2 Server              ║
+╚═══════════════════════════════════════╝
+
+Server running on http://${server.hostname}:${server.port}
+WebSocket endpoint: ws://${server.hostname}:${server.port}/ws
+Health check: http://${server.hostname}:${server.port}/health
+Environment: ${config.nodeEnv}
+
+STUN servers: ${config.stunServers.join(', ')}
+${externalIpLine}
+${turnLine}
+Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
+
+SFU: ${sfuStatus}
+${sfuListenLine}
+
+Database: ${config.dbPath}
+Blob storage: ${config.blobDir}
+Retention: ${config.retentionDays} days
+Max participants: ${config.maxParticipants}
+
+Press Ctrl+C to stop
+`);
+}
+
 /**
  * Initialize and start the server.
  */
@@ -74,52 +187,7 @@ async function main(): Promise<void> {
     (config.nodeEnv === 'development' ? '127.0.0.1' : undefined);
 
   // SFU subsystem — only initialize when enabled
-  let workerManager: Awaited<ReturnType<typeof createWorkerManager>> | null = null;
-  let sfuPeerHandler: ReturnType<typeof createSfuPeerHandler> | null = null;
-
-  if (config.sfuEnabled) {
-    // Fail fast in production — without announcedIp, mediasoup ICE candidates
-    // advertise 0.0.0.0 which browsers can't connect to. SFU calls silently fail.
-    if (!sfuAnnouncedIp && config.nodeEnv === 'production') {
-      throw new Error(
-        '[SFU] No announcedIp configured for production. ' +
-          'Set EXTERNAL_IP or TUTURU_SFU_ANNOUNCED_IP environment variable. ' +
-          'Without it, SFU ICE candidates will advertise 0.0.0.0 and calls will silently fail.',
-      );
-    }
-
-    // Resolve and verify mediasoup worker binary before anything else.
-    const worker = await resolveWorkerBin();
-
-    // Smoke test only on first extraction (binary changed) or when explicitly requested.
-    // Skipped on regular restarts — the binary doesn't change between them.
-    if (worker.extracted || process.env.TUTURU_SMOKE_TEST === '1') {
-      await smokeTestWorker(worker.path);
-    }
-
-    // Create SFU worker pool
-    workerManager = await createWorkerManager(worker.path, config.sfuNumWorkers);
-
-    // Create SFU room manager and peer handler
-    const sfuRoomManager = createSfuRoomManager({
-      workerManager,
-      broadcast: (roomId, message, excludePeerId) =>
-        rooms.broadcast(roomId, message, excludePeerId),
-      listenIp: config.sfuListenIp,
-      announcedIp: sfuAnnouncedIp,
-    });
-
-    sfuPeerHandler = createSfuPeerHandler({
-      sfuRoomManager,
-      send,
-      routeToPeer: (roomId, targetPeerId, message) =>
-        rooms.routeToPeer(roomId, targetPeerId, message),
-      listenIp: config.sfuListenIp,
-      announcedIp: sfuAnnouncedIp,
-    });
-  } else {
-    console.log('[SFU] Disabled — all calls will use mesh (peer-to-peer) topology');
-  }
+  const sfu = await initSfu(rooms, sfuAnnouncedIp);
 
   // Create handlers with all dependencies
   const handlers = createHandlers({
@@ -130,7 +198,7 @@ async function main(): Promise<void> {
     send,
     pingIntervalMs,
     pongTimeoutMs,
-    ...(sfuPeerHandler ? { sfuPeerHandler } : {}),
+    ...(sfu ? { sfuPeerHandler: sfu.sfuPeerHandler } : {}),
   });
 
   // Create WebSocket event handlers
@@ -174,37 +242,13 @@ async function main(): Promise<void> {
     }
   }, cleanupIntervalMs);
 
-  console.log(`
-╔═══════════════════════════════════════╗
-║         tuturu v2 Server              ║
-╚═══════════════════════════════════════╝
-
-Server running on http://${server.hostname}:${server.port}
-WebSocket endpoint: ws://${server.hostname}:${server.port}/ws
-Health check: http://${server.hostname}:${server.port}/health
-Environment: ${config.nodeEnv}
-
-STUN servers: ${config.stunServers.join(', ')}
-${config.externalIp ? `External IP: ${config.externalIp}` : 'No EXTERNAL_IP configured'}
-${isTurnConfigured() ? 'TURN server configured (ephemeral credentials, 4h TTL)' : 'No TURN server configured (STUN only)'}
-Force relay: ${config.forceRelay ? 'enabled' : 'disabled'}
-
-SFU: ${workerManager ? `${workerManager.workerCount} mediasoup worker(s)` : 'disabled (mesh mode)'}
-${workerManager ? `SFU listen: ${config.sfuListenIp}${sfuAnnouncedIp ? ` (announced: ${sfuAnnouncedIp})` : ''}` : ''}
-
-Database: ${config.dbPath}
-Blob storage: ${config.blobDir}
-Retention: ${config.retentionDays} days
-Max participants: ${config.maxParticipants}
-
-Press Ctrl+C to stop
-`);
+  printStartupBanner(server, sfu?.workerManager ?? null, sfuAnnouncedIp);
 
   // Graceful shutdown
   function shutdown(): void {
     console.log('\nShutting down server...');
     clearInterval(cleanupTimer);
-    workerManager?.close();
+    sfu?.workerManager.close();
     db.close();
     void server.stop();
     process.exit(0);

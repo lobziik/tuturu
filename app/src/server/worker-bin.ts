@@ -2,7 +2,7 @@
  * mediasoup worker binary resolution.
  *
  * In compiled mode: extracts the embedded binary to disk, returns its path.
- * In dev mode: returns the node_modules path directly (no embed/extract needed).
+ * In dev mode: returns the local copy directly (placed by `worker:copy`).
  *
  * The binary is embedded at compile time via `import with { type: 'file' }`.
  * At runtime in compiled mode, Bun auto-extracts it to a temp location —
@@ -23,25 +23,17 @@
  * @module server/worker-bin
  */
 
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { extractWorkerBin, type WorkerBinResult } from './worker-extract';
 
 /**
  * Embedded worker binary.
- * - Dev mode: resolves to the string path of `src/server/mediasoup-worker`
+ * - Dev mode: resolves to the local copy at `src/server/mediasoup-worker`
  * - Compiled mode: resolves to the auto-extracted temp file (`/$bunfs/...` string path)
  *
- * The file must exist at `src/server/mediasoup-worker` before `bun build --compile`.
+ * The file must exist at `src/server/mediasoup-worker` for the import to resolve.
  * Run `bun run worker:copy` to place it there.
  */
 import workerBinFile from './mediasoup-worker' with { type: 'file' };
-
-/** Path to the worker binary inside node_modules (for dev mode). */
-const NODE_MODULES_WORKER_PATH = resolve(
-  import.meta.dir,
-  '../../node_modules/mediasoup/worker/out/Release/mediasoup-worker',
-);
 
 /**
  * Default directory for extracted worker in production.
@@ -68,26 +60,20 @@ async function readEmbeddedContent(filePath: string): Promise<Buffer> {
 /**
  * Resolve the mediasoup-worker binary path.
  *
- * - **Dev mode**: returns the binary from `node_modules/mediasoup/worker/out/Release/`.
+ * - **Dev mode**: returns the local copy at `src/server/mediasoup-worker`
+ *   (placed by `bun run worker:copy`, required for the file import to resolve).
  * - **Compiled mode**: extracts the embedded binary to `<extractDir>/mediasoup-worker`,
  *   checks hash (overwrites if changed), sets executable permission, returns path.
  *
  * Extract directory priority: `TUTURU_WORKER_DIR` env var > `extractDir` param > `/tmp/tuturu`.
  *
- * @param extractDir Directory to extract the worker binary into (compiled mode only).
- * @throws If the worker binary is not found (dev mode) or extraction fails (compiled mode).
+ * @param extractDir - Directory to extract the worker binary into (compiled mode only).
+ * @throws If extraction fails (compiled mode).
  */
 export async function resolveWorkerBin(extractDir?: string): Promise<WorkerBinResult> {
   if (!isCompiled()) {
-    if (!existsSync(NODE_MODULES_WORKER_PATH)) {
-      throw new Error(
-        `[WORKER] mediasoup-worker binary not found at ${NODE_MODULES_WORKER_PATH}. ` +
-          `Run 'bun run worker:build' or 'bun install' first.`,
-      );
-    }
-
-    console.log(`[WORKER] Dev mode — using worker at ${NODE_MODULES_WORKER_PATH}`);
-    return { path: NODE_MODULES_WORKER_PATH, extracted: false };
+    console.log(`[WORKER] Dev mode — using local worker copy at ${workerBinFile}`);
+    return { path: workerBinFile, extracted: false };
   }
 
   // Compiled mode: extract the embedded binary to a stable location.

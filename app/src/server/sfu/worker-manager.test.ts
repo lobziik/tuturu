@@ -224,6 +224,35 @@ describe('createWorkerManager', () => {
       manager.close();
     });
 
+    test('rate limit resets after respawnWindowMs expires', async () => {
+      // Use a short window (50ms) so we can wait it out in a test
+      const manager = await createWorkerManager('/fake/path', 1, 50);
+
+      // Exhaust the rate limit (3 clean exits → 3 respawns)
+      for (let i = 0; i < 3; i++) {
+        const worker = await getMockWorker(i);
+        worker._emit('died', diedError(worker.pid, 0, null));
+        await Bun.sleep(1);
+      }
+      // 1 initial + 3 respawns = 4
+      expect(mockCreateWorker).toHaveBeenCalledTimes(4);
+      expect(manager.workerCount).toBe(1);
+
+      // Wait past the rate limit window (50ms)
+      await Bun.sleep(60);
+
+      // Next death should succeed (window expired, timestamps pruned)
+      const currentWorker = await getMockWorker(3);
+      currentWorker._emit('died', diedError(currentWorker.pid, 0, null));
+      await Bun.sleep(1);
+
+      // Should have respawned: 4 + 1 = 5
+      expect(mockCreateWorker).toHaveBeenCalledTimes(5);
+      expect(manager.workerCount).toBe(1);
+
+      manager.close();
+    });
+
     test('close() cancels pending respawn', async () => {
       // Use a deferred promise to control when createWorker resolves
       let resolveRespawn!: (w: mediasoupTypes.Worker) => void;

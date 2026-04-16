@@ -18,7 +18,8 @@ const IV_LENGTH = 12;
  * @returns `true` if the frame was processed successfully and should be enqueued,
  *          `false` if the frame should be dropped (decrypt failure).
  */
-async function processFrame(
+/** @internal Exported for testing. */
+export async function processFrame(
   operation: 'encrypt' | 'decrypt',
   key: CryptoKey,
   frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,

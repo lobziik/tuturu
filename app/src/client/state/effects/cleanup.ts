@@ -11,7 +11,6 @@
 import { closeWebSocket, sendMessage } from '../../services/websocket';
 import { closePeerConnection } from '../../services/webrtc';
 import { stopMediaStream } from '../../services/media';
-import { resetDevice } from '../../sfu/device';
 import type { EffectContext, EffectArgs, ResourceRefs } from './types';
 import { getScreen } from './types';
 
@@ -62,7 +61,7 @@ function cleanupCallResources(refs: ResourceRefs): void {
     refs.e2eeWorker.current = null;
   }
 
-  resetDevice();
+  refs.deviceManager.current.resetDevice();
 }
 
 /**

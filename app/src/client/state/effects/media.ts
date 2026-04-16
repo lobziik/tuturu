@@ -57,6 +57,7 @@ export function handleMediaEffects(ctx: EffectContext, args: EffectArgs): void {
       // SFU mode: flip camera, then replace track on video producer
       void (async () => {
         try {
+          // Empty Map: in SFU mode track replacement happens via producer.replaceTrack() below, not peer connections
           await flipCamera(refs.localStream.current!, new Map(), dispatch);
           const videoProducer = refs.sfuProducers.current.get('video');
           const newVideoTrack = refs.localStream.current?.getVideoTracks()[0];

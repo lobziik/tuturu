@@ -364,8 +364,8 @@ const ServerErrorSchema = z.object({
 const SfuRouterCapsSchema = z.object({
   type: z.literal('sfu-router-caps'),
   v: z.literal(1),
-  /** Router's RtpCapabilities — opaque to the schema, validated by mediasoup-client */
-  rtpCapabilities: z.unknown(),
+  /** Router's RtpCapabilities — deep validation by mediasoup-client */
+  rtpCapabilities: z.record(z.string(), z.unknown()),
 });
 
 /** Parameters for a newly created WebRtcTransport (send or recv). */
@@ -374,10 +374,14 @@ const SfuTransportCreatedSchema = z.object({
   v: z.literal(1),
   direction: z.enum(['send', 'recv']),
   id: z.string(),
-  iceParameters: z.unknown(),
-  iceCandidates: z.unknown(),
-  dtlsParameters: z.unknown(),
-  sctpParameters: z.unknown().optional(),
+  /** mediasoup IceParameters — deep validation by mediasoup-client */
+  iceParameters: z.record(z.string(), z.unknown()),
+  /** mediasoup IceCandidate[] — deep validation by mediasoup-client */
+  iceCandidates: z.array(z.record(z.string(), z.unknown())),
+  /** mediasoup DtlsParameters — deep validation by mediasoup-client */
+  dtlsParameters: z.record(z.string(), z.unknown()),
+  /** mediasoup SctpParameters — deep validation by mediasoup-client */
+  sctpParameters: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Confirmation that a Producer was created on the server. */
@@ -397,8 +401,8 @@ const SfuNewConsumerSchema = z.object({
   producerId: z.string(),
   consumerId: z.string(),
   kind: z.enum(['audio', 'video']),
-  /** RTP parameters for the client-side Consumer */
-  rtpParameters: z.unknown(),
+  /** mediasoup RtpParameters — deep validation by mediasoup-client */
+  rtpParameters: z.record(z.string(), z.unknown()),
   /** Whether the Producer is currently paused */
   producerPaused: z.boolean(),
 });

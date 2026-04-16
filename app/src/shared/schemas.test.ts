@@ -659,4 +659,153 @@ describe('SFU message schemas', () => {
       expect(result.success).toBe(false);
     });
   });
+
+  // --------------------------------------------------------------------------
+  // Server → Client SFU schemas
+  // --------------------------------------------------------------------------
+
+  describe('sfu-router-caps', () => {
+    test('accepts object rtpCapabilities', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        type: 'sfu-router-caps',
+        v: 1,
+        rtpCapabilities: { codecs: [], headerExtensions: [] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    test('rejects primitive rtpCapabilities', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        type: 'sfu-router-caps',
+        v: 1,
+        rtpCapabilities: 'not-an-object',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects array rtpCapabilities', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        type: 'sfu-router-caps',
+        v: 1,
+        rtpCapabilities: [1, 2, 3],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects null rtpCapabilities', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        type: 'sfu-router-caps',
+        v: 1,
+        rtpCapabilities: null,
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('sfu-transport-created', () => {
+    const validTransport = {
+      type: 'sfu-transport-created',
+      v: 1,
+      direction: 'send',
+      id: 'transport-1',
+      iceParameters: { usernameFragment: 'frag', password: 'pass', iceLite: true },
+      iceCandidates: [{ foundation: '1', priority: 1, ip: '1.2.3.4', port: 5000 }],
+      dtlsParameters: { role: 'auto', fingerprints: [] },
+    };
+
+    test('accepts valid transport parameters', () => {
+      const result = ServerToClientMessageSchema.safeParse(validTransport);
+      expect(result.success).toBe(true);
+    });
+
+    test('accepts with optional sctpParameters', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validTransport,
+        sctpParameters: { port: 5000, OS: 1024, MIS: 1024 },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    test('rejects primitive iceParameters', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validTransport,
+        iceParameters: 42,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects primitive iceCandidates', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validTransport,
+        iceCandidates: 'not-array',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects iceCandidates with primitive elements', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validTransport,
+        iceCandidates: [42, 'string'],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects primitive dtlsParameters', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validTransport,
+        dtlsParameters: true,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects primitive sctpParameters', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validTransport,
+        sctpParameters: 'invalid',
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('sfu-new-consumer', () => {
+    const validConsumer = {
+      type: 'sfu-new-consumer',
+      v: 1,
+      peerId: 'peer-1',
+      producerId: 'producer-1',
+      consumerId: 'consumer-1',
+      kind: 'audio',
+      rtpParameters: { codecs: [], encodings: [] },
+      producerPaused: false,
+    };
+
+    test('accepts valid consumer', () => {
+      const result = ServerToClientMessageSchema.safeParse(validConsumer);
+      expect(result.success).toBe(true);
+    });
+
+    test('rejects primitive rtpParameters', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validConsumer,
+        rtpParameters: 'not-an-object',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects array rtpParameters', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validConsumer,
+        rtpParameters: [1, 2, 3],
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects null rtpParameters', () => {
+      const result = ServerToClientMessageSchema.safeParse({
+        ...validConsumer,
+        rtpParameters: null,
+      });
+      expect(result.success).toBe(false);
+    });
+  });
 });

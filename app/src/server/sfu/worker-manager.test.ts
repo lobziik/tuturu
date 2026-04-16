@@ -159,8 +159,8 @@ describe('createWorkerManager', () => {
       // Kill worker 0 with a clean exit
       worker0._emit('died', diedError(1000, 0, null));
 
-      // Wait for the async respawn to complete
-      await Bun.sleep(0);
+      // Flush microtask queue so async respawn completes
+      await Bun.sleep(1);
 
       // 2 initial + 1 respawn
       expect(mockCreateWorker).toHaveBeenCalledTimes(3);
@@ -174,7 +174,7 @@ describe('createWorkerManager', () => {
       const worker0 = await getMockWorker(0);
 
       worker0._emit('died', diedError(1000, 1, null));
-      await Bun.sleep(0);
+      await Bun.sleep(1);
 
       // No respawn — still only 2 calls
       expect(mockCreateWorker).toHaveBeenCalledTimes(2);
@@ -188,7 +188,7 @@ describe('createWorkerManager', () => {
       const worker0 = await getMockWorker(0);
 
       worker0._emit('died', diedError(1000, null, 'SIGKILL'));
-      await Bun.sleep(0);
+      await Bun.sleep(1);
 
       expect(mockCreateWorker).toHaveBeenCalledTimes(2);
       expect(manager.workerCount).toBe(1);
@@ -204,7 +204,7 @@ describe('createWorkerManager', () => {
         const workerIdx = i; // 0 = initial, 1 = 1st respawn, 2 = 2nd respawn
         const worker = await getMockWorker(workerIdx);
         worker._emit('died', diedError(worker.pid, 0, null));
-        await Bun.sleep(0);
+        await Bun.sleep(1);
       }
 
       // 1 initial + 3 respawns = 4 total createWorker calls
@@ -214,7 +214,7 @@ describe('createWorkerManager', () => {
       // 4th death — rate limit should prevent respawn
       const worker3 = await getMockWorker(3);
       worker3._emit('died', diedError(worker3.pid, 0, null));
-      await Bun.sleep(0);
+      await Bun.sleep(1);
 
       // Still 4 calls — no new respawn
       expect(mockCreateWorker).toHaveBeenCalledTimes(4);
@@ -253,7 +253,7 @@ describe('createWorkerManager', () => {
       // Now resolve the respawn — new worker should be closed immediately
       const respawnedWorker = createMockWorker(9999);
       resolveRespawn(respawnedWorker);
-      await Bun.sleep(0);
+      await Bun.sleep(1);
 
       expect(manager.workerCount).toBe(0);
       expect((respawnedWorker as MockWorker).close).toHaveBeenCalledTimes(1);
@@ -265,7 +265,7 @@ describe('createWorkerManager', () => {
 
       // Kill the middle worker with a crash (no respawn)
       worker1._emit('died', diedError(1001, 1, null));
-      await Bun.sleep(0);
+      await Bun.sleep(1);
 
       // Round-robin should only return workers 0 and 2
       const pids = new Set<number>();
@@ -288,7 +288,7 @@ describe('createWorkerManager', () => {
       // Crash both
       worker0._emit('died', diedError(1000, 1, null));
       worker1._emit('died', diedError(1001, 1, null));
-      await Bun.sleep(0);
+      await Bun.sleep(1);
 
       expect(manager.workerCount).toBe(0);
       expect(() => manager.getNextWorker()).toThrow('No workers available');
@@ -317,7 +317,7 @@ describe('createWorkerManager', () => {
 
       // Clean death → respawn
       worker0._emit('died', diedError(1000, 0, null));
-      await Bun.sleep(0);
+      await Bun.sleep(1);
       expect(manager.workerCount).toBe(1);
 
       // The respawned worker (index 1) should have a died handler
@@ -327,7 +327,7 @@ describe('createWorkerManager', () => {
 
       // Crash the respawned worker — should shrink pool, no respawn
       respawnedWorker._emit('died', diedError(respawnedWorker.pid, 1, null));
-      await Bun.sleep(0);
+      await Bun.sleep(1);
 
       expect(manager.workerCount).toBe(0);
       // 1 initial + 1 respawn = 2 total (no further respawn for crash)

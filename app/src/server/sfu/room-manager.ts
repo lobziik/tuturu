@@ -22,11 +22,28 @@ import { MEDIA_CODECS } from './codecs';
 export function createSfuRoomManager(deps: SfuRoomManagerDeps): SfuRoomManager {
   const { workerManager, broadcast } = deps;
   const rooms = new Map<string, SfuRoomState>();
+  /** In-flight room creation promises — prevents TOCTOU race when concurrent peers join the same room. */
+  const pending = new Map<string, Promise<SfuRoomState>>();
 
   async function getOrCreateRoom(roomId: string): Promise<SfuRoomState> {
     const existing = rooms.get(roomId);
     if (existing) return existing;
 
+    const inflight = pending.get(roomId);
+    if (inflight) return inflight;
+
+    const promise = createRoom(roomId);
+    pending.set(roomId, promise);
+
+    try {
+      const room = await promise;
+      return room;
+    } finally {
+      pending.delete(roomId);
+    }
+  }
+
+  async function createRoom(roomId: string): Promise<SfuRoomState> {
     const worker = workerManager.getNextWorker();
     const router = await worker.createRouter({ mediaCodecs: MEDIA_CODECS });
 

@@ -321,4 +321,28 @@ describe('createSfuRoomManager', () => {
       expect(broadcastCalls).toHaveLength(0);
     });
   });
+
+  describe('concurrent access', () => {
+    test('concurrent getOrCreateRoom calls create only one router', async () => {
+      const manager = createSfuRoomManager({
+        workerManager,
+        broadcast: broadcastFn,
+        listenIp: '0.0.0.0',
+        announcedIp: undefined,
+      });
+
+      const createRouterFn = workerManager._mockWorker.createRouter as ReturnType<typeof mock>;
+      const callsBefore = createRouterFn.mock.calls.length;
+
+      // Fire two concurrent requests for the same room
+      const [room1, room2] = await Promise.all([
+        manager.getOrCreateRoom('room-1'),
+        manager.getOrCreateRoom('room-1'),
+      ]);
+
+      expect(room1).toBe(room2);
+      expect(createRouterFn.mock.calls.length - callsBefore).toBe(1);
+      expect(manager.roomCount).toBe(1);
+    });
+  });
 });

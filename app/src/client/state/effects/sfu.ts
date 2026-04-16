@@ -77,7 +77,7 @@ function handleSfuRouterCaps(ctx: EffectContext, args: EffectArgs): void {
       sendMessage(refs.ws.current, {
         type: 'sfu-join',
         v: 1,
-        rtpCapabilities: device.recvRtpCapabilities as unknown,
+        rtpCapabilities: device.recvRtpCapabilities as Record<string, unknown>,
       });
       console.log('[SFU:Effects] Sent sfu-join (real caps)');
 

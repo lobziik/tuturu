@@ -35,7 +35,7 @@ export function createSfuPeerHandler(deps: SfuPeerHandlerDeps): SfuPeerHandler {
     ws: ServerWebSocket<ServerClientData>,
     peerId: string,
     roomId: string,
-    rtpCapabilities: mediasoupTypes.RtpCapabilities,
+    rtpCapabilities: mediasoupTypes.RtpCapabilities | null,
   ): Promise<void> {
     const room = await sfuRoomManager.getOrCreateRoom(roomId);
 

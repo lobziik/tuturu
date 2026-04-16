@@ -549,3 +549,114 @@ describe('ErrorCodeSchema', () => {
     expect(result.success).toBe(false);
   });
 });
+
+// ============================================================================
+// SFU message schemas — mediasoup field type safety
+// ============================================================================
+
+describe('SFU message schemas', () => {
+  describe('sfu-join', () => {
+    test('accepts null rtpCapabilities (initial join)', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-join',
+        v: 1,
+        rtpCapabilities: null,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    test('accepts object rtpCapabilities (re-join with real caps)', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-join',
+        v: 1,
+        rtpCapabilities: { codecs: [], headerExtensions: [] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    test('rejects primitive rtpCapabilities', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-join',
+        v: 1,
+        rtpCapabilities: 'not-an-object',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects array rtpCapabilities', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-join',
+        v: 1,
+        rtpCapabilities: [1, 2, 3],
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('sfu-connect-transport', () => {
+    test('accepts object dtlsParameters', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-connect-transport',
+        v: 1,
+        transportId: 'transport-1',
+        dtlsParameters: { role: 'auto', fingerprints: [] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    test('rejects primitive dtlsParameters', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-connect-transport',
+        v: 1,
+        transportId: 'transport-1',
+        dtlsParameters: 42,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects null dtlsParameters', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-connect-transport',
+        v: 1,
+        transportId: 'transport-1',
+        dtlsParameters: null,
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('sfu-produce', () => {
+    test('accepts object rtpParameters', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-produce',
+        v: 1,
+        transportId: 'transport-1',
+        kind: 'audio',
+        rtpParameters: { codecs: [], encodings: [] },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    test('rejects primitive rtpParameters', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-produce',
+        v: 1,
+        transportId: 'transport-1',
+        kind: 'video',
+        rtpParameters: true,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    test('rejects array rtpParameters', () => {
+      const result = ClientToServerMessageSchema.safeParse({
+        type: 'sfu-produce',
+        v: 1,
+        transportId: 'transport-1',
+        kind: 'audio',
+        rtpParameters: ['not', 'an', 'object'],
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+});

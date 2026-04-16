@@ -72,7 +72,7 @@ export function createSfuSendTransport(
         type: 'sfu-connect-transport',
         v: 1,
         transportId: transport.id,
-        dtlsParameters: dtlsParameters as unknown,
+        dtlsParameters: dtlsParameters as Record<string, unknown>,
       });
       // Resolve immediately — server handles DTLS connection asynchronously
       callback();
@@ -92,7 +92,7 @@ export function createSfuSendTransport(
       v: 1,
       transportId: transport.id,
       kind,
-      rtpParameters: rtpParameters as unknown,
+      rtpParameters: rtpParameters as Record<string, unknown>,
     });
   });
 
@@ -130,7 +130,7 @@ export function createSfuRecvTransport(
         type: 'sfu-connect-transport',
         v: 1,
         transportId: transport.id,
-        dtlsParameters: dtlsParameters as unknown,
+        dtlsParameters: dtlsParameters as Record<string, unknown>,
       });
       callback();
     } catch (error) {

@@ -485,7 +485,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
         ws,
         peerId,
         roomId,
-        msg.rtpCapabilities as mediasoupTypes.RtpCapabilities,
+        msg.rtpCapabilities as mediasoupTypes.RtpCapabilities | null,
       ),
     );
   }

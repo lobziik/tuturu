@@ -13,8 +13,8 @@ import type { Device, types as msTypes } from 'mediasoup-client';
 import { sendMessage } from '../services/websocket';
 import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
 
-/** How long to wait for sfu-producer-created before failing the produce call (ms). */
-const PRODUCE_TIMEOUT_MS = 10_000;
+/** Default timeout for sfu-producer-created before failing the produce call (ms). */
+export const PRODUCE_TIMEOUT_MS = 10_000;
 
 /** Parameters received from server for transport creation. */
 export interface TransportParams {
@@ -51,6 +51,7 @@ type PendingProduceCallbacks = { current: ((id: string) => void)[] };
  * @param params - Transport parameters from server.
  * @param pendingProduceCallbacks - Ref for the pending produce callback queue.
  * @param iceConfig - ICE servers and transport policy (TURN relay support).
+ * @param produceTimeoutMs - Timeout for produce callback (ms). Defaults to {@link PRODUCE_TIMEOUT_MS}.
  */
 export function createSfuSendTransport(
   device: Device,
@@ -58,6 +59,7 @@ export function createSfuSendTransport(
   params: TransportParams,
   pendingProduceCallbacks: PendingProduceCallbacks,
   iceConfig: TransportIceConfig,
+  produceTimeoutMs: number = PRODUCE_TIMEOUT_MS,
 ): msTypes.Transport {
   const transport = device.createSendTransport({
     id: params.id,
@@ -93,7 +95,7 @@ export function createSfuSendTransport(
         pendingProduceCallbacks.current.splice(idx, 1);
       }
       errback(new Error(`sfu-produce timed out for ${kind} on transport ${transport.id}`));
-    }, PRODUCE_TIMEOUT_MS);
+    }, produceTimeoutMs);
 
     const wrappedCallback = (id: string): void => {
       clearTimeout(timer);

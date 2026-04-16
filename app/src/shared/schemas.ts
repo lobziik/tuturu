@@ -162,8 +162,8 @@ const ChatReceivedSchema = z.object({
 const SfuJoinSchema = z.object({
   type: z.literal('sfu-join'),
   v: z.literal(1),
-  /** mediasoup-client Device rtpCapabilities — validated by mediasoup internally */
-  rtpCapabilities: z.unknown(),
+  /** mediasoup-client Device rtpCapabilities — null on initial join (requesting router caps), object on re-join. Deep validation by mediasoup. */
+  rtpCapabilities: z.record(z.string(), z.unknown()).nullable(),
 });
 
 /** Request a send or recv WebRtcTransport from the server. */
@@ -178,8 +178,8 @@ const SfuConnectTransportSchema = z.object({
   type: z.literal('sfu-connect-transport'),
   v: z.literal(1),
   transportId: z.string(),
-  /** mediasoup DtlsParameters — validated by mediasoup internally */
-  dtlsParameters: z.unknown(),
+  /** mediasoup DtlsParameters — deep validation by mediasoup internally */
+  dtlsParameters: z.record(z.string(), z.unknown()),
 });
 
 /** Start producing a media track (audio or video) on a send transport. */
@@ -188,8 +188,8 @@ const SfuProduceSchema = z.object({
   v: z.literal(1),
   transportId: z.string(),
   kind: z.enum(['audio', 'video']),
-  /** mediasoup RtpParameters — validated by mediasoup internally */
-  rtpParameters: z.unknown(),
+  /** mediasoup RtpParameters — deep validation by mediasoup internally */
+  rtpParameters: z.record(z.string(), z.unknown()),
 });
 
 /** Client created its local Consumer and is ready to receive media. */

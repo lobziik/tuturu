@@ -112,12 +112,12 @@ export interface SfuPeerHandlerDeps {
 
 /** Handles per-peer SFU signaling messages. */
 export interface SfuPeerHandler {
-  /** Peer joins SFU call — stores rtpCapabilities, responds with router caps. */
+  /** Peer joins SFU call — stores rtpCapabilities (null on initial join, real caps on re-join), responds with router caps. */
   handleSfuJoin(
     ws: ServerWebSocket<ServerClientData>,
     peerId: string,
     roomId: string,
-    rtpCapabilities: mediasoupTypes.RtpCapabilities,
+    rtpCapabilities: mediasoupTypes.RtpCapabilities | null,
   ): Promise<void>;
 
   /** Create a send or recv WebRtcTransport for a peer. */

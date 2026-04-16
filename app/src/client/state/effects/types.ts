@@ -13,6 +13,7 @@ import type { types as msTypes } from 'mediasoup-client';
 import type { AppState, Action, Screen } from '../types';
 import type { Dispatch } from '../context';
 import type { IceServerConfig, IceTransportPolicy } from '../../../shared/types';
+import type { DeviceManager } from '../../sfu/device';
 
 /**
  * Mutable resource refs that effect handlers read and write.
@@ -57,6 +58,8 @@ export interface ResourceRefs {
   inCall: { current: boolean };
 
   // SFU-specific refs
+  /** mediasoup-client Device lifecycle manager */
+  deviceManager: { current: DeviceManager };
   /** mediasoup-client send Transport */
   sfuSendTransport: { current: msTypes.Transport | null };
   /** mediasoup-client recv Transport */

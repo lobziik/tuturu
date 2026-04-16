@@ -16,7 +16,6 @@
  * @module state/effects/sfu
  */
 
-import { loadDevice, getDevice } from '../../sfu/device';
 import {
   createSfuSendTransport,
   createSfuRecvTransport,
@@ -63,12 +62,12 @@ function handleSfuRouterCaps(ctx: EffectContext, args: EffectArgs): void {
   const { action } = args;
   if (action.type !== 'SFU_ROUTER_CAPS_RECEIVED') return;
 
-  const existingDevice = getDevice();
-  if (existingDevice) return;
+  const dm = refs.deviceManager.current;
+  if (dm.getDevice()) return;
 
   void (async () => {
     try {
-      const device = await loadDevice(action.rtpCapabilities);
+      const device = await dm.loadDevice(action.rtpCapabilities);
 
       if (isE2eeSupported() && !refs.e2eeWorker.current) {
         refs.e2eeWorker.current = createE2eeWorker();
@@ -108,7 +107,7 @@ function handleSfuTransportCreated(ctx: EffectContext, args: EffectArgs): void {
   const { action, newState } = args;
   if (action.type !== 'SFU_TRANSPORT_CREATED') return;
 
-  const device = getDevice();
+  const device = refs.deviceManager.current.getDevice();
   if (!device) {
     console.error('[SFU:Effects] Device not loaded when transport created');
     return;

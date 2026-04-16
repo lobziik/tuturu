@@ -18,6 +18,7 @@ import { AppContext, createDebugReducer } from '../state/context';
 import type { Dispatch } from '../state/context';
 import { runEffects, cleanupRoomResources, type ResourceRefs } from '../state/effects';
 import { openDB, getSetting } from '../services/db';
+import { createDeviceManager } from '../sfu/device';
 
 import { NicknameScreen } from './NicknameScreen';
 import { LoginScreen } from './LoginScreen';
@@ -49,6 +50,7 @@ export function App() {
   const inCallRef = useRef<boolean>(false);
 
   // SFU refs
+  const deviceManagerRef = useRef(createDeviceManager());
   const sfuSendTransportRef = useRef<msTypes.Transport | null>(null);
   const sfuRecvTransportRef = useRef<msTypes.Transport | null>(null);
   const sfuProducersRef = useRef(new Map<string, msTypes.Producer>());
@@ -73,6 +75,7 @@ export function App() {
       seqLoaded: seqLoadedRef,
       makingOfferPeers: makingOfferPeersRef,
       inCall: inCallRef,
+      deviceManager: deviceManagerRef,
       sfuSendTransport: sfuSendTransportRef,
       sfuRecvTransport: sfuRecvTransportRef,
       sfuProducers: sfuProducersRef,

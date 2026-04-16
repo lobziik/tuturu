@@ -57,3 +57,11 @@ declare module '*/mediasoup-worker' {
   const path: string;
   export default path;
 }
+
+/**
+ * Cache-busting hash for the E2EE worker, injected into HTML by assets.ts.
+ * Read by e2ee-transform.ts to load the worker with a versioned URL.
+ */
+interface Window {
+  __E2EE_WORKER_HASH__?: string;
+}

@@ -100,13 +100,18 @@ export async function loadAssets(): Promise<LoadedAssets> {
   const jsHash = Bun.hash(clientJsStr).toString(16);
   const cssHash = Bun.hash(stylesStr).toString(16);
 
+  const e2eeWorkerJsHash = Bun.hash(e2eeWorkerJsStr).toString(16);
+
   // Inject cache-busting query params into HTML so browsers fetch fresh assets on deploy.
   // Coupled to the attribute format in public/index.html: src="index.js" and href="styles.css"
+  // E2EE worker hash is exposed as a global so client JS can load the worker with cache-busting.
   const indexHtmlBusted = indexHtmlStr
     .replace('src="index.js"', `src="index.js?v=${jsHash}"`)
-    .replace('href="styles.css"', `href="styles.css?v=${cssHash}"`);
-
-  const e2eeWorkerJsHash = Bun.hash(e2eeWorkerJsStr).toString(16);
+    .replace('href="styles.css"', `href="styles.css?v=${cssHash}"`)
+    .replace(
+      '</head>',
+      `<script>window.__E2EE_WORKER_HASH__="${e2eeWorkerJsHash}"</script>\n</head>`,
+    );
 
   // Compute ETags — HTML ETag uses modified content (what we actually serve)
   const etags: AssetEtags = {

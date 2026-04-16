@@ -79,7 +79,7 @@ const configSchema = z.object({
 
   // SFU configuration
   /** Enable SFU mode. When false, all calls use mesh (peer-to-peer) topology. */
-  sfuEnabled: envBool.default(true),
+  sfuEnabled: envBool.default(false),
   /** IP for mediasoup WebRtcTransport to bind on. */
   sfuListenIp: z.string().default('0.0.0.0'),
   /** External IP announced in ICE candidates (for TURN relay). Falls back to EXTERNAL_IP. */

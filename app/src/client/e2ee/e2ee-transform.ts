@@ -23,7 +23,10 @@ export function createE2eeWorker(): Worker | null {
     return null;
   }
 
-  return new Worker('/e2ee-worker.js', { type: 'module' });
+  const hash: string | undefined = (window as { __E2EE_WORKER_HASH__?: string })
+    .__E2EE_WORKER_HASH__;
+  const url = hash ? `/e2ee-worker.js?v=${hash}` : '/e2ee-worker.js';
+  return new Worker(url, { type: 'module' });
 }
 
 /**

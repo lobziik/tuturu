@@ -22,7 +22,8 @@ mock.module('../services/websocket', () => ({
   sendMessage: mockSendMessage,
 }));
 
-const { createSfuSendTransport, createSfuRecvTransport } = await import('./transport');
+const { createSfuSendTransport, createSfuRecvTransport, PRODUCE_TIMEOUT_MS } =
+  await import('./transport');
 
 type EventHandler = (...args: unknown[]) => void;
 
@@ -135,6 +136,67 @@ describe('createSfuSendTransport', () => {
     callbacks.current[0]!('producer-123');
     expect(callbackFn).toHaveBeenCalledWith({ id: 'producer-123' });
     expect(errbackFn).toHaveBeenCalledTimes(0);
+  });
+
+  test('produce timeout calls errback and removes callback from queue', async () => {
+    const device = createMockDevice();
+    const callbacks = { current: [] as ((id: string) => void)[] };
+    const SHORT_TIMEOUT = 50;
+    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, SHORT_TIMEOUT);
+
+    const handlers = (device as unknown as { _sendHandlers: Map<string, EventHandler> })
+      ._sendHandlers;
+    const produceHandler = handlers.get('produce');
+    expect(produceHandler).toBeDefined();
+
+    const callbackFn = mock((_result: { id: string }) => {});
+    const errbackFn = mock((_error: Error) => {});
+    produceHandler!({ kind: 'video', rtpParameters: { codecs: [] } }, callbackFn, errbackFn);
+
+    // Callback should be queued
+    expect(callbacks.current).toHaveLength(1);
+
+    // Wait for timeout to fire
+    await Bun.sleep(SHORT_TIMEOUT + 20);
+
+    // errback should have been called with timeout error
+    expect(errbackFn).toHaveBeenCalledTimes(1);
+    const error = errbackFn.mock.calls[0]![0] as Error;
+    expect(error.message).toContain('sfu-produce timed out');
+    expect(error.message).toContain('video');
+
+    // Callback should have been removed from queue
+    expect(callbacks.current).toHaveLength(0);
+
+    // Original callback should NOT have been called
+    expect(callbackFn).toHaveBeenCalledTimes(0);
+  });
+
+  test('resolving callback before timeout cancels the timer', async () => {
+    const device = createMockDevice();
+    const callbacks = { current: [] as ((id: string) => void)[] };
+    const SHORT_TIMEOUT = 50;
+    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, SHORT_TIMEOUT);
+
+    const handlers = (device as unknown as { _sendHandlers: Map<string, EventHandler> })
+      ._sendHandlers;
+    const produceHandler = handlers.get('produce');
+
+    const callbackFn = mock((_result: { id: string }) => {});
+    const errbackFn = mock((_error: Error) => {});
+    produceHandler!({ kind: 'audio', rtpParameters: { codecs: [] } }, callbackFn, errbackFn);
+
+    // Resolve immediately
+    callbacks.current[0]!('producer-456');
+    expect(callbackFn).toHaveBeenCalledWith({ id: 'producer-456' });
+
+    // Wait past timeout — errback should NOT fire
+    await Bun.sleep(SHORT_TIMEOUT + 20);
+    expect(errbackFn).toHaveBeenCalledTimes(0);
+  });
+
+  test('PRODUCE_TIMEOUT_MS is 10 seconds', () => {
+    expect(PRODUCE_TIMEOUT_MS).toBe(10_000);
   });
 });
 

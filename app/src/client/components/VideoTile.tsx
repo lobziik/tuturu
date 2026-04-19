@@ -34,6 +34,11 @@ export function VideoTile({
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      // iOS Safari does not auto-start playback of MediaStreams assembled
+      // outside RTCPeerConnection.ontrack (SFU path uses new MediaStream() +
+      // addTrack). Explicit play() kicks it off; autoplay policy rejection
+      // is expected and benign here.
+      void videoRef.current.play().catch(() => {});
     }
     return () => {
       if (videoRef.current) {

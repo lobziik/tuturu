@@ -279,7 +279,7 @@ function setupTransform(
       }
       // Periodic per-bucket breakdown — see "Failure modes" in the
       // module header for what each bucket diagnostically means.
-      if ((ok + malformed + cryptoFailed) % 100 === 0) {
+      if ((ok + malformed + cryptoFailed) === 1 || (ok + malformed + cryptoFailed) % 100 === 0) {
         console.log(
           `[E2EE:Worker] ${operation} codec=${codec}: ${ok} ok, ${malformed} malformed, ${cryptoFailed} crypto-failed`,
         );
@@ -287,11 +287,13 @@ function setupTransform(
     },
   });
 
-  // pipeTo() rejects if either side of the pipeline aborts/errors. In Safari
-  // we want to see that loud — the un-rejected promise just silently kills
-  // media without surfacing a cause. If this fires, the browser's
-  // RTCRtpScriptTransform implementation (or the codec handler underneath
-  // it) tore down the stream — i.e., not an E2EE-layer bug.
+  // Diagnostic: confirm the readable side actually delivers frames. tee()
+  // forks the stream so we can peek at the first frame without consuming
+  // the real pipeline; if `read()` never resolves, the browser is handing
+  // us a stream that nothing's writing to (i.e. SFU/transport dropped the
+  // media before it reached the encoded-transform layer).
+  console.log(`[E2EE:Worker] readable type: ${typeof readable}, locked: ${readable.locked}`);
+
   readable
     .pipeThrough(transform)
     .pipeTo(writable)

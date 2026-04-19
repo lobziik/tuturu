@@ -26,25 +26,33 @@
  *       leaving them readable doesn't cost integrity, only confidentiality
  *       on a handful of header fields the SFU already inspects.
  *
- *  N depends on frame type, sizes lifted from lib-jitsi-meet
- *  (`modules/e2ee/Context.ts`):
+ *  N depends on codec + frame type. The negotiated codec is passed in via
+ *  the `RTCRtpScriptTransform` options bag (see `e2ee-transform.ts`); both
+ *  ends of a producer/consumer pair always agree on the codec, so no
+ *  out-of-band signaling is needed.
  *
- *    - audio (Opus TOC byte) — 1 byte
+ *    - opus (audio, Opus TOC byte) — 1 byte
  *      RFC 6716 §3.1
  *      https://datatracker.ietf.org/doc/html/rfc6716#section-3.1
  *
- *    - video keyframe (VP8 uncompressed_data_chunk) — 10 bytes
+ *    - vp8 keyframe (VP8 uncompressed_data_chunk) — 10 bytes
+ *      vp8 delta — 3 bytes (subset of the above)
  *      RFC 6386 §9.1
  *      https://datatracker.ietf.org/doc/html/rfc6386#section-9.1
  *
- *    - video delta frame — 3 bytes (subset of the above)
+ *    - h264 keyframe — 10 bytes
+ *      h264 delta — 3 bytes (same VP8-derived sizes; see below)
+ *      RFC 6184 §5.3 (NAL unit header)
+ *      https://datatracker.ietf.org/doc/html/rfc6184#section-5.3
  *
- *  Jitsi's own comments call these "a bit for show": the SFU only needs
- *  one byte to detect keyframes; the larger video sizes mainly help the
- *  decoder produce graceful artifacts (instead of hard parse failure)
- *  during corruption or loss. They're conservative, codec-agnostic
- *  defaults that work for VP8/VP9/H264 alike — keeping them until a
- *  measurement proves we can trim further.
+ *  iOS Safari's hardware H264 path through VideoToolbox silently drops
+ *  100% of frames when SPS/PPS bytes aren't visible pre-decryption — the
+ *  encoded H264 frame is Annex-B NAL units (`00 00 00 01` start code +
+ *  NAL header + body), and 2 bytes (start-code-only) was empirically not
+ *  enough. Jitsi uses these conservative VP8 sizes for VP8/VP9/H264 alike
+ *  in production — kept here for the same reason. Measurement could
+ *  shrink the H264 case later, but the cost of getting it wrong is a
+ *  silent black-screen on iOS, so the bias is conservative.
  *
  * ─────────────────────────────────────────────────────────────────────────
  *  AAD BINDING (Authenticated Additional Data)
@@ -102,15 +110,36 @@ const IV_LENGTH = 12;
 const GCM_TAG_LENGTH = 16;
 
 /**
+ * Mirrors `E2eeCodec` from `e2ee-transform.ts`. Workers can't import from
+ * non-worker modules, so the literal-string union is redeclared here. Keep
+ * the two in sync — `normalizeCodec` is the single point that produces it.
+ */
+type E2eeCodec = 'opus' | 'vp8' | 'h264';
+
+const KNOWN_CODECS: ReadonlySet<E2eeCodec> = new Set(['opus', 'vp8', 'h264']);
+
+/**
  * Number of leading bytes left unencrypted so the SFU/depacketizer/decoder
- * can parse codec metadata without the key. Sizes per RFC 6386 §9.1 (VP8)
- * and RFC 6716 §3.1 (Opus); see the module header for the full rationale.
+ * can parse codec metadata without the key. See the module header for per-
+ * codec rationale and RFC references.
  *
  * Audio frames lack a `.type` field; video frames carry `'key' | 'delta'`.
  */
-function getUnencryptedByteCount(frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame): number {
-  if (!('type' in frame)) return 1; // audio: Opus TOC byte
-  return frame.type === 'key' ? 10 : 3; // video: VP8/H264-safe defaults
+function getUnencryptedByteCount(
+  codec: E2eeCodec,
+  frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,
+): number {
+  if (codec === 'opus') return 1; // RFC 6716 §3.1 — Opus TOC byte
+  // Video — frame.type is 'key' | 'delta'. mediasoup never produces audio on
+  // a video codec, so the cast is safe by construction.
+  const isKey = 'type' in frame && (frame as RTCEncodedVideoFrame).type === 'key';
+  // VP8 sizes from RFC 6386 §9.1, also used for H264. `RTCEncodedVideoFrame`
+  // for H264 holds Annex-B NAL units (`00 00 00 01` start code + NAL header
+  // + body); iOS Safari's VideoToolbox path needs SPS/PPS bytes visible
+  // pre-decryption to initialize, so 2 bytes (start-code-only) drops 100%
+  // of frames. Jitsi uses these same conservative sizes for VP8/VP9/H264
+  // alike in production — keep until a measurement proves we can trim.
+  return isKey ? 10 : 3;
 }
 
 /**
@@ -135,9 +164,10 @@ export async function processFrame(
   operation: 'encrypt' | 'decrypt',
   key: CryptoKey,
   frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,
+  codec: E2eeCodec,
 ): Promise<FrameResult> {
   const data = frame.data;
-  const headerBytes = getUnencryptedByteCount(frame);
+  const headerBytes = getUnencryptedByteCount(codec, frame);
 
   if (operation === 'encrypt') {
     if (data.byteLength < headerBytes) {
@@ -227,8 +257,9 @@ function setupTransform(
   writable: WritableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>,
   operation: 'encrypt' | 'decrypt',
   key: CryptoKey,
+  codec: E2eeCodec,
 ): void {
-  console.log('[E2EE:Worker] options received:', typeof key, operation);
+  console.log(`[E2EE:Worker] options received: ${typeof key} ${operation} codec=${codec}`);
   let ok = 0;
   let malformed = 0;
   let cryptoFailed = 0;
@@ -237,7 +268,7 @@ function setupTransform(
     RTCEncodedVideoFrame | RTCEncodedAudioFrame
   >({
     async transform(frame, controller) {
-      const result = await processFrame(operation, key, frame);
+      const result = await processFrame(operation, key, frame, codec);
       if (result === 'ok') {
         controller.enqueue(frame);
         ok++;
@@ -250,13 +281,23 @@ function setupTransform(
       // module header for what each bucket diagnostically means.
       if ((ok + malformed + cryptoFailed) % 100 === 0) {
         console.log(
-          `[E2EE:Worker] ${operation}: ${ok} ok, ${malformed} malformed, ${cryptoFailed} crypto-failed`,
+          `[E2EE:Worker] ${operation} codec=${codec}: ${ok} ok, ${malformed} malformed, ${cryptoFailed} crypto-failed`,
         );
       }
     },
   });
 
-  void readable.pipeThrough(transform).pipeTo(writable);
+  // pipeTo() rejects if either side of the pipeline aborts/errors. In Safari
+  // we want to see that loud — the un-rejected promise just silently kills
+  // media without surfacing a cause. If this fires, the browser's
+  // RTCRtpScriptTransform implementation (or the codec handler underneath
+  // it) tore down the stream — i.e., not an E2EE-layer bug.
+  readable
+    .pipeThrough(transform)
+    .pipeTo(writable)
+    .catch((err: unknown) => {
+      console.error(`[E2EE:Worker] pipe failed (${operation} codec=${codec}):`, err);
+    });
 }
 
 // Handle rtctransform events dispatched by RTCRtpScriptTransform
@@ -265,12 +306,26 @@ addEventListener('rtctransform', (event: Event) => {
     transformer: { readable: ReadableStream; writable: WritableStream; options: unknown };
   };
   const transformer = rtcEvent.transformer;
-  const options = transformer.options as { operation: 'encrypt' | 'decrypt'; key: CryptoKey };
+  const options = transformer.options as {
+    operation: 'encrypt' | 'decrypt';
+    key: CryptoKey;
+    codec: E2eeCodec;
+  };
+
+  // Defense in depth — call site (`normalizeCodec`) is the primary gate, but
+  // an unknown codec arriving here means a wire-format mismatch is about to
+  // happen. Bail before piping; the per-pipeline counter sitting at 0
+  // forever becomes the diagnostic.
+  if (!KNOWN_CODECS.has(options.codec)) {
+    console.error(`[E2EE:Worker] unknown codec '${options.codec}' — refusing to set up transform`);
+    return;
+  }
 
   setupTransform(
     transformer.readable as unknown as ReadableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>,
     transformer.writable as unknown as WritableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>,
     options.operation,
     options.key,
+    options.codec,
   );
 });

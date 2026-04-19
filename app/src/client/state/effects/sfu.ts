@@ -28,6 +28,7 @@ import {
   createE2eeWorker,
   setupSenderTransform,
   setupReceiverTransform,
+  normalizeCodec,
 } from '../../e2ee/e2ee-transform';
 import { sendMessage } from '../../services/websocket';
 import type { EffectContext, EffectArgs } from './types';
@@ -150,10 +151,15 @@ function handleSfuTransportCreated(ctx: EffectContext, args: EffectArgs): void {
             refs.sfuProducers.current.set(kind, producer);
 
             if (refs.e2eeWorker.current && refs.aesKey.current && producer.rtpSender) {
+              // mediasoup contract: rtpParameters.codecs is non-empty after
+              // produce(). Throws (caught below → RTC_FAILED) on any codec
+              // outside what the SFU router negotiates.
+              const codec = normalizeCodec(producer.rtpParameters.codecs[0]!.mimeType);
               setupSenderTransform(
                 producer.rtpSender,
                 refs.aesKey.current,
                 refs.e2eeWorker.current,
+                codec,
               );
             }
           }
@@ -209,7 +215,13 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
       refs.sfuConsumers.current.set(consumer.id, consumer);
 
       if (refs.e2eeWorker.current && refs.aesKey.current && consumer.rtpReceiver) {
-        setupReceiverTransform(consumer.rtpReceiver, refs.aesKey.current, refs.e2eeWorker.current);
+        const codec = normalizeCodec(consumer.rtpParameters.codecs[0]!.mimeType);
+        setupReceiverTransform(
+          consumer.rtpReceiver,
+          refs.aesKey.current,
+          refs.e2eeWorker.current,
+          codec,
+        );
       }
 
       const existingStream = refs.remoteStreams.current.get(action.peerId) ?? null;

@@ -279,7 +279,7 @@ function setupTransform(
       }
       // Periodic per-bucket breakdown — see "Failure modes" in the
       // module header for what each bucket diagnostically means.
-      if ((ok + malformed + cryptoFailed) === 1 || (ok + malformed + cryptoFailed) % 100 === 0) {
+      if (ok + malformed + cryptoFailed === 1 || (ok + malformed + cryptoFailed) % 100 === 0) {
         console.log(
           `[E2EE:Worker] ${operation} codec=${codec}: ${ok} ok, ${malformed} malformed, ${cryptoFailed} crypto-failed`,
         );

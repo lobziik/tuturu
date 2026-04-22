@@ -42,6 +42,67 @@ export function normalizeCodec(mimeType: string): E2eeCodec {
   }
 }
 
+/**
+ * Parse the negotiated codec per media kind out of an answer SDP.
+ *
+ * For each `m=audio`/`m=video` section, takes the first payload type in the
+ * m-line (which, in an answer, is the codec both sides agreed on) and
+ * resolves it through the section's `a=rtpmap:` entry to a codec name.
+ *
+ * Exists because `RTCRtpSender.getParameters().codecs` / `...Receiver...`
+ * return an empty array on iOS Safari right after SDP apply — the receiver
+ * side never gets an E2EE transform attached, so decryption silently drops
+ * 100% of frames. Answer SDP always carries the negotiated codec, so it's
+ * a reliable source in that window. Missing m-lines (audio-only call,
+ * rejected recvonly video) are represented by absent keys and left for the
+ * caller to handle. Throws on malformed SDP or unsupported codecs per the
+ * project's fail-fast stance.
+ */
+export function parseNegotiatedCodecs(sdp: string): Partial<Record<'audio' | 'video', E2eeCodec>> {
+  const result: Partial<Record<'audio' | 'video', E2eeCodec>> = {};
+  const lines = sdp.split(/\r?\n/);
+
+  let currentKind: 'audio' | 'video' | null = null;
+  let currentPt: string | null = null;
+
+  for (const line of lines) {
+    if (line.startsWith('m=')) {
+      // m=<media> <port> <proto> <fmt> ...
+      const parts = line.slice(2).split(' ');
+      const media = parts[0];
+      const port = parts[1];
+      const firstPt = parts[3];
+      // Skip rejected m-lines (port=0) — no media flows, nothing to wire.
+      if ((media === 'audio' || media === 'video') && port !== '0' && firstPt) {
+        currentKind = media;
+        currentPt = firstPt;
+      } else {
+        currentKind = null;
+        currentPt = null;
+      }
+      continue;
+    }
+    if (!currentKind || !currentPt) continue;
+    if (!line.startsWith('a=rtpmap:')) continue;
+
+    // a=rtpmap:<pt> <codec>/<rate>[/<channels>]
+    const rest = line.slice('a=rtpmap:'.length);
+    const spaceIdx = rest.indexOf(' ');
+    if (spaceIdx < 0) continue;
+    const pt = rest.slice(0, spaceIdx);
+    if (pt !== currentPt) continue;
+
+    const remainder = rest.slice(spaceIdx + 1);
+    const slashIdx = remainder.indexOf('/');
+    const codecName = slashIdx >= 0 ? remainder.slice(0, slashIdx) : remainder;
+    result[currentKind] = normalizeCodec(`${currentKind}/${codecName}`);
+    // Stop matching further rtpmap lines for this m-section.
+    currentPt = null;
+  }
+
+  return result;
+}
+
 /** Check if the browser supports Encoded Transforms (RTCRtpScriptTransform). */
 export function isE2eeSupported(): boolean {
   return typeof RTCRtpScriptTransform !== 'undefined';

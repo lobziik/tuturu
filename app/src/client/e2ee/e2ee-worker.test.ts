@@ -18,11 +18,11 @@ const GCM_TAG_LENGTH = 16;
 const AUDIO_HEADER = 1;
 const VP8_KEY_HEADER = 10;
 const VP8_DELTA_HEADER = 3;
-// H264 only appears on the mesh path (SFU is Opus + VP8 only) and the
-// browser's frame.type classification is not reliable across Safari/Chrome
-// for H264, so the worker encrypts the entire frame — see worker doc-block.
-const H264_KEY_HEADER = 0;
-const H264_DELTA_HEADER = 0;
+// H264 only appears on the mesh path (SFU is Opus + VP8 only). Constant
+// 5-byte prefix across key/delta because Safari/Chrome disagree on
+// `frame.type` for H264 — see worker doc-block.
+const H264_KEY_HEADER = 5;
+const H264_DELTA_HEADER = 5;
 
 /** Generate an AES-256-GCM key for testing. */
 async function generateKey(): Promise<CryptoKey> {
@@ -108,7 +108,7 @@ describe('processFrame', () => {
       expect(headerOut).toEqual(plaintext.slice(0, VP8_DELTA_HEADER));
     });
 
-    test('h264 keyframe: encrypts the entire frame (0 unencrypted bytes)', async () => {
+    test('h264 keyframe: leaves 5 header bytes unencrypted (Annex B start code + NAL header)', async () => {
       const key = await generateKey();
       const plaintext = new Uint8Array(64);
       for (let i = 0; i < plaintext.length; i++) plaintext[i] = i;
@@ -122,13 +122,15 @@ describe('processFrame', () => {
       );
 
       expect(result).toBe('ok');
-      // Wire layout: [IV (12B)] [ciphertext over the whole frame + GCM tag (16B)]
+      // Wire layout: [header (5B)] [IV (12B)] [ciphertext over (N-5) bytes + GCM tag (16B)]
       expect(frame.data.byteLength).toBe(
         H264_KEY_HEADER + IV_LENGTH + (plaintext.byteLength - H264_KEY_HEADER) + GCM_TAG_LENGTH,
       );
+      const headerOut = new Uint8Array(frame.data, 0, H264_KEY_HEADER);
+      expect(headerOut).toEqual(plaintext.slice(0, H264_KEY_HEADER));
     });
 
-    test('h264 delta frame: encrypts the entire frame (0 unencrypted bytes)', async () => {
+    test('h264 delta frame: same constant 5-byte prefix as keyframe', async () => {
       const key = await generateKey();
       const plaintext = new Uint8Array(64);
       for (let i = 0; i < plaintext.length; i++) plaintext[i] = i;
@@ -145,6 +147,8 @@ describe('processFrame', () => {
       expect(frame.data.byteLength).toBe(
         H264_DELTA_HEADER + IV_LENGTH + (plaintext.byteLength - H264_DELTA_HEADER) + GCM_TAG_LENGTH,
       );
+      const headerOut = new Uint8Array(frame.data, 0, H264_DELTA_HEADER);
+      expect(headerOut).toEqual(plaintext.slice(0, H264_DELTA_HEADER));
     });
 
     test('different encryptions produce different IVs', async () => {

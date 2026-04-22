@@ -40,22 +40,24 @@
  *      RFC 6386 §9.1
  *      https://datatracker.ietf.org/doc/html/rfc6386#section-9.1
  *
- *    - h264 — 0 bytes (whole frame encrypted)
+ *    - h264 — 5 bytes (Annex B start code + first NAL unit header)
  *      RFC 6184 §5.3 (NAL unit header)
  *      https://datatracker.ietf.org/doc/html/rfc6184#section-5.3
  *
  *  H264 only appears on the mesh path — the SFU router negotiates Opus
  *  + VP8 only (see `app/src/server/sfu/codecs.ts`), so any H264 call in
  *  this codebase is a browser-picked mesh negotiation between two
- *  peers. On that path `RTCEncodedVideoFrame.type` is not reliable: iOS
- *  Safari's H264 classification disagrees with Chrome's, so a
- *  `key`/`delta` size mismatch between sender and receiver shifts the
- *  IV and every frame fails AAD validation (100% `crypto-failed`).
- *  Encrypting the entire frame (0 unencrypted bytes) makes the protocol
- *  independent of that classification and of any H264-syntax parsing
- *  the packetizer might attempt on the prefix. VideoToolbox reads the
- *  fully-decrypted frame post-worker, so the usual
- *  "SPS/PPS must be visible" concern doesn't apply here.
+ *  peers. The 5-byte prefix keeps the first NAL header visible to the
+ *  packetizer, which sits downstream of this transform and needs it to
+ *  pick the RTP packetization mode (single NAL / STAP-A / FU-A per RFC
+ *  6184); without it, RTP packets come out malformed and the receiver
+ *  never sees a complete frame.
+ *
+ *  Size is intentionally constant across `key` and `delta` because iOS
+ *  Safari's `RTCEncodedVideoFrame.type` classification disagrees with
+ *  Chrome's for the same H264 frame — a type-dependent size would shift
+ *  the IV between sender and receiver and AAD would fail on every
+ *  frame. A constant size sidesteps the disagreement entirely.
  *
  * ─────────────────────────────────────────────────────────────────────────
  *  AAD BINDING (Authenticated Additional Data)
@@ -133,27 +135,31 @@ function getUnencryptedByteCount(
   frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,
 ): number {
   if (codec === 'opus') return 1; // RFC 6716 §3.1 — Opus TOC byte
-  // H264: encrypt the entire frame (0 unencrypted bytes). The browser's
-  // RTCEncodedVideoFrame.type classification is NOT reliable across H264
-  // implementations — iOS Safari's H264 path and Chrome's H264 path
-  // disagree on whether a given IDR/non-IDR is `'key'` vs `'delta'`,
-  // observed in mesh calls between Safari and Chrome peers. When the two
-  // sides pick different header sizes, AES-GCM reads the IV from the
-  // wrong offset and every frame fails AAD validation — the symptom is
-  // 100% `crypto-failed` on H264 even with a correct shared key.
+  // H264: leave the first 5 bytes visible — Annex B start code (4 bytes:
+  // 0x00 0x00 0x00 0x01) + first NAL unit header (1 byte). The packetizer
+  // sits AFTER this transform on the sender side and needs to read NAL
+  // headers to chop the encoded frame into RTP packets per RFC 6184
+  // (single NAL, STAP-A, FU-A choice depends on NAL type and size). With
+  // the header opaque, RTP packetization either fails or produces packets
+  // the depacketizer can't reassemble — the symptom is 0 frames reaching
+  // the receiver's transform at all.
   //
-  // Eliminating the unencrypted prefix entirely makes the protocol
-  // independent of the browser's classification AND of any H264-specific
-  // syntax parsing the depacketizer might do on the prefix bytes.
-  // VideoToolbox on iOS gets the fully-decrypted frame post-worker, so
-  // dropping the visible-SPS/PPS exposure is harmless at the decoder.
-  // Strongest confidentiality of the three video codec paths.
+  // Constant 5 across both `key` and `delta` is intentional: iOS Safari
+  // and Chrome disagree on `RTCEncodedVideoFrame.type` for the same H264
+  // frame (IDR vs non-IDR classification differs), so a type-dependent
+  // size would shift the IV offset between sender and receiver and AAD
+  // would fail on every frame. A constant size sidesteps that entirely.
   //
-  // VP8 is unaffected — its `frame.type` IS reliable across browsers
-  // because VP8 carries the keyframe flag in the first
-  // uncompressed_data_chunk byte and every depacketizer reads it the
-  // same way.
-  if (codec === 'h264') return 0;
+  // 5 only covers the FIRST NAL of multi-NAL frames (e.g. SPS+PPS+IDR in
+  // one frame); the rest sit inside the ciphertext. Packetizers handle
+  // this fine — they only need to find the first NAL boundary to pick
+  // the RTP packetization mode.
+  //
+  // VP8 is unaffected by the type-classification issue — its `frame.type`
+  // IS reliable across browsers because VP8 carries the keyframe flag in
+  // the first uncompressed_data_chunk byte and every depacketizer reads
+  // it the same way.
+  if (codec === 'h264') return 5;
   // VP8 — frame.type is 'key' | 'delta'. mediasoup never produces audio on
   // a video codec, so the cast is safe by construction.
   const isKey = 'type' in frame && (frame as RTCEncodedVideoFrame).type === 'key';
@@ -287,6 +293,22 @@ function setupTransform(
     RTCEncodedVideoFrame | RTCEncodedAudioFrame
   >({
     async transform(frame, controller) {
+      // First-frame H264 diagnostic on the encrypt side. The current
+      // headerSize=0 choice may be breaking the packetizer that sits
+      // downstream of this transform (NAL header opaque → RTP can't
+      // chop FU-A/STAP-A correctly per RFC 6184). Dump the raw encoded
+      // bytes from one real Safari frame to confirm wire format
+      // (Annex B start codes vs AVCC length prefix) and pick a header
+      // size that keeps the NAL header visible. Pre-processFrame so we
+      // see the encoder's original output, not our ciphertext.
+      if (operation === 'encrypt' && codec === 'h264' && ok + malformed + cryptoFailed === 0) {
+        const v = new Uint8Array(frame.data);
+        const head = Array.from(v.slice(0, Math.min(20, v.byteLength))).join(',');
+        const type = 'type' in frame ? (frame as RTCEncodedVideoFrame).type : '?';
+        console.log(
+          `[E2EE:Worker] FIRST H264 ${type} len=${frame.data.byteLength} bytes=[${head}]`,
+        );
+      }
       const result = await processFrame(operation, key, frame, codec);
       if (result === 'ok') {
         controller.enqueue(frame);

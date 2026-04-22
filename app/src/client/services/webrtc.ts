@@ -70,19 +70,27 @@ const e2eeAppliedReceivers = new WeakSet<RTCRtpReceiver>();
 
 /**
  * Apply E2EE encrypt/decrypt transforms to every transceiver on `pc`, sourcing
- * the negotiated codec from the answer SDP. No-op when the PC has no E2EE
- * config.
+ * the negotiated codec from an SDP. No-op when the PC has no E2EE config.
  *
- * Must be called after the answer SDP has been applied on this side
- * (setLocalDescription on the callee, setRemoteDescription on the caller).
- * Runs before ICE/DTLS finishes, so it lands before the first encoded frame.
+ * Must be called BEFORE `setRemoteDescription` on the callee path (with the
+ * incoming offer SDP). iOS Safari attaches its receive pipeline the moment
+ * `setRemoteDescription` resolves and silently ignores any
+ * `RTCRtpReceiver.transform` set after that point — the receiver's
+ * decrypt path stays empty and 100% of frames look like they were never
+ * decrypted. Wiring before that point installs the transform onto the
+ * local-side transceivers (created by `addTrack`/`addTransceiver` in
+ * `createPeerConnection`) before Safari locks them in.
  *
- * Codec is parsed from SDP rather than `getParameters().codecs[0]` because
- * iOS Safari leaves the receiver's `getParameters().codecs` array empty in
- * this window — the receiver transform was never attached, so 100% of
- * frames came back from the worker as crypto-failed. SDP is authoritative
- * here: it carries the codec both sides agreed on, and it's already in
- * scope at every call site.
+ * On the caller path (`handleAnswer`) the receivers were already created at
+ * `createPeerConnection` time via `addTrack`, so timing relative to
+ * `setRemoteDescription` matters less; we keep the call there post-SRD with
+ * the answer SDP for codec accuracy.
+ *
+ * Codec source per call site: callee uses the offer's first PT per m-line,
+ * caller uses the answer's. For mesh between two browsers running the same
+ * codec preferences (typical case), both sides land on the same first PT,
+ * so encrypt/decrypt header sizes match. If they didn't, AAD would fail and
+ * the worker counters would show steady `crypto-failed` — easy to spot.
  *
  * Throws if a transceiver with an active sender track has no negotiated
  * codec for that kind — callers (acceptOfferAndAnswer / handleAnswer) sit
@@ -339,6 +347,21 @@ async function acceptOfferAndAnswer(
 ): Promise<void> {
   const { peerConnections, dispatch } = ctx;
   try {
+    if (!offer.sdp) {
+      dispatch({
+        type: 'RTC_FAILED',
+        reason: 'Received offer has no SDP',
+        peerId: fromPeerId,
+      });
+      return;
+    }
+    // Wire E2EE transforms BEFORE setRemoteDescription. iOS Safari attaches
+    // its receive pipeline the moment SRD resolves; transforms set after
+    // that point are silently ignored on the receiver, so 0 frames ever
+    // get decrypted. Codec source is the offer's first PT — see
+    // applyE2eeTransforms doc-block for the codec-agreement assumption.
+    applyE2eeTransforms(pc, offer.sdp);
+
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     if (peerConnections.get(fromPeerId) !== pc) return;
     await flushPendingCandidates(pc, peerConnections, fromPeerId);
@@ -355,9 +378,6 @@ async function acceptOfferAndAnswer(
       });
       return;
     }
-    // Local SDP carries the negotiated codec — safe to wire E2EE transforms now,
-    // before ICE/DTLS bring up the data path.
-    applyE2eeTransforms(pc, answer.sdp);
     sendMessage(ctx.ws, { type: 'answer', v: 1, sdp: answer.sdp, targetPeerId: fromPeerId });
     console.log(`[RTC:${fromPeerId}] Sent answer`);
   } catch (error) {

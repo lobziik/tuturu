@@ -15,7 +15,11 @@ import type {
 } from '../../shared/types';
 import type { Action } from '../state/types';
 import { sendMessage } from './websocket';
-import { setupSenderTransform, setupReceiverTransform } from '../e2ee/e2ee-transform';
+import {
+  setupSenderTransform,
+  setupReceiverTransform,
+  normalizeCodec,
+} from '../e2ee/e2ee-transform';
 
 type Dispatch = (action: Action) => void;
 
@@ -48,6 +52,68 @@ export interface MeshContext {
  * when the connection is discarded.
  */
 const pendingCandidates = new WeakMap<RTCPeerConnection, RTCIceCandidateInit[]>();
+
+/**
+ * E2EE config stashed per RTCPeerConnection. Looked up by
+ * {@link applyE2eeTransforms} once SDP negotiation finalizes the codec.
+ * WeakMap means the entry vanishes when the PC is collected — no manual cleanup.
+ */
+const e2eeConfigs = new WeakMap<RTCPeerConnection, E2eeConfig>();
+
+/**
+ * Senders/receivers that already have an E2EE transform attached. Reassigning
+ * `.transform` on an endpoint is undefined behavior across browsers, so we
+ * skip on second pass (renegotiation, both call sites firing for one PC).
+ */
+const e2eeAppliedSenders = new WeakSet<RTCRtpSender>();
+const e2eeAppliedReceivers = new WeakSet<RTCRtpReceiver>();
+
+/**
+ * Apply E2EE encrypt/decrypt transforms to every transceiver on `pc`, sourcing
+ * the negotiated codec from `RTCRtpSender.getParameters()` /
+ * `RTCRtpReceiver.getParameters()`. No-op when the PC has no E2EE config.
+ *
+ * Must be called after the answer SDP has been applied on this side
+ * (setLocalDescription on the callee, setRemoteDescription on the caller),
+ * which is when `getParameters().codecs[0]` is populated. Still runs before
+ * ICE/DTLS finishes, so it lands before the first encoded frame.
+ *
+ * Throws if a transceiver with an active sender track has no negotiated
+ * codec — by then SDP exchange has succeeded, so a missing codec means the
+ * peer renegotiated under us and we can't pick a header size. Callers
+ * (acceptOfferAndAnswer / handleAnswer) sit inside try/catch blocks that
+ * dispatch RTC_FAILED, so the throw propagates as a proper failure.
+ */
+function applyE2eeTransforms(pc: RTCPeerConnection): void {
+  const e2ee = e2eeConfigs.get(pc);
+  if (!e2ee) return;
+
+  for (const transceiver of pc.getTransceivers()) {
+    const sender = transceiver.sender;
+    if (sender.track && !e2eeAppliedSenders.has(sender)) {
+      const mime = sender.getParameters().codecs[0]?.mimeType;
+      if (!mime) {
+        throw new Error(
+          `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${sender.track.kind}) has no negotiated codec post-SDP`,
+        );
+      }
+      setupSenderTransform(sender, e2ee.key, e2ee.worker, normalizeCodec(mime));
+      e2eeAppliedSenders.add(sender);
+    }
+
+    const receiver = transceiver.receiver;
+    if (!e2eeAppliedReceivers.has(receiver)) {
+      // Recvonly transceivers can have no codec entries until the remote
+      // actually sends media (e.g. peer joined audio-only). Skip cleanly —
+      // applyE2eeTransforms can be called again if/when renegotiation
+      // brings the m-line live.
+      const mime = receiver.getParameters().codecs[0]?.mimeType;
+      if (!mime) continue;
+      setupReceiverTransform(receiver, e2ee.key, e2ee.worker, normalizeCodec(mime));
+      e2eeAppliedReceivers.add(receiver);
+    }
+  }
+}
 
 /** Apply buffered ICE candidates after remote description has been set */
 async function flushPendingCandidates(
@@ -100,14 +166,24 @@ export function createPeerConnection(
   console.log(`[RTC:${targetPeerId}] Creating peer connection`);
   console.log(`[RTC:${targetPeerId}] ICE transport policy:`, config.iceTransportPolicy);
 
-  const pc = new RTCPeerConnection({
+  // Chrome requires `encodedInsertableStreams: true` on the underlying
+  // RTCPeerConnection for `RTCRtpScriptTransform` to actually deliver
+  // frames to the worker — without it, the rtctransform event fires but
+  // the readable stream stays empty (frames bypass the worker entirely,
+  // and stats show 0 packets through the transform). Standard
+  // RTCConfiguration doesn't declare it; cast through Partial. Safari
+  // accepts and ignores the flag; harmless when E2EE is off. Matches
+  // the SFU path's `additionalSettings` in `sfu/transport.ts`.
+  const pcConfig: RTCConfiguration = {
     iceServers: config.iceServers.map((s) => ({
       urls: s.urls,
       ...(s.username !== undefined && { username: s.username }),
       ...(s.credential !== undefined && { credential: s.credential }),
     })),
     iceTransportPolicy: config.iceTransportPolicy,
-  });
+    ...({ encodedInsertableStreams: true } as Partial<RTCConfiguration>),
+  };
+  const pc = new RTCPeerConnection(pcConfig);
 
   if (localStream) {
     localStream.getTracks().forEach((track) => {
@@ -119,19 +195,14 @@ export function createPeerConnection(
       pc.addTransceiver('video', { direction: 'recvonly' });
       console.log(`[RTC:${targetPeerId}] Added recvonly video transceiver (audio-only mode)`);
     }
+  }
 
-    // Apply E2EE transforms to all transceivers BEFORE any SDP exchange.
-    // Transforms must be set before the receiver starts processing frames —
-    // setting them later (ontrack, onconnectionstatechange) causes frames to
-    // bypass the transform pipeline entirely.
-    if (e2ee) {
-      for (const transceiver of pc.getTransceivers()) {
-        if (transceiver.sender.track) {
-          setupSenderTransform(transceiver.sender, e2ee.key, e2ee.worker);
-        }
-        setupReceiverTransform(transceiver.receiver, e2ee.key, e2ee.worker);
-      }
-    }
+  // Stash the E2EE config; applyE2eeTransforms wires up the actual sender/
+  // receiver transforms once SDP negotiation has settled the codec on this
+  // side (see applyE2eeTransforms — codec is unknown in mesh until the
+  // answer SDP is applied, so we can't set transforms here).
+  if (e2ee) {
+    e2eeConfigs.set(pc, e2ee);
   }
 
   pc.ontrack = (event: RTCTrackEvent) => {
@@ -270,6 +341,9 @@ async function acceptOfferAndAnswer(
       });
       return;
     }
+    // Local SDP carries the negotiated codec — safe to wire E2EE transforms now,
+    // before ICE/DTLS bring up the data path.
+    applyE2eeTransforms(pc);
     sendMessage(ctx.ws, { type: 'answer', v: 1, sdp: answer.sdp, targetPeerId: fromPeerId });
     console.log(`[RTC:${fromPeerId}] Sent answer`);
   } catch (error) {
@@ -350,6 +424,9 @@ export async function handleAnswer(
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
     if (peerConnections.get(fromPeerId) !== pc) return;
+    // Remote answer just locked in the codec on this side — wire E2EE transforms
+    // before ICE/DTLS open the data path.
+    applyE2eeTransforms(pc);
     await flushPendingCandidates(pc, peerConnections, fromPeerId);
     if (peerConnections.get(fromPeerId) !== pc) return;
     console.log(`[RTC:${fromPeerId}] Answer received and set`);

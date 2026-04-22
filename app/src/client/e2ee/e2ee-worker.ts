@@ -40,19 +40,22 @@
  *      RFC 6386 §9.1
  *      https://datatracker.ietf.org/doc/html/rfc6386#section-9.1
  *
- *    - h264 keyframe — 10 bytes
- *      h264 delta — 3 bytes (same VP8-derived sizes; see below)
+ *    - h264 — 0 bytes (whole frame encrypted)
  *      RFC 6184 §5.3 (NAL unit header)
  *      https://datatracker.ietf.org/doc/html/rfc6184#section-5.3
  *
- *  iOS Safari's hardware H264 path through VideoToolbox silently drops
- *  100% of frames when SPS/PPS bytes aren't visible pre-decryption — the
- *  encoded H264 frame is Annex-B NAL units (`00 00 00 01` start code +
- *  NAL header + body), and 2 bytes (start-code-only) was empirically not
- *  enough. Jitsi uses these conservative VP8 sizes for VP8/VP9/H264 alike
- *  in production — kept here for the same reason. Measurement could
- *  shrink the H264 case later, but the cost of getting it wrong is a
- *  silent black-screen on iOS, so the bias is conservative.
+ *  H264 only appears on the mesh path — the SFU router negotiates Opus
+ *  + VP8 only (see `app/src/server/sfu/codecs.ts`), so any H264 call in
+ *  this codebase is a browser-picked mesh negotiation between two
+ *  peers. On that path `RTCEncodedVideoFrame.type` is not reliable: iOS
+ *  Safari's H264 classification disagrees with Chrome's, so a
+ *  `key`/`delta` size mismatch between sender and receiver shifts the
+ *  IV and every frame fails AAD validation (100% `crypto-failed`).
+ *  Encrypting the entire frame (0 unencrypted bytes) makes the protocol
+ *  independent of that classification and of any H264-syntax parsing
+ *  the packetizer might attempt on the prefix. VideoToolbox reads the
+ *  fully-decrypted frame post-worker, so the usual
+ *  "SPS/PPS must be visible" concern doesn't apply here.
  *
  * ─────────────────────────────────────────────────────────────────────────
  *  AAD BINDING (Authenticated Additional Data)
@@ -130,15 +133,31 @@ function getUnencryptedByteCount(
   frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,
 ): number {
   if (codec === 'opus') return 1; // RFC 6716 §3.1 — Opus TOC byte
-  // Video — frame.type is 'key' | 'delta'. mediasoup never produces audio on
+  // H264: encrypt the entire frame (0 unencrypted bytes). The browser's
+  // RTCEncodedVideoFrame.type classification is NOT reliable across H264
+  // implementations — iOS Safari's H264 path and Chrome's H264 path
+  // disagree on whether a given IDR/non-IDR is `'key'` vs `'delta'`,
+  // observed in mesh calls between Safari and Chrome peers. When the two
+  // sides pick different header sizes, AES-GCM reads the IV from the
+  // wrong offset and every frame fails AAD validation — the symptom is
+  // 100% `crypto-failed` on H264 even with a correct shared key.
+  //
+  // Eliminating the unencrypted prefix entirely makes the protocol
+  // independent of the browser's classification AND of any H264-specific
+  // syntax parsing the depacketizer might do on the prefix bytes.
+  // VideoToolbox on iOS gets the fully-decrypted frame post-worker, so
+  // dropping the visible-SPS/PPS exposure is harmless at the decoder.
+  // Strongest confidentiality of the three video codec paths.
+  //
+  // VP8 is unaffected — its `frame.type` IS reliable across browsers
+  // because VP8 carries the keyframe flag in the first
+  // uncompressed_data_chunk byte and every depacketizer reads it the
+  // same way.
+  if (codec === 'h264') return 0;
+  // VP8 — frame.type is 'key' | 'delta'. mediasoup never produces audio on
   // a video codec, so the cast is safe by construction.
   const isKey = 'type' in frame && (frame as RTCEncodedVideoFrame).type === 'key';
-  // VP8 sizes from RFC 6386 §9.1, also used for H264. `RTCEncodedVideoFrame`
-  // for H264 holds Annex-B NAL units (`00 00 00 01` start code + NAL header
-  // + body); iOS Safari's VideoToolbox path needs SPS/PPS bytes visible
-  // pre-decryption to initialize, so 2 bytes (start-code-only) drops 100%
-  // of frames. Jitsi uses these same conservative sizes for VP8/VP9/H264
-  // alike in production — keep until a measurement proves we can trim.
+  // VP8 sizes from RFC 6386 §9.1.
   return isKey ? 10 : 3;
 }
 

@@ -78,8 +78,8 @@ const configSchema = z.object({
   maxParticipants: z.coerce.number().int().min(2).max(10).default(6),
 
   // SFU configuration
-  /** Enable SFU mode. When false, all calls use mesh (peer-to-peer) topology. */
-  sfuEnabled: envBool.default(true),
+  /** Enable SFU mode. When false (default), all calls use mesh (peer-to-peer) topology. */
+  sfuEnabled: envBool.default(false),
   /**
    * Require end-to-end encryption for media. When true (default), clients wire
    * RTCRtpScriptTransform on every sender/receiver and force VP8 in mesh to

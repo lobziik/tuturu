@@ -71,6 +71,46 @@ function buildE2eeConfig(refs: ResourceRefs, e2eeMediaEnabled: boolean): E2eeCon
 }
 
 /**
+ * Wrap PC construction so a throw from `buildE2eeConfig` (server requires E2EE
+ * but the browser doesn't support RTCRtpScriptTransform) or from
+ * `applyVp8VideoPreference` (browser doesn't advertise VP8) surfaces as
+ * RTC_FAILED on the specific peer instead of bubbling into the App.tsx
+ * dispatch loop and tearing the app down. Returns null on failure; callers
+ * skip the rest of their per-peer setup when null.
+ */
+function safeCreatePeerConnection(
+  refs: ResourceRefs,
+  iceConfig: IceConfig,
+  meshCtx: MeshContext,
+  peerId: string,
+  e2eeMediaEnabled: boolean,
+): RTCPeerConnection | null {
+  try {
+    const e2ee = buildE2eeConfig(refs, e2eeMediaEnabled);
+    return createPeerConnection(
+      {
+        iceServers: iceConfig.iceServers ?? [],
+        iceTransportPolicy: iceConfig.iceTransportPolicy,
+      },
+      refs.localStream.current,
+      meshCtx.ws,
+      meshCtx.dispatch,
+      peerId,
+      e2ee,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[RTC:${peerId}] Failed to create peer connection:`, error);
+    meshCtx.dispatch({
+      type: 'RTC_FAILED',
+      reason: `Failed to create peer connection: ${message}`,
+      peerId,
+    });
+    return null;
+  }
+}
+
+/**
  * Handle CALL_PEERS_RECEIVED: diff current connections vs new peer list.
  * Creates PCs for new peers (impolite sends offer), closes PCs for removed peers.
  */
@@ -82,26 +122,16 @@ function handleCallPeersEffect(
   iceConfig: IceConfig,
   e2eeMediaEnabled: boolean,
 ): void {
-  const { peerConnections, makingOfferPeers, dispatch } = meshCtx;
+  const { peerConnections, makingOfferPeers } = meshCtx;
   const remotePeers = new Set(action.callPeers.filter((id: string) => id !== selfPeerId));
   const currentPeers = new Set(peerConnections.keys());
-  const e2ee = buildE2eeConfig(refs, e2eeMediaEnabled);
 
   // Create PCs for new peers
   for (const peerId of remotePeers) {
     if (currentPeers.has(peerId)) continue;
 
-    const pc = createPeerConnection(
-      {
-        iceServers: iceConfig.iceServers ?? [],
-        iceTransportPolicy: iceConfig.iceTransportPolicy,
-      },
-      refs.localStream.current,
-      meshCtx.ws,
-      dispatch,
-      peerId,
-      e2ee,
-    );
+    const pc = safeCreatePeerConnection(refs, iceConfig, meshCtx, peerId, e2eeMediaEnabled);
+    if (!pc) continue;
     peerConnections.set(peerId, pc);
 
     // Impolite peer (higher peerId) sends offer
@@ -177,18 +207,15 @@ function handleReceivedOfferEffect(
   const { fromPeerId } = action;
   let pc = meshCtx.peerConnections.get(fromPeerId);
   if (!pc) {
-    const e2ee = buildE2eeConfig(refs, e2eeMediaEnabled);
-    pc = createPeerConnection(
-      {
-        iceServers: iceConfig.iceServers ?? [],
-        iceTransportPolicy: iceConfig.iceTransportPolicy,
-      },
-      refs.localStream.current,
-      meshCtx.ws,
-      meshCtx.dispatch,
+    const created = safeCreatePeerConnection(
+      refs,
+      iceConfig,
+      meshCtx,
       fromPeerId,
-      e2ee,
+      e2eeMediaEnabled,
     );
+    if (!created) return;
+    pc = created;
     meshCtx.peerConnections.set(fromPeerId, pc);
   }
 

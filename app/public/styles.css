@@ -16,6 +16,8 @@ html, body {
   --danger: #ef4444;
   --danger-dark: #dc2626;
   --success: #10b981;
+  --warn: #b58900;
+  --warn-border: rgb(181 137 0 / 40%);
   --bg: #0f172a;
   --bg-light: #1e293b;
   --text: #f1f5f9;
@@ -983,8 +985,8 @@ video {
 }
 
 .e2ee-badge.off {
-  color: #b58900;
-  border-color: rgb(181 137 0 / 40%);
+  color: var(--warn);
+  border-color: var(--warn-border);
 }
 
 .online-indicator-btn {

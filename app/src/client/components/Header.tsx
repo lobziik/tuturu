@@ -41,8 +41,8 @@ function pickBadge(
   }
   if (sfuMode) {
     return {
-      label: 'SFU | media unencrypted',
-      title: 'Server relays media in the clear (E2EE disabled by the operator)',
+      label: 'SFU · server can see media',
+      title: 'DTLS-SRTP still encrypts the wire, but with E2EE disabled the SFU can decrypt media.',
       off: true,
     };
   }

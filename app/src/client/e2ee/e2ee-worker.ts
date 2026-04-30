@@ -230,6 +230,15 @@ export async function processFrame(
 }
 
 /**
+ * Monotonic id assigned to each setupTransform invocation. With six mesh
+ * peers and audio+video each direction, we'd otherwise get 24 indistinguishable
+ * counter logs per cadence — useless for figuring out which pipeline is the
+ * one with crypto-failed spikes. Prefix every log line in a pipeline with
+ * `pipe#N` to disambiguate.
+ */
+let nextPipeId = 0;
+
+/**
  * Wire the readable→transform→writable pipeline that the browser hands us
  * via the `rtctransform` event. Tracks per-bucket counters and logs every
  * 100 frames so we can see — separately for each producer/consumer
@@ -243,7 +252,9 @@ function setupTransform(
   key: CryptoKey,
   codec: E2eeCodec,
 ): void {
-  console.log(`[E2EE:Worker] options received: ${typeof key} ${operation} codec=${codec}`);
+  const pipeId = ++nextPipeId;
+  const tag = `[E2EE:Worker pipe#${pipeId}]`;
+  console.log(`${tag} options received: ${typeof key} ${operation} codec=${codec}`);
   let ok = 0;
   let malformed = 0;
   let cryptoFailed = 0;
@@ -265,24 +276,23 @@ function setupTransform(
       // module header for what each bucket diagnostically means.
       if (ok + malformed + cryptoFailed === 1 || (ok + malformed + cryptoFailed) % 100 === 0) {
         console.log(
-          `[E2EE:Worker] ${operation} codec=${codec}: ${ok} ok, ${malformed} malformed, ${cryptoFailed} crypto-failed`,
+          `${tag} ${operation} codec=${codec}: ${ok} ok, ${malformed} malformed, ${cryptoFailed} crypto-failed`,
         );
       }
     },
   });
 
-  // Diagnostic: confirm the readable side actually delivers frames. tee()
-  // forks the stream so we can peek at the first frame without consuming
-  // the real pipeline; if `read()` never resolves, the browser is handing
-  // us a stream that nothing's writing to (i.e. SFU/transport dropped the
-  // media before it reached the encoded-transform layer).
-  console.log(`[E2EE:Worker] readable type: ${typeof readable}, locked: ${readable.locked}`);
+  // Diagnostic: confirm the readable side actually delivers frames. If
+  // `read()` never resolves, the browser is handing us a stream that
+  // nothing's writing to (i.e. SFU/transport dropped the media before it
+  // reached the encoded-transform layer).
+  console.log(`${tag} readable type: ${typeof readable}, locked: ${readable.locked}`);
 
   readable
     .pipeThrough(transform)
     .pipeTo(writable)
     .catch((err: unknown) => {
-      console.error(`[E2EE:Worker] pipe failed (${operation} codec=${codec}):`, err);
+      console.error(`${tag} pipe failed (${operation} codec=${codec}):`, err);
     });
 }
 

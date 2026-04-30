@@ -265,6 +265,14 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
           throw new Error('[E2EE] consumer.rtpReceiver missing after consume()');
         }
         const codec = normalizeCodec(consumer.rtpParameters.codecs[0]!.mimeType);
+        // SRD-timing note: transport.consume() does addTransceiver + SRD
+        // under the hood, so we're attaching .transform AFTER SRD here.
+        // applyE2eeTransforms (mesh callee path) must wire transforms
+        // BEFORE SRD on iOS Safari to avoid losing 100% of decrypted
+        // frames; that constraint does NOT bite here, empirically. If you
+        // ever need to move this call site (or replace mediasoup-client),
+        // verify on a real iOS device first — a regression in this path
+        // looks like silent loss of incoming peer media.
         setupReceiverTransform(
           consumer.rtpReceiver,
           refs.aesKey.current,

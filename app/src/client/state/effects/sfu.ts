@@ -39,6 +39,16 @@ function isSfuMode(args: EffectArgs): boolean {
   return args.newState.phase === 'room' && args.newState.sfuMode;
 }
 
+/**
+ * Check if the server requires E2EE for media. When false, we skip wiring
+ * RTCRtpScriptTransform on producers/consumers and the call runs as plain
+ * WebRTC (server-side mediasoup is fine with this — the script transform is
+ * purely a client-side concern).
+ */
+function isE2eeRequired(args: EffectArgs): boolean {
+  return args.newState.phase === 'room' && args.newState.e2eeMediaEnabled;
+}
+
 /** MEDIA_ACQUIRED → send join-call + sfu-join (first step: null caps to get router caps) */
 function handleSfuMediaAcquired(ctx: EffectContext, args: EffectArgs): void {
   const { refs } = ctx;
@@ -70,7 +80,7 @@ function handleSfuRouterCaps(ctx: EffectContext, args: EffectArgs): void {
     try {
       const device = await dm.loadDevice(action.rtpCapabilities);
 
-      if (isE2eeSupported() && !refs.e2eeWorker.current) {
+      if (isE2eeRequired(args) && isE2eeSupported() && !refs.e2eeWorker.current) {
         refs.e2eeWorker.current = createE2eeWorker();
       }
 
@@ -150,7 +160,12 @@ function handleSfuTransportCreated(ctx: EffectContext, args: EffectArgs): void {
           for (const [kind, producer] of producers) {
             refs.sfuProducers.current.set(kind, producer);
 
-            if (refs.e2eeWorker.current && refs.aesKey.current && producer.rtpSender) {
+            if (
+              isE2eeRequired(args) &&
+              refs.e2eeWorker.current &&
+              refs.aesKey.current &&
+              producer.rtpSender
+            ) {
               // mediasoup contract: rtpParameters.codecs is non-empty after
               // produce(). Throws (caught below → RTC_FAILED) on any codec
               // outside what the SFU router negotiates.
@@ -214,7 +229,12 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
 
       refs.sfuConsumers.current.set(consumer.id, consumer);
 
-      if (refs.e2eeWorker.current && refs.aesKey.current && consumer.rtpReceiver) {
+      if (
+        isE2eeRequired(args) &&
+        refs.e2eeWorker.current &&
+        refs.aesKey.current &&
+        consumer.rtpReceiver
+      ) {
         const codec = normalizeCodec(consumer.rtpParameters.codecs[0]!.mimeType);
         setupReceiverTransform(
           consumer.rtpReceiver,

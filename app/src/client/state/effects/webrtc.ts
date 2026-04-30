@@ -43,15 +43,29 @@ function buildMeshContext(refs: ResourceRefs, dispatch: (action: Action) => void
   };
 }
 
-/** Build E2EE config from refs, lazily creating the worker if needed. */
-function buildE2eeConfig(refs: ResourceRefs): E2eeConfig | undefined {
+/**
+ * Build E2EE config from refs, lazily creating the worker if needed.
+ *
+ * When the server has E2EE disabled (`e2eeMediaEnabled === false`) we skip
+ * wiring the script transform entirely — the call runs as plain WebRTC. When
+ * the server requires E2EE but the browser cannot provide it, throw rather
+ * than silently downgrading: the call cannot proceed without breaking server
+ * policy, and {@link refuseUnsupportedBrowser} should have caught this at
+ * `JOINED_ROOM` time. Reaching here means a feature-detection regression.
+ */
+function buildE2eeConfig(refs: ResourceRefs, e2eeMediaEnabled: boolean): E2eeConfig | undefined {
+  if (!e2eeMediaEnabled) return undefined;
   if (!refs.aesKey.current) return undefined;
 
   if (!refs.e2eeWorker.current && isE2eeSupported()) {
     refs.e2eeWorker.current = createE2eeWorker();
   }
 
-  if (!refs.e2eeWorker.current) return undefined;
+  if (!refs.e2eeWorker.current) {
+    throw new Error(
+      '[E2EE] Server requires E2EE but RTCRtpScriptTransform is not available in this browser',
+    );
+  }
 
   return { worker: refs.e2eeWorker.current, key: refs.aesKey.current };
 }
@@ -66,11 +80,12 @@ function handleCallPeersEffect(
   meshCtx: MeshContext,
   selfPeerId: string,
   iceConfig: IceConfig,
+  e2eeMediaEnabled: boolean,
 ): void {
   const { peerConnections, makingOfferPeers, dispatch } = meshCtx;
   const remotePeers = new Set(action.callPeers.filter((id: string) => id !== selfPeerId));
   const currentPeers = new Set(peerConnections.keys());
-  const e2ee = buildE2eeConfig(refs);
+  const e2ee = buildE2eeConfig(refs, e2eeMediaEnabled);
 
   // Create PCs for new peers
   for (const peerId of remotePeers) {
@@ -157,11 +172,12 @@ function handleReceivedOfferEffect(
   meshCtx: MeshContext,
   selfPeerId: string,
   iceConfig: IceConfig,
+  e2eeMediaEnabled: boolean,
 ): void {
   const { fromPeerId } = action;
   let pc = meshCtx.peerConnections.get(fromPeerId);
   if (!pc) {
-    const e2ee = buildE2eeConfig(refs);
+    const e2ee = buildE2eeConfig(refs, e2eeMediaEnabled);
     pc = createPeerConnection(
       {
         iceServers: iceConfig.iceServers ?? [],
@@ -202,6 +218,28 @@ function handleReceivedIceCandidateEffect(
   void handleIceCandidate(pc, action.candidate, meshCtx, action.fromPeerId);
 }
 
+/**
+ * Refuse to enter the room when the server requires E2EE but the browser
+ * cannot deliver it. Surfaces a clear error rather than letting the call
+ * silently proceed without encryption (which would violate server policy) or
+ * fail later inside `applyE2eeTransforms()` with a less obvious message.
+ */
+function refuseUnsupportedBrowser(ctx: EffectContext, args: EffectArgs): void {
+  const { dispatch } = ctx;
+  const { action, newState } = args;
+  if (action.type !== 'JOINED_ROOM') return;
+  if (newState.phase !== 'room') return;
+  if (!newState.e2eeMediaEnabled) return;
+  if (isE2eeSupported()) return;
+
+  dispatch({
+    type: 'SERVER_ERROR',
+    error:
+      'This browser does not support end-to-end encryption (RTCRtpScriptTransform). ' +
+      'Use Chrome, Edge, or Safari 16+, or ask the operator to disable E2EE.',
+  });
+}
+
 /** Handle WebRTC-related side effects for mesh calls */
 export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void {
   const { refs, dispatch } = ctx;
@@ -210,20 +248,24 @@ export function handleWebRTCEffects(ctx: EffectContext, args: EffectArgs): void 
   const iceConfig = getIceConfig(newState);
   const selfPeerId = newState.phase === 'room' ? newState.selfPeerId : null;
 
+  // Run before the call-screen guard — JOINED_ROOM fires while still in idle.
+  refuseUnsupportedBrowser(ctx, args);
+
   // Guard: only process during call-related screens, and not in SFU mode
   const callScreenActive = newScreen?.type === 'waiting-for-peer' || newScreen?.type === 'call';
   if (!callScreenActive) return;
   const sfuMode = newState.phase === 'room' && newState.sfuMode;
   if (sfuMode) return;
+  const e2eeMediaEnabled = newState.phase === 'room' && newState.e2eeMediaEnabled;
 
   const meshCtx = buildMeshContext(refs, dispatch);
 
   if (action.type === 'CALL_PEERS_RECEIVED' && selfPeerId && iceConfig) {
-    handleCallPeersEffect(action, refs, meshCtx, selfPeerId, iceConfig);
+    handleCallPeersEffect(action, refs, meshCtx, selfPeerId, iceConfig, e2eeMediaEnabled);
   }
 
   if (action.type === 'RECEIVED_OFFER' && iceConfig && selfPeerId) {
-    handleReceivedOfferEffect(action, refs, meshCtx, selfPeerId, iceConfig);
+    handleReceivedOfferEffect(action, refs, meshCtx, selfPeerId, iceConfig, e2eeMediaEnabled);
   }
 
   if (action.type === 'RECEIVED_ANSWER') {

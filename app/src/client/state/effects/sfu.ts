@@ -16,6 +16,7 @@
  * @module state/effects/sfu
  */
 
+import type { types as msTypes } from 'mediasoup-client';
 import {
   createSfuSendTransport,
   createSfuRecvTransport,
@@ -217,8 +218,9 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
   }
 
   void (async () => {
+    let consumer: msTypes.Consumer | undefined;
     try {
-      const consumer = await createConsumer(recvTransport, {
+      consumer = await createConsumer(recvTransport, {
         peerId: action.peerId,
         producerId: action.producerId,
         consumerId: action.consumerId,
@@ -262,9 +264,29 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
         consumerId: consumer.id,
       });
     } catch (error) {
-      console.error(
-        `[SFU:Effects] Failed to create consumer: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[SFU:Effects] Failed to create consumer: ${message}`);
+      // Drop the half-built consumer if we got that far — without this it sits
+      // in sfuConsumers forever, the server-side consumer stays paused (we
+      // never sent sfu-consume-resume), and the peer slot in the UI never
+      // resolves.
+      if (consumer) {
+        refs.sfuConsumers.current.delete(consumer.id);
+        try {
+          consumer.close();
+        } catch {
+          // Already-closed / race during teardown — nothing to do.
+        }
+      }
+      // Surface the failure on the SPECIFIC peer, not 'sfu': the producer
+      // branch fails the SFU connection as a whole because produce()
+      // failures imply our upstream is broken; consume() failures are
+      // bound to one peer's track.
+      dispatch({
+        type: 'RTC_FAILED',
+        reason: `SFU consume failed for peer ${action.peerId}: ${message}`,
+        peerId: action.peerId,
+      });
     }
   })();
 }

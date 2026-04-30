@@ -27,12 +27,16 @@ interface HeaderProps {
  * Pick the security badge shown next to the room title.
  *
  * - E2EE on (any topology): "E2EE" — same trust signal everywhere.
- * - SFU + E2EE off: "SFU | media unencrypted" — explicit because SFU media
- *   passes through the server in the clear and that is worth surfacing.
+ * - SFU + E2EE off: "SFU · server can see media" — explicit because the SFU
+ *   can decrypt media while DTLS-SRTP still encrypts the wire.
  * - Mesh + E2EE off: nothing — peer-to-peer with no script transform is the
  *   plain WebRTC default; no badge needed.
+ *
+ * Exported for unit testing; component code reads it through `Header`.
+ *
+ * @returns label/title/off triple, or `null` to render nothing.
  */
-function pickBadge(
+export function pickBadge(
   e2eeMediaEnabled: boolean,
   sfuMode: boolean,
 ): { label: string; title: string; off: boolean } | null {

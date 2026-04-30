@@ -191,6 +191,19 @@ export async function processFrame(
   frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,
   codec: E2eeCodec,
 ): Promise<FrameResult> {
+  // DEBUG: H264 copy-passthrough — clone frame.data into a fresh
+  // ArrayBuffer with identical bytes and reassign. Bytes on the wire are
+  // unchanged, but `frame.data` is now a different ArrayBuffer instance.
+  // Isolates whether the act of REPLACING frame.data — independent of
+  // content — is what disrupts Safari's H264 receive pipeline (some
+  // pipelines reject any data swap on encoded transforms). If untouched
+  // passthrough worked but this doesn't, the swap itself is the problem.
+  if (codec === 'h264') {
+    const copy = new ArrayBuffer(frame.data.byteLength);
+    new Uint8Array(copy).set(new Uint8Array(frame.data));
+    frame.data = copy;
+    return 'ok';
+  }
   const data = frame.data;
   const headerBytes = getUnencryptedByteCount(codec, frame);
 

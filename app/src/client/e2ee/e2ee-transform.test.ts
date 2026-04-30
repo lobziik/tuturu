@@ -31,17 +31,17 @@ describe('parseNegotiatedCodecs', () => {
     expect(result).toEqual({ audio: 'opus', video: 'vp8' });
   });
 
-  test('H264 video (mesh path with iOS Safari)', () => {
-    const result = parseNegotiatedCodecs(
-      sdp(
-        'm=audio 9 UDP/TLS/RTP/SAVPF 111',
-        'a=rtpmap:111 opus/48000/2',
-        'm=video 9 UDP/TLS/RTP/SAVPF 96 97',
-        'a=rtpmap:96 H264/90000',
-        'a=rtpmap:97 rtx/90000',
+  test('H264 video throws (unsupported under E2EE; mesh enforces VP8)', () => {
+    expect(() =>
+      parseNegotiatedCodecs(
+        sdp(
+          'm=audio 9 UDP/TLS/RTP/SAVPF 111',
+          'a=rtpmap:111 opus/48000/2',
+          'm=video 9 UDP/TLS/RTP/SAVPF 96',
+          'a=rtpmap:96 H264/90000',
+        ),
       ),
-    );
-    expect(result).toEqual({ audio: 'opus', video: 'h264' });
+    ).toThrow(/Unsupported codec mimeType/);
   });
 
   test('audio-only answer (no video m-line)', () => {

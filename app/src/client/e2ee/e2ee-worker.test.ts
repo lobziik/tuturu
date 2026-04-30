@@ -18,11 +18,6 @@ const GCM_TAG_LENGTH = 16;
 const AUDIO_HEADER = 1;
 const VP8_KEY_HEADER = 10;
 const VP8_DELTA_HEADER = 3;
-// H264 only appears on the mesh path (SFU is Opus + VP8 only). Constant
-// 5-byte prefix across key/delta because Safari/Chrome disagree on
-// `frame.type` for H264 — see worker doc-block.
-const H264_KEY_HEADER = 5;
-const H264_DELTA_HEADER = 5;
 
 /** Generate an AES-256-GCM key for testing. */
 async function generateKey(): Promise<CryptoKey> {
@@ -108,49 +103,6 @@ describe('processFrame', () => {
       expect(headerOut).toEqual(plaintext.slice(0, VP8_DELTA_HEADER));
     });
 
-    test('h264 keyframe: leaves 5 header bytes unencrypted (Annex B start code + NAL header)', async () => {
-      const key = await generateKey();
-      const plaintext = new Uint8Array(64);
-      for (let i = 0; i < plaintext.length; i++) plaintext[i] = i;
-      const frame = createVideoFrame(plaintext.buffer as ArrayBuffer, 'key');
-
-      const result = await processFrame(
-        'encrypt',
-        key,
-        frame as unknown as RTCEncodedVideoFrame,
-        'h264',
-      );
-
-      expect(result).toBe('ok');
-      // Wire layout: [header (5B)] [IV (12B)] [ciphertext over (N-5) bytes + GCM tag (16B)]
-      expect(frame.data.byteLength).toBe(
-        H264_KEY_HEADER + IV_LENGTH + (plaintext.byteLength - H264_KEY_HEADER) + GCM_TAG_LENGTH,
-      );
-      const headerOut = new Uint8Array(frame.data, 0, H264_KEY_HEADER);
-      expect(headerOut).toEqual(plaintext.slice(0, H264_KEY_HEADER));
-    });
-
-    test('h264 delta frame: same constant 5-byte prefix as keyframe', async () => {
-      const key = await generateKey();
-      const plaintext = new Uint8Array(64);
-      for (let i = 0; i < plaintext.length; i++) plaintext[i] = i;
-      const frame = createVideoFrame(plaintext.buffer as ArrayBuffer, 'delta');
-
-      const result = await processFrame(
-        'encrypt',
-        key,
-        frame as unknown as RTCEncodedVideoFrame,
-        'h264',
-      );
-
-      expect(result).toBe('ok');
-      expect(frame.data.byteLength).toBe(
-        H264_DELTA_HEADER + IV_LENGTH + (plaintext.byteLength - H264_DELTA_HEADER) + GCM_TAG_LENGTH,
-      );
-      const headerOut = new Uint8Array(frame.data, 0, H264_DELTA_HEADER);
-      expect(headerOut).toEqual(plaintext.slice(0, H264_DELTA_HEADER));
-    });
-
     test('different encryptions produce different IVs', async () => {
       const key = await generateKey();
       const plaintext = new Uint8Array([1, 2, 3, 4]);
@@ -232,42 +184,6 @@ describe('processFrame', () => {
         key,
         frame as unknown as RTCEncodedVideoFrame,
         'vp8',
-      );
-
-      expect(result).toBe('ok');
-      expect(new Uint8Array(frame.data)).toEqual(original);
-    });
-
-    test('h264 keyframe round-trip recovers original data', async () => {
-      const key = await generateKey();
-      const original = new Uint8Array(64);
-      for (let i = 0; i < original.length; i++) original[i] = (i * 17) & 0xff;
-      const frame = createVideoFrame(original.buffer as ArrayBuffer, 'key');
-
-      await processFrame('encrypt', key, frame as unknown as RTCEncodedVideoFrame, 'h264');
-      const result = await processFrame(
-        'decrypt',
-        key,
-        frame as unknown as RTCEncodedVideoFrame,
-        'h264',
-      );
-
-      expect(result).toBe('ok');
-      expect(new Uint8Array(frame.data)).toEqual(original);
-    });
-
-    test('h264 delta-frame round-trip recovers original data', async () => {
-      const key = await generateKey();
-      const original = new Uint8Array(64);
-      for (let i = 0; i < original.length; i++) original[i] = (i * 19) & 0xff;
-      const frame = createVideoFrame(original.buffer as ArrayBuffer, 'delta');
-
-      await processFrame('encrypt', key, frame as unknown as RTCEncodedVideoFrame, 'h264');
-      const result = await processFrame(
-        'decrypt',
-        key,
-        frame as unknown as RTCEncodedVideoFrame,
-        'h264',
       );
 
       expect(result).toBe('ok');
@@ -362,11 +278,10 @@ describe('normalizeCodec', () => {
     expect(normalizeCodec('audio/opus')).toBe('opus');
     expect(normalizeCodec('video/VP8')).toBe('vp8');
     expect(normalizeCodec('video/vp8')).toBe('vp8');
-    expect(normalizeCodec('video/H264')).toBe('h264');
-    expect(normalizeCodec('video/h264')).toBe('h264');
   });
 
-  test('throws on unknown mimeType, naming the offending value', () => {
+  test('throws on unsupported mimeType, naming the offending value', () => {
+    expect(() => normalizeCodec('video/H264')).toThrow(/video\/H264/);
     expect(() => normalizeCodec('video/VP9')).toThrow(/video\/VP9/);
     expect(() => normalizeCodec('audio/PCMU')).toThrow(/audio\/PCMU/);
     expect(() => normalizeCodec('')).toThrow();

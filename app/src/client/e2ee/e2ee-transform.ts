@@ -10,21 +10,21 @@
 
 /**
  * Codec discriminator passed to the worker so it can pick the right number of
- * unencrypted header bytes per frame. Limited to what the SFU router actually
- * negotiates — see `app/src/server/sfu/codecs.ts`. Anything else throws at
- * the call site (`normalizeCodec`) per the project's "fail fast" stance.
+ * unencrypted header bytes per frame. Limited to what the SFU router and the
+ * mesh path with E2EE actually negotiate — Opus + VP8. H264 is intentionally
+ * out of scope: SFU rejects it at the router caps and mesh enforces VP8 via
+ * `setCodecPreferences` whenever E2EE is on.
  *
  * The literal-string union is intentionally redeclared inside the worker
  * (workers can't import from this module), with a comment pointing back here.
  */
-type E2eeCodec = 'opus' | 'vp8' | 'h264';
+type E2eeCodec = 'opus' | 'vp8';
 
 /**
  * Map a mediasoup `rtpParameters.codecs[0].mimeType` to the worker's codec
  * discriminator. Throws on anything not in {@link E2eeCodec} so an unexpected
  * codec surfaces as an `RTC_FAILED` dispatch instead of being silently
- * encrypted with the wrong header size (which iOS Safari's H264 decoder
- * would reject 100% of frames for).
+ * encrypted with the wrong header size.
  */
 export function normalizeCodec(mimeType: string): E2eeCodec {
   switch (mimeType.toLowerCase()) {
@@ -32,8 +32,6 @@ export function normalizeCodec(mimeType: string): E2eeCodec {
       return 'opus';
     case 'video/vp8':
       return 'vp8';
-    case 'video/h264':
-      return 'h264';
     default:
       throw new Error(
         `[E2EE] Unsupported codec mimeType: ${mimeType}. ` +

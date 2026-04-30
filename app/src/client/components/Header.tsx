@@ -17,6 +17,8 @@ interface HeaderProps {
   callDisabled: boolean;
   /** Whether a call is currently in progress */
   inCall: boolean;
+  /** Whether the server requires E2EE for media (drives the encryption badge) */
+  e2eeMediaEnabled: boolean;
 }
 
 /** Room header bar with title, online indicator, and action buttons */
@@ -27,11 +29,22 @@ export function Header({
   peerCount,
   callDisabled,
   inCall,
+  e2eeMediaEnabled,
 }: Readonly<HeaderProps>) {
   return (
     <div class="chat-header">
       <div class="chat-header-left">
         <span class="chat-header-title">tuturu</span>
+        <span
+          class={`e2ee-badge${e2eeMediaEnabled ? '' : ' off'}`}
+          title={
+            e2eeMediaEnabled
+              ? 'Media is end-to-end encrypted'
+              : 'Media is not encrypted by the server'
+          }
+        >
+          {e2eeMediaEnabled ? 'E2EE' : 'unencrypted'}
+        </span>
         <button
           type="button"
           class="online-indicator-btn"

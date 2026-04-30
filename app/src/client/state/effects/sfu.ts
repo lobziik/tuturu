@@ -81,8 +81,20 @@ function handleSfuRouterCaps(ctx: EffectContext, args: EffectArgs): void {
     try {
       const device = await dm.loadDevice(action.rtpCapabilities);
 
-      if (isE2eeRequired(args) && isE2eeSupported() && !refs.e2eeWorker.current) {
+      if (isE2eeRequired(args) && !refs.e2eeWorker.current) {
+        if (!isE2eeSupported()) {
+          // refuseUnsupportedBrowser at JOINED_ROOM should have caught this.
+          // Reaching here = the gate regressed. Mirror mesh's buildE2eeConfig
+          // throw so we never silently produce/consume in plaintext while the
+          // server policy says E2EE is required.
+          throw new Error(
+            '[E2EE] Server requires E2EE but RTCRtpScriptTransform is not available in this browser',
+          );
+        }
         refs.e2eeWorker.current = createE2eeWorker();
+        if (!refs.e2eeWorker.current) {
+          throw new Error('[E2EE] createE2eeWorker returned null despite feature detection');
+        }
       }
 
       sendMessage(refs.ws.current, {
@@ -161,12 +173,22 @@ function handleSfuTransportCreated(ctx: EffectContext, args: EffectArgs): void {
           for (const [kind, producer] of producers) {
             refs.sfuProducers.current.set(kind, producer);
 
-            if (
-              isE2eeRequired(args) &&
-              refs.e2eeWorker.current &&
-              refs.aesKey.current &&
-              producer.rtpSender
-            ) {
+            if (isE2eeRequired(args)) {
+              // refuseUnsupportedBrowser + handleSfuRouterCaps already
+              // guaranteed worker + key by the time we get here. A missing
+              // rtpSender on a freshly-produced track would be a
+              // mediasoup-client API regression. Treat all three as
+              // assertion failures so the caller's catch surfaces them as
+              // RTC_FAILED rather than silently producing in plaintext
+              // while the server policy says E2EE is required.
+              if (!refs.e2eeWorker.current || !refs.aesKey.current) {
+                throw new Error(
+                  '[E2EE] producer transform: worker/key missing despite isE2eeRequired',
+                );
+              }
+              if (!producer.rtpSender) {
+                throw new Error('[E2EE] producer.rtpSender missing after produce()');
+              }
               // mediasoup contract: rtpParameters.codecs is non-empty after
               // produce(). Throws (caught below → RTC_FAILED) on any codec
               // outside what the SFU router negotiates.
@@ -231,12 +253,17 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
 
       refs.sfuConsumers.current.set(consumer.id, consumer);
 
-      if (
-        isE2eeRequired(args) &&
-        refs.e2eeWorker.current &&
-        refs.aesKey.current &&
-        consumer.rtpReceiver
-      ) {
+      if (isE2eeRequired(args)) {
+        // Mirrors the producer-side assertion — defense-in-depth for the
+        // case where the JOINED_ROOM gate or handleSfuRouterCaps regressed.
+        // Without these throws we'd silently consume in plaintext while
+        // the server requires E2EE.
+        if (!refs.e2eeWorker.current || !refs.aesKey.current) {
+          throw new Error('[E2EE] consumer transform: worker/key missing despite isE2eeRequired');
+        }
+        if (!consumer.rtpReceiver) {
+          throw new Error('[E2EE] consumer.rtpReceiver missing after consume()');
+        }
         const codec = normalizeCodec(consumer.rtpParameters.codecs[0]!.mimeType);
         setupReceiverTransform(
           consumer.rtpReceiver,

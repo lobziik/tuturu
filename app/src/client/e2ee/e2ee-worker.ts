@@ -42,7 +42,6 @@
  *  caps negotiation, and mesh forces VP8 via `setCodecPreferences`
  *  whenever E2EE is on (see `app/src/client/services/webrtc.ts`).
  *
-
  * ─────────────────────────────────────────────────────────────────────────
  *  AAD BINDING (Authenticated Additional Data)
  * ─────────────────────────────────────────────────────────────────────────

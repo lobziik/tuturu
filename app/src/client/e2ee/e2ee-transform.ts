@@ -101,7 +101,10 @@ export function parseNegotiatedCodecs(sdp: string): Partial<Record<'audio' | 'vi
     const slashIdx = remainder.indexOf('/');
     const codecName = slashIdx >= 0 ? remainder.slice(0, slashIdx) : remainder;
     result[currentKind] = normalizeCodec(`${currentKind}/${codecName}`);
-    // Stop matching further rtpmap lines for this m-section.
+    // Stop matching further rtpmap lines for this m-section. currentKind
+    // is intentionally NOT cleared — the next `m=` line resets it; until
+    // then the `if (!currentPt) continue` guard above skips any rtpmap
+    // entries from the same section.
     currentPt = null;
   }
 

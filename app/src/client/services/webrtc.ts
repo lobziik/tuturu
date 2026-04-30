@@ -101,7 +101,22 @@ const e2eeAppliedReceivers = new WeakSet<RTCRtpReceiver>();
 function applyE2eeTransforms(pc: RTCPeerConnection, sdp: string): void {
   const e2ee = e2eeConfigs.get(pc);
   if (!e2ee) return;
+  applyE2eeTransformsWithConfig(pc, sdp, e2ee);
+}
 
+/**
+ * Pure version of {@link applyE2eeTransforms} that takes the E2EE config
+ * explicitly instead of looking it up through the module-private WeakMap.
+ * Behaves identically; lifted out so unit tests can drive the function
+ * with a mock peer connection without relying on the WeakMap registration.
+ *
+ * @internal Exported for testing.
+ */
+export function applyE2eeTransformsWithConfig(
+  pc: RTCPeerConnection,
+  sdp: string,
+  e2ee: E2eeConfig,
+): void {
   const codecs = parseNegotiatedCodecs(sdp);
 
   for (const transceiver of pc.getTransceivers()) {
@@ -115,6 +130,18 @@ function applyE2eeTransforms(pc: RTCPeerConnection, sdp: string): void {
       }
       const codec = codecs[kind];
       if (!codec) {
+        // Codec missing for this kind. Distinguish two sub-cases:
+        //  1. The m-line was rejected (port=0) — receiver-only / inactive
+        //     transceiver. No media will flow on this sender; wiring a
+        //     transform would no-op forever and throwing here would fail
+        //     the call on a perfectly legitimate audio-only-from-remote
+        //     scenario. Mirror the receiver branch's port=0 silent skip.
+        //  2. SDP genuinely lacks an rtpmap for this PT. Throw so the
+        //     caller's try/catch dispatches RTC_FAILED.
+        const willSend =
+          transceiver.currentDirection === 'sendrecv' ||
+          transceiver.currentDirection === 'sendonly';
+        if (!willSend) continue;
         throw new Error(
           `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${kind}) has no negotiated codec in answer SDP`,
         );

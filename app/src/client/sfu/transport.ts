@@ -16,15 +16,9 @@ import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
 /** Default timeout for sfu-producer-created before failing the produce call (ms). */
 export const PRODUCE_TIMEOUT_MS = 10_000;
 
-/**
- * Chrome-specific RTCPeerConnection setting required for `RTCRtpScriptTransform`
- * to actually deliver frames to the worker. Standard `RTCConfiguration` doesn't
- * declare it, so we cast through `Partial<RTCConfiguration>` (mediasoup-client's
- * declared `additionalSettings` shape). Safari ignores the unknown field.
- */
-const ENCODED_INSERTABLE_STREAMS_SETTINGS = {
-  encodedInsertableStreams: true,
-} as unknown as Partial<RTCConfiguration>;
+// Re-export under the local name the rest of the file already uses, so the
+// diff stays minimal at call sites. Doc-block lives at the source.
+import { RTC_ENCODED_INSERTABLE_STREAMS as ENCODED_INSERTABLE_STREAMS_SETTINGS } from '../e2ee/e2ee-transform';
 
 /** Parameters received from server for transport creation. */
 export interface TransportParams {

@@ -107,6 +107,22 @@ export function isE2eeSupported(): boolean {
 }
 
 /**
+ * RTCConfiguration extension required by Chrome to actually deliver frames
+ * to RTCRtpScriptTransform. Without `encodedInsertableStreams: true`, the
+ * `rtctransform` event fires but the readable stream stays empty, frames
+ * bypass the worker entirely, and stats show 0 packets through the
+ * transform. Safari accepts and ignores the unknown field — harmless when
+ * E2EE is off, required when on.
+ *
+ * Shared between mesh (`createPeerConnection` in `services/webrtc.ts`) and
+ * SFU (`additionalSettings` on the WebRtcTransport in `sfu/transport.ts`).
+ * Standard `RTCConfiguration` doesn't declare the flag, hence the cast.
+ */
+export const RTC_ENCODED_INSERTABLE_STREAMS: Partial<RTCConfiguration> = {
+  encodedInsertableStreams: true,
+} as Partial<RTCConfiguration>;
+
+/**
  * Create an E2EE Web Worker for frame-level encryption/decryption.
  * Returns null if E2EE is not supported.
  */

@@ -19,6 +19,7 @@ import {
   setupSenderTransform,
   setupReceiverTransform,
   parseNegotiatedCodecs,
+  RTC_ENCODED_INSERTABLE_STREAMS,
 } from '../e2ee/e2ee-transform';
 
 type Dispatch = (action: Action) => void;
@@ -216,14 +217,10 @@ export function createPeerConnection(
   console.log(`[RTC:${targetPeerId}] Creating peer connection`);
   console.log(`[RTC:${targetPeerId}] ICE transport policy:`, config.iceTransportPolicy);
 
-  // Chrome requires `encodedInsertableStreams: true` on the underlying
-  // RTCPeerConnection for `RTCRtpScriptTransform` to actually deliver
-  // frames to the worker — without it, the rtctransform event fires but
-  // the readable stream stays empty (frames bypass the worker entirely,
-  // and stats show 0 packets through the transform). Standard
-  // RTCConfiguration doesn't declare it; cast through Partial. Safari
-  // accepts and ignores the flag; harmless when E2EE is off. Matches
-  // the SFU path's `additionalSettings` in `sfu/transport.ts`.
+  // RTC_ENCODED_INSERTABLE_STREAMS is the Chrome-only flag that actually
+  // hooks RTCRtpScriptTransform up to the worker — see its doc-block in
+  // e2ee-transform.ts. Shared with the SFU `additionalSettings` so both
+  // topologies use the exact same shape and one place documents it.
   const pcConfig: RTCConfiguration = {
     iceServers: config.iceServers.map((s) => ({
       urls: s.urls,
@@ -231,7 +228,7 @@ export function createPeerConnection(
       ...(s.credential !== undefined && { credential: s.credential }),
     })),
     iceTransportPolicy: config.iceTransportPolicy,
-    ...({ encodedInsertableStreams: true } as Partial<RTCConfiguration>),
+    ...RTC_ENCODED_INSERTABLE_STREAMS,
   };
   const pc = new RTCPeerConnection(pcConfig);
 

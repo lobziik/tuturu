@@ -137,6 +137,34 @@ function applyE2eeTransforms(pc: RTCPeerConnection, sdp: string): void {
   }
 }
 
+/**
+ * Restrict every video transceiver on `pc` to VP8 (plus the RTX/red/ulpfec
+ * helpers some Safari versions expect to see alongside).
+ *
+ * Mesh-only — the SFU server router caps already enforce VP8-only. Throws
+ * when VP8 is missing from the browser's codec list: failing here is far
+ * better than letting the call set up only to negotiate an E2EE-incompatible
+ * codec. Must be called before any `createOffer`/`createAnswer`.
+ */
+function applyVp8VideoPreference(pc: RTCPeerConnection): void {
+  const caps = RTCRtpReceiver.getCapabilities('video');
+  if (!caps) {
+    throw new Error('[E2EE] RTCRtpReceiver.getCapabilities("video") returned null');
+  }
+  const vp8 = caps.codecs.filter((c) => /^video\/vp8$/i.test(c.mimeType));
+  if (vp8.length === 0) {
+    throw new Error('[E2EE] Browser does not advertise VP8 — cannot enforce E2EE-safe codec');
+  }
+  const helpers = caps.codecs.filter((c) => /^video\/(rtx|red|ulpfec)$/i.test(c.mimeType));
+  const ordered = [...vp8, ...helpers];
+
+  for (const t of pc.getTransceivers()) {
+    const kind = t.sender.track?.kind ?? t.receiver.track?.kind ?? null;
+    if (kind !== 'video') continue;
+    t.setCodecPreferences(ordered);
+  }
+}
+
 /** Apply buffered ICE candidates after remote description has been set */
 async function flushPendingCandidates(
   pc: RTCPeerConnection,
@@ -225,6 +253,11 @@ export function createPeerConnection(
   // answer SDP is applied, so we can't set transforms here).
   if (e2ee) {
     e2eeConfigs.set(pc, e2ee);
+    // Restrict video to VP8 before any offer/answer is created. Safari's
+    // H264 path produces frame metadata that's incompatible with Chrome's
+    // E2EE pipeline, so we keep mesh on VP8 whenever E2EE is on. SFU side
+    // already enforces VP8 via mediasoup router caps.
+    applyVp8VideoPreference(pc);
   }
 
   pc.ontrack = (event: RTCTrackEvent) => {

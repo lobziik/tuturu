@@ -2,7 +2,7 @@
  * Media codec configuration for SFU routers.
  *
  * Opus for audio, VP8 for video. H264 is intentionally excluded — see the
- * commented-out entry below for why.
+ * comment in the codec list below for why.
  *
  * @module server/sfu/codecs
  */

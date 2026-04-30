@@ -41,19 +41,26 @@ export function normalizeCodec(mimeType: string): E2eeCodec {
 }
 
 /**
- * Parse the negotiated codec per media kind out of an answer SDP.
+ * Parse the negotiated codec per media kind out of an SDP.
  *
  * For each `m=audio`/`m=video` section, takes the first payload type in the
- * m-line (which, in an answer, is the codec both sides agreed on) and
- * resolves it through the section's `a=rtpmap:` entry to a codec name.
+ * m-line and resolves it through the section's `a=rtpmap:` entry to a codec
+ * name. In an answer SDP this PT is the agreed codec by definition. In an
+ * offer SDP it is only the offerer's first preference — but we call it from
+ * the callee path with the offer SDP, and that produces the right codec
+ * **only because both sides force VP8 first via `setCodecPreferences` in
+ * `services/webrtc.ts` before any offer is created**. If that invariant
+ * ever breaks (e.g. mesh stops enforcing VP8, or a multi-codec future
+ * arrives), callers using offer SDP must switch to answer SDP and accept
+ * the AAD mismatch window during rollout.
  *
  * Exists because `RTCRtpSender.getParameters().codecs` / `...Receiver...`
  * return an empty array on iOS Safari right after SDP apply — the receiver
  * side never gets an E2EE transform attached, so decryption silently drops
- * 100% of frames. Answer SDP always carries the negotiated codec, so it's
- * a reliable source in that window. Missing m-lines (audio-only call,
- * rejected recvonly video) are represented by absent keys and left for the
- * caller to handle. Throws on malformed SDP or unsupported codecs per the
+ * 100% of frames. SDP always carries the negotiated PT, so it's a reliable
+ * source in that window. Missing m-lines (audio-only call, rejected
+ * recvonly video) are represented by absent keys and left for the caller
+ * to handle. Throws on malformed SDP or unsupported codecs per the
  * project's fail-fast stance.
  */
 export function parseNegotiatedCodecs(sdp: string): Partial<Record<'audio' | 'video', E2eeCodec>> {

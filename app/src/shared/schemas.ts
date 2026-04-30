@@ -247,6 +247,13 @@ const JoinResponseSchema = z.object({
   iceTransportPolicy: IceTransportPolicySchema,
   /** Whether this server supports SFU mode (mediasoup workers are running). */
   sfuEnabled: z.boolean().optional(),
+  /**
+   * Whether the server requires end-to-end encryption for media. When true,
+   * clients wire RTCRtpScriptTransform on every sender/receiver and force VP8
+   * in mesh. Optional for backward compatibility with older servers — clients
+   * default to true when absent (matches the new server default).
+   */
+  e2eeMediaEnabled: z.boolean().optional(),
 });
 
 const PeerJoinedSchema = z.object({

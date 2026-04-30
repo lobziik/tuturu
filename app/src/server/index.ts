@@ -198,6 +198,7 @@ async function main(): Promise<void> {
     send,
     pingIntervalMs,
     pongTimeoutMs,
+    e2eeMediaEnabled: config.e2eeMediaEnabled,
     ...(sfu ? { sfuPeerHandler: sfu.sfuPeerHandler } : {}),
   });
 

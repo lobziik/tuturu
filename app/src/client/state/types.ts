@@ -114,6 +114,12 @@ export type AppState =
       peerConnectionStates: Record<string, PeerConnectionStatus>;
       /** Whether this room uses SFU mode (from server sfuEnabled flag) */
       sfuMode: boolean;
+      /**
+       * Whether the server requires end-to-end encryption for media (from
+       * server e2eeMediaEnabled flag). Gates RTCRtpScriptTransform wiring and
+       * VP8 codec enforcement in mesh.
+       */
+      e2eeMediaEnabled: boolean;
       /** Peer ID of the current active speaker (from AudioLevelObserver) */
       activeSpeakerPeerId: string | null;
       /** Currently open overlay panel (null = none) */
@@ -213,6 +219,7 @@ export type Action =
       iceServers: IceServerConfig[];
       iceTransportPolicy: IceTransportPolicy;
       sfuEnabled?: boolean;
+      e2eeMediaEnabled?: boolean;
     }
   | { type: 'RECEIVED_OFFER'; offer: RTCSessionDescriptionInit; fromPeerId: string }
   | { type: 'RECEIVED_ANSWER'; answer: RTCSessionDescriptionInit; fromPeerId: string }

@@ -76,6 +76,8 @@ function loginReducer(state: Extract<AppState, { phase: 'login' }>, action: Acti
       callPeers: [],
       peerConnectionStates: {},
       sfuMode: false,
+      // Optimistic default — server overwrites on JOINED_ROOM. Matches server default.
+      e2eeMediaEnabled: true,
       activeSpeakerPeerId: null,
       overlay: null,
     };
@@ -607,6 +609,8 @@ function roomCallReducer(state: RoomState, action: CallAction): AppState {
         iceServers: action.iceServers,
         iceTransportPolicy: action.iceTransportPolicy,
         sfuMode: !!action.sfuEnabled,
+        // Default to true when absent (older server / message lacks the field).
+        e2eeMediaEnabled: action.e2eeMediaEnabled !== false,
       };
 
     // Signaling actions — no state transitions, handled purely in effects

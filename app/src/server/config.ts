@@ -53,13 +53,7 @@ const configSchema = z.object({
     .optional(),
 
   // External IP (for coturn server configuration, not sent to client)
-  externalIp: z
-    .string()
-    .regex(
-      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-      'External IP must be a valid IPv4 address',
-    )
-    .optional(),
+  externalIp: z.string().ipv4({ message: 'External IP must be a valid IPv4 address' }).optional(),
 
   // Force relay mode (for TURN server validation)
   // When true, clients will ONLY use TURN relay candidates (no direct P2P or STUN)

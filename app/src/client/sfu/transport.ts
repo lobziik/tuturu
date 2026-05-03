@@ -12,13 +12,12 @@
 import type { Device, types as msTypes } from 'mediasoup-client';
 import { sendMessage } from '../services/websocket';
 import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
+// Aliased on import — the rest of the file already uses the local name.
+// Doc-block for the constant lives at the source in e2ee-transform.ts.
+import { RTC_ENCODED_INSERTABLE_STREAMS as ENCODED_INSERTABLE_STREAMS_SETTINGS } from '../e2ee/e2ee-transform';
 
 /** Default timeout for sfu-producer-created before failing the produce call (ms). */
 export const PRODUCE_TIMEOUT_MS = 10_000;
-
-// Re-export under the local name the rest of the file already uses, so the
-// diff stays minimal at call sites. Doc-block lives at the source.
-import { RTC_ENCODED_INSERTABLE_STREAMS as ENCODED_INSERTABLE_STREAMS_SETTINGS } from '../e2ee/e2ee-transform';
 
 /** Parameters received from server for transport creation. */
 export interface TransportParams {

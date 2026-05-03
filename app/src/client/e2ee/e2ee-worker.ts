@@ -118,9 +118,10 @@ function getUnencryptedByteCount(
   frame: RTCEncodedVideoFrame | RTCEncodedAudioFrame,
 ): number {
   if (codec === 'opus') return 1; // RFC 6716 §3.1 — Opus TOC byte
-  // VP8 — frame.type is 'key' | 'delta'. mediasoup never produces audio on
-  // a video codec, so the cast is safe by construction.
-  const isKey = 'type' in frame && (frame as RTCEncodedVideoFrame).type === 'key';
+  // VP8 — `'type' in frame` narrows to RTCEncodedVideoFrame (audio frames
+  // lack the property), so no cast is needed to read .type. mediasoup
+  // never produces audio on a video codec, so the narrow is safe.
+  const isKey = 'type' in frame && frame.type === 'key';
   // VP8 sizes from RFC 6386 §9.1.
   return isKey ? 10 : 3;
 }

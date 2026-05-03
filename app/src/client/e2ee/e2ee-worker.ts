@@ -243,8 +243,10 @@ let nextPipeId = 0;
  * 100 frames so we can see — separately for each producer/consumer
  * pipeline — how many frames went through cleanly vs. were dropped, and
  * why.
+ *
+ * @internal Exported for testing.
  */
-function setupTransform(
+export function setupTransform(
   readable: ReadableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>,
   writable: WritableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>,
   operation: 'encrypt' | 'decrypt',
@@ -295,8 +297,17 @@ function setupTransform(
     });
 }
 
-// Handle rtctransform events dispatched by RTCRtpScriptTransform
-addEventListener('rtctransform', (event: Event) => {
+/**
+ * Handle a single `rtctransform` event from RTCRtpScriptTransform. Validates
+ * the codec arriving in `transformer.options` against {@link KNOWN_CODECS}
+ * and, when accepted, hands the readable/writable pair to {@link setupTransform}.
+ *
+ * Extracted from the addEventListener wiring below so it can be unit-tested
+ * with a fabricated event without dispatching on globalThis.
+ *
+ * @internal Exported for testing.
+ */
+export function handleRtcTransformEvent(event: Event): void {
   const rtcEvent = event as unknown as {
     transformer: { readable: ReadableStream; writable: WritableStream; options: unknown };
   };
@@ -323,4 +334,9 @@ addEventListener('rtctransform', (event: Event) => {
     options.key,
     options.codec,
   );
-});
+}
+
+// Wire up: the actual browser registration. Side-effecting on import; safe
+// because the worker file is loaded inside a dedicated worker context where
+// `addEventListener` is exactly the worker's event target.
+addEventListener('rtctransform', handleRtcTransformEvent);

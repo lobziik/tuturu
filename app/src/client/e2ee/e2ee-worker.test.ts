@@ -10,7 +10,7 @@
  */
 
 import { describe, test, expect } from 'bun:test';
-import { processFrame } from './e2ee-worker';
+import { processFrame, setupTransform, handleRtcTransformEvent } from './e2ee-worker';
 import { normalizeCodec } from './e2ee-transform';
 
 const IV_LENGTH = 12;
@@ -285,5 +285,191 @@ describe('normalizeCodec', () => {
     expect(() => normalizeCodec('video/VP9')).toThrow(/video\/VP9/);
     expect(() => normalizeCodec('audio/PCMU')).toThrow(/audio\/PCMU/);
     expect(() => normalizeCodec('')).toThrow();
+  });
+});
+
+// ============================================================================
+// setupTransform
+// ============================================================================
+
+/**
+ * Build a ReadableStream we can push frames into externally and a
+ * WritableStream that records every chunk it receives. Together they let us
+ * drive setupTransform end-to-end without involving real
+ * RTCRtpScriptTransform — the readable simulates the browser handing us
+ * encoded frames, and the writable captures the post-encrypt output.
+ */
+function buildPipe(): {
+  readable: ReadableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>;
+  writable: WritableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>;
+  push: (frame: { data: ArrayBuffer; type?: 'key' | 'delta' }) => void;
+  close: () => void;
+  written: Array<{ data: ArrayBuffer; type?: 'key' | 'delta' }>;
+} {
+  let readableController:
+    | ReadableStreamDefaultController<RTCEncodedVideoFrame | RTCEncodedAudioFrame>
+    | undefined;
+  const readable = new ReadableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>({
+    start(controller) {
+      readableController = controller;
+    },
+  });
+
+  const written: Array<{ data: ArrayBuffer; type?: 'key' | 'delta' }> = [];
+  const writable = new WritableStream<RTCEncodedVideoFrame | RTCEncodedAudioFrame>({
+    write(chunk) {
+      written.push(chunk as unknown as { data: ArrayBuffer; type?: 'key' | 'delta' });
+    },
+  });
+
+  return {
+    readable,
+    writable,
+    push: (frame) => {
+      if (!readableController) throw new Error('readable controller not yet initialised');
+      readableController.enqueue(frame as unknown as RTCEncodedVideoFrame | RTCEncodedAudioFrame);
+    },
+    close: () => readableController?.close(),
+    written,
+  };
+}
+
+/** Wait for the next microtask tick — lets piped TransformStream drain. */
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe('setupTransform', () => {
+  test('opus encrypt: pipes plaintext frames through processFrame and enqueues ok results', async () => {
+    const key = await generateKey();
+    const pipe = buildPipe();
+    setupTransform(pipe.readable, pipe.writable, 'encrypt', key, 'opus');
+
+    const plaintext = new TextEncoder().encode('hello world');
+    pipe.push(createAudioFrame(plaintext.buffer as ArrayBuffer));
+    pipe.close();
+
+    // Pump microtasks until the writable has the frame.
+    for (let i = 0; i < 10 && pipe.written.length === 0; i++) await tick();
+
+    expect(pipe.written).toHaveLength(1);
+    expect(pipe.written[0]!.data.byteLength).toBe(
+      AUDIO_HEADER + IV_LENGTH + (plaintext.byteLength - AUDIO_HEADER) + GCM_TAG_LENGTH,
+    );
+  });
+
+  test('vp8 encrypt: pumps multiple frames in sequence', async () => {
+    // Multiple frames exercise the per-bucket counter and the
+    // periodic logging branch (counter==1 is the first-frame log).
+    const key = await generateKey();
+    const pipe = buildPipe();
+    setupTransform(pipe.readable, pipe.writable, 'encrypt', key, 'vp8');
+
+    const FRAMES = 3;
+    for (let i = 0; i < FRAMES; i++) {
+      const buf = new Uint8Array(64);
+      for (let j = 0; j < buf.length; j++) buf[j] = (i * 13 + j) & 0xff;
+      pipe.push(createVideoFrame(buf.buffer as ArrayBuffer, i === 0 ? 'key' : 'delta'));
+    }
+    pipe.close();
+
+    for (let i = 0; i < 20 && pipe.written.length < FRAMES; i++) await tick();
+
+    expect(pipe.written).toHaveLength(FRAMES);
+    // First frame was a keyframe → 10-byte header.
+    expect(pipe.written[0]!.data.byteLength).toBe(
+      VP8_KEY_HEADER + IV_LENGTH + (64 - VP8_KEY_HEADER) + GCM_TAG_LENGTH,
+    );
+    // Subsequent frames were deltas → 3-byte header.
+    expect(pipe.written[1]!.data.byteLength).toBe(
+      VP8_DELTA_HEADER + IV_LENGTH + (64 - VP8_DELTA_HEADER) + GCM_TAG_LENGTH,
+    );
+  });
+
+  test('decrypt with wrong key: drops frames (crypto-failed bucket), nothing reaches writable', async () => {
+    // Encrypt with one key, decrypt the result with another. The wrong-key
+    // path inside processFrame returns 'crypto-failed', so the transform
+    // stream should NOT enqueue anything — the writable stays empty.
+    const encryptKey = await generateKey();
+    const decryptKey = await generateKey();
+
+    // Encrypt a frame first via processFrame so we have a valid wire-format
+    // payload to feed in.
+    const plaintext = new TextEncoder().encode('round trip');
+    const encrypted = createAudioFrame(plaintext.buffer as ArrayBuffer);
+    await processFrame('encrypt', encryptKey, encrypted as unknown as RTCEncodedAudioFrame, 'opus');
+
+    const pipe = buildPipe();
+    setupTransform(pipe.readable, pipe.writable, 'decrypt', decryptKey, 'opus');
+    pipe.push(encrypted);
+    pipe.close();
+
+    for (let i = 0; i < 10; i++) await tick();
+    expect(pipe.written).toHaveLength(0);
+  });
+
+  test('decrypt malformed frame: drops frame (malformed bucket)', async () => {
+    // Frame too short to contain header + IV + GCM tag. processFrame
+    // returns 'malformed'; transform stream skips enqueue.
+    const key = await generateKey();
+    const pipe = buildPipe();
+    setupTransform(pipe.readable, pipe.writable, 'decrypt', key, 'opus');
+
+    pipe.push(createAudioFrame(new ArrayBuffer(5)));
+    pipe.close();
+
+    for (let i = 0; i < 10; i++) await tick();
+    expect(pipe.written).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// handleRtcTransformEvent
+// ============================================================================
+
+describe('handleRtcTransformEvent', () => {
+  test('known codec: forwards readable/writable/options into setupTransform', async () => {
+    const key = await generateKey();
+    const pipe = buildPipe();
+
+    const event = {
+      transformer: {
+        readable: pipe.readable,
+        writable: pipe.writable,
+        options: { operation: 'encrypt', key, codec: 'opus' },
+      },
+    } as unknown as Event;
+
+    handleRtcTransformEvent(event);
+
+    const plaintext = new TextEncoder().encode('via event');
+    pipe.push(createAudioFrame(plaintext.buffer as ArrayBuffer));
+    pipe.close();
+
+    for (let i = 0; i < 10 && pipe.written.length === 0; i++) await tick();
+    expect(pipe.written).toHaveLength(1);
+  });
+
+  test('unknown codec: refuses to wire the pipeline (no frames flow)', async () => {
+    const key = await generateKey();
+    const pipe = buildPipe();
+
+    // 'h264' is not in KNOWN_CODECS — the defense-in-depth branch must
+    // fire, log an error, and return without piping anything.
+    const event = {
+      transformer: {
+        readable: pipe.readable,
+        writable: pipe.writable,
+        options: { operation: 'encrypt', key, codec: 'h264' },
+      },
+    } as unknown as Event;
+
+    handleRtcTransformEvent(event);
+
+    // Even if we push a frame, the readable was never piped through to the
+    // writable, so nothing arrives.
+    pipe.push(createAudioFrame(new ArrayBuffer(8)));
+    for (let i = 0; i < 5; i++) await tick();
+    expect(pipe.written).toHaveLength(0);
   });
 });

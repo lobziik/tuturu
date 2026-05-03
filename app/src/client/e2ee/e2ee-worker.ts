@@ -230,11 +230,16 @@ export async function processFrame(
 }
 
 /**
- * Monotonic id assigned to each setupTransform invocation. With six mesh
- * peers and audio+video each direction, we'd otherwise get 24 indistinguishable
- * counter logs per cadence — useless for figuring out which pipeline is the
- * one with crypto-failed spikes. Prefix every log line in a pipeline with
- * `pipe#N` to disambiguate.
+ * Monotonic id assigned to each setupTransform invocation when the caller
+ * doesn't supply one. With six mesh peers and audio+video each direction,
+ * we'd otherwise get 24 indistinguishable counter logs per cadence —
+ * useless for figuring out which pipeline is the one with crypto-failed
+ * spikes. Prefix every log line in a pipeline with `pipe#N` to
+ * disambiguate.
+ *
+ * Module-level state — persists across setupTransform calls, including
+ * across separate test invocations. Tests that care about deterministic
+ * pipe ids should pass an explicit one via the `pipeId` parameter.
  */
 let nextPipeId = 0;
 
@@ -245,6 +250,10 @@ let nextPipeId = 0;
  * pipeline — how many frames went through cleanly vs. were dropped, and
  * why.
  *
+ * @param pipeId Optional explicit pipe id for log prefixing. Production
+ *   callers omit it (the module counter assigns one). Tests can pin a
+ *   value to keep log output stable across `--randomize` reorderings.
+ *
  * @internal Exported for testing.
  */
 export function setupTransform(
@@ -253,9 +262,10 @@ export function setupTransform(
   operation: 'encrypt' | 'decrypt',
   key: CryptoKey,
   codec: E2eeCodec,
+  pipeId?: number,
 ): void {
-  const pipeId = ++nextPipeId;
-  const tag = `[E2EE:Worker pipe#${pipeId}]`;
+  const id = pipeId ?? ++nextPipeId;
+  const tag = `[E2EE:Worker pipe#${id}]`;
   console.log(`${tag} options received: ${typeof key} ${operation} codec=${codec}`);
   let ok = 0;
   let malformed = 0;

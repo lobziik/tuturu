@@ -332,11 +332,16 @@ validate_dns() {
 write_config() {
     mkdir -p "$CONFIG_DIR"
 
+    # Server-side feature flags. Defaults match app/src/server/config.ts:
+    # SFU off (mesh-by-default), E2EE on. Operators can flip them post-install
+    # by editing $CONFIG_DIR/env and running ./tuturu restart.
     cat > "$CONFIG_DIR/env" << EOF
 DOMAIN=${DOMAIN}
 LETSENCRYPT_EMAIL=${EMAIL}
 EXTERNAL_IP=${EXTERNAL_IP}
 FORCE_RELAY=${FORCE_RELAY}
+TUTURU_SFU_ENABLED=${TUTURU_SFU_ENABLED:-false}
+TUTURU_E2EE_MEDIA_ENABLED=${TUTURU_E2EE_MEDIA_ENABLED:-true}
 EOF
 
     chmod 600 "$CONFIG_DIR/env"

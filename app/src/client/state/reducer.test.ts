@@ -42,6 +42,7 @@ function roomState(
     peerConnectionStates: {},
     overlay: null,
     sfuMode: false,
+    e2eeMediaEnabled: true,
     activeSpeakerPeerId: null,
     ...overrides,
   };
@@ -1108,6 +1109,44 @@ describe('reducer', () => {
         }),
       );
       expect(room.sfuMode).toBe(false);
+    });
+
+    test('JOINED_ROOM with e2eeMediaEnabled=true sets the flag', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(
+        reducer(state, {
+          type: 'JOINED_ROOM',
+          iceServers: [],
+          iceTransportPolicy: 'all',
+          e2eeMediaEnabled: true,
+        }),
+      );
+      expect(room.e2eeMediaEnabled).toBe(true);
+    });
+
+    test('JOINED_ROOM with e2eeMediaEnabled=false clears the flag', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(
+        reducer(state, {
+          type: 'JOINED_ROOM',
+          iceServers: [],
+          iceTransportPolicy: 'all',
+          e2eeMediaEnabled: false,
+        }),
+      );
+      expect(room.e2eeMediaEnabled).toBe(false);
+    });
+
+    test('JOINED_ROOM without e2eeMediaEnabled defaults the flag to true', () => {
+      const state = roomState({ type: 'idle' });
+      const room = expectRoom(
+        reducer(state, {
+          type: 'JOINED_ROOM',
+          iceServers: [],
+          iceTransportPolicy: 'all',
+        }),
+      );
+      expect(room.e2eeMediaEnabled).toBe(true);
     });
 
     test('HANGUP resets activeSpeakerPeerId', () => {

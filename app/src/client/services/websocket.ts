@@ -165,6 +165,9 @@ function handleServerMessage(
         iceServers: message.iceServers,
         iceTransportPolicy: message.iceTransportPolicy,
         ...(message.sfuEnabled === undefined ? {} : { sfuEnabled: message.sfuEnabled }),
+        ...(message.e2eeMediaEnabled === undefined
+          ? {}
+          : { e2eeMediaEnabled: message.e2eeMediaEnabled }),
       });
       break;
 

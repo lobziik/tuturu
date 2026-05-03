@@ -42,6 +42,10 @@ interface RoomScreenProps {
   remoteStreams: Map<string, MediaStream>;
   /** Currently open overlay panel */
   overlay: 'peers' | 'settings' | null;
+  /** Whether the server requires E2EE for media (drives the encryption badge) */
+  e2eeMediaEnabled: boolean;
+  /** Whether the room uses SFU topology (vs mesh) */
+  sfuMode: boolean;
   /** State dispatch function */
   dispatch: Dispatch;
 }
@@ -59,6 +63,8 @@ export function RoomScreen({
   callActive,
   remoteStreams,
   overlay,
+  e2eeMediaEnabled,
+  sfuMode,
   dispatch,
 }: Readonly<RoomScreenProps>) {
   const inputRef = useRef<HTMLDivElement>(null);
@@ -114,6 +120,8 @@ export function RoomScreen({
         peerCount={peerCount}
         callDisabled={callDisabled}
         inCall={showFloatingPiP || callActive}
+        e2eeMediaEnabled={e2eeMediaEnabled}
+        sfuMode={sfuMode}
       />
       <ConnectionStatus
         wsStatus={wsStatus}

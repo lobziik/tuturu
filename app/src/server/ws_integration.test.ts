@@ -61,6 +61,7 @@ beforeAll(async () => {
     send,
     pingIntervalMs: 500, // Short for tests
     pongTimeoutMs: 2000,
+    e2eeMediaEnabled: true,
   });
 
   const wsHandlers = createWebSocketHandlers(handlers, send);
@@ -239,6 +240,7 @@ describe('join + peers', () => {
     expect(joinMsg.type).toBe('join');
     expect(joinMsg.iceServers.length).toBeGreaterThan(0);
     expect(joinMsg.iceTransportPolicy).toBe('all');
+    expect(joinMsg.e2eeMediaEnabled).toBe(true);
 
     expect(peersList.type).toBe('peers-list');
     expect(peersList.peers).toHaveLength(0);
@@ -844,6 +846,7 @@ describe('SFU signaling', () => {
       pingIntervalMs: 60000, // Long — don't interfere with tests
       pongTimeoutMs: 60000,
       sfuPeerHandler: createMockSfuPeerHandler(),
+      e2eeMediaEnabled: true,
     });
 
     const wsHandlers = createWebSocketHandlers(handlers, sfuSend);

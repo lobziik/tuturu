@@ -12,6 +12,9 @@
 import type { Device, types as msTypes } from 'mediasoup-client';
 import { sendMessage } from '../services/websocket';
 import type { IceServerConfig, IceTransportPolicy } from '../../shared/types';
+// Aliased on import — the rest of the file already uses the local name.
+// Doc-block for the constant lives at the source in e2ee-transform.ts.
+import { RTC_ENCODED_INSERTABLE_STREAMS as ENCODED_INSERTABLE_STREAMS_SETTINGS } from '../e2ee/e2ee-transform';
 
 /** Default timeout for sfu-producer-created before failing the produce call (ms). */
 export const PRODUCE_TIMEOUT_MS = 10_000;
@@ -69,6 +72,13 @@ export function createSfuSendTransport(
     ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
     iceServers: toRtcIceServers(iceConfig.iceServers),
     iceTransportPolicy: iceConfig.iceTransportPolicy,
+    // Chrome requires `encodedInsertableStreams: true` on the underlying
+    // RTCPeerConnection for `RTCRtpScriptTransform` to actually deliver
+    // frames to the worker — without it, the transform event fires but
+    // the readable stream stays empty (frames bypass the worker entirely).
+    // Safari accepts and ignores the flag; harmless when E2EE is off.
+    // mediasoup-client forwards `additionalSettings` to `new RTCPeerConnection(...)`.
+    additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS,
   });
 
   transport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -139,6 +149,9 @@ export function createSfuRecvTransport(
     ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
     iceServers: toRtcIceServers(iceConfig.iceServers),
     iceTransportPolicy: iceConfig.iceTransportPolicy,
+    // See createSfuSendTransport — Chrome needs this flag on the underlying
+    // RTCPeerConnection for RTCRtpScriptTransform to deliver decrypt frames.
+    additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS,
   });
 
   transport.on('connect', ({ dtlsParameters }, callback, errback) => {

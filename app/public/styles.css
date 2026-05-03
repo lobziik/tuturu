@@ -16,6 +16,8 @@ html, body {
   --danger: #ef4444;
   --danger-dark: #dc2626;
   --success: #10b981;
+  --warn: #b58900;
+  --warn-border: rgb(181 137 0 / 40%);
   --bg: #0f172a;
   --bg-light: #1e293b;
   --text: #f1f5f9;
@@ -968,6 +970,23 @@ video {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.e2ee-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.375rem;
+  user-select: none;
+}
+
+.e2ee-badge.off {
+  color: var(--warn);
+  border-color: var(--warn-border);
 }
 
 .online-indicator-btn {

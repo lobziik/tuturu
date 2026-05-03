@@ -15,8 +15,23 @@ import type {
 } from '../../shared/types';
 import type { Action } from '../state/types';
 import { sendMessage } from './websocket';
+import {
+  setupSenderTransform,
+  setupReceiverTransform,
+  parseNegotiatedCodecs,
+  RTC_ENCODED_INSERTABLE_STREAMS,
+  type NegotiatedCodecs,
+} from '../e2ee/e2ee-transform';
 
 type Dispatch = (action: Action) => void;
+
+/** E2EE configuration for frame-level encryption/decryption on RTP streams. */
+export interface E2eeConfig {
+  /** E2EE Web Worker that performs frame encryption/decryption */
+  worker: Worker;
+  /** AES-GCM CryptoKey shared by all peers in the room */
+  key: CryptoKey;
+}
 
 /**
  * Shared mesh state passed to signaling handlers.
@@ -39,6 +54,174 @@ export interface MeshContext {
  * when the connection is discarded.
  */
 const pendingCandidates = new WeakMap<RTCPeerConnection, RTCIceCandidateInit[]>();
+
+/**
+ * E2EE config stashed per RTCPeerConnection. Looked up by
+ * {@link applyE2eeTransforms} once SDP negotiation finalizes the codec.
+ * WeakMap means the entry vanishes when the PC is collected — no manual cleanup.
+ */
+const e2eeConfigs = new WeakMap<RTCPeerConnection, E2eeConfig>();
+
+/**
+ * Senders/receivers that already have an E2EE transform attached. Reassigning
+ * `.transform` on an endpoint is undefined behavior across browsers, so we
+ * skip on second pass (renegotiation, both call sites firing for one PC).
+ */
+const e2eeAppliedSenders = new WeakSet<RTCRtpSender>();
+const e2eeAppliedReceivers = new WeakSet<RTCRtpReceiver>();
+
+/**
+ * Apply E2EE encrypt/decrypt transforms to every transceiver on `pc`, sourcing
+ * the negotiated codec from an SDP. No-op when the PC has no E2EE config.
+ *
+ * Must be called BEFORE `setRemoteDescription` on the callee path (with the
+ * incoming offer SDP). iOS Safari attaches its receive pipeline the moment
+ * `setRemoteDescription` resolves and silently ignores any
+ * `RTCRtpReceiver.transform` set after that point — the receiver's
+ * decrypt path stays empty and 100% of frames look like they were never
+ * decrypted. Wiring before that point installs the transform onto the
+ * local-side transceivers (created by `addTrack`/`addTransceiver` in
+ * `createPeerConnection`) before Safari locks them in.
+ *
+ * On the caller path (`handleAnswer`) the receivers were already created at
+ * `createPeerConnection` time via `addTrack`, so timing relative to
+ * `setRemoteDescription` matters less; we keep the call there post-SRD with
+ * the answer SDP for codec accuracy.
+ *
+ * Codec source per call site: callee uses the offer's first PT per m-line,
+ * caller uses the answer's. For mesh between two browsers running the same
+ * codec preferences (typical case), both sides land on the same first PT,
+ * so encrypt/decrypt header sizes match. If they didn't, AAD would fail and
+ * the worker counters would show steady `crypto-failed` — easy to spot.
+ *
+ * Throws if a transceiver with an active sender track has no negotiated
+ * codec for that kind — callers (acceptOfferAndAnswer / handleAnswer) sit
+ * inside try/catch blocks that dispatch RTC_FAILED, so the throw propagates
+ * as a proper failure.
+ */
+function applyE2eeTransforms(pc: RTCPeerConnection, sdp: string): void {
+  const e2ee = e2eeConfigs.get(pc);
+  if (!e2ee) return;
+  applyE2eeTransformsWithConfig(pc, sdp, e2ee);
+}
+
+/**
+ * Wire the encrypt transform onto a sender, given the SDP-parsed codec info.
+ *
+ * Skips already-wired senders. When the sender's kind has no codec in the
+ * SDP, distinguishes two sub-cases via the rejected-kinds set:
+ *  - kind in `negotiated.rejected` (m-line port=0) → silent skip; the
+ *    remote opted out, no media will flow on this sender.
+ *  - kind absent from `negotiated.codecs` AND not in `negotiated.rejected`
+ *    → SDP defect; fail loud so the caller's try/catch dispatches
+ *    RTC_FAILED.
+ *
+ * Crucially, this check is purely SDP-driven and works on both caller and
+ * callee paths. `transceiver.currentDirection` is `null` until the first
+ * `setRemoteDescription`, so any logic gated on it would silently miss
+ * defects on the callee path — exactly the case where applyE2eeTransforms
+ * is called BEFORE SRD on iOS Safari.
+ */
+function wireSenderTransform(
+  transceiver: RTCRtpTransceiver,
+  negotiated: NegotiatedCodecs,
+  e2ee: E2eeConfig,
+): void {
+  const sender = transceiver.sender;
+  if (!sender.track || e2eeAppliedSenders.has(sender)) return;
+
+  const kind = sender.track.kind;
+  if (kind !== 'audio' && kind !== 'video') {
+    throw new Error(
+      `[E2EE] Sender has unexpected track kind: ${kind} (mid=${transceiver.mid ?? '?'})`,
+    );
+  }
+
+  const codec = negotiated.codecs[kind];
+  if (!codec) {
+    if (negotiated.rejected.has(kind)) return;
+    throw new Error(
+      `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${kind}) has no negotiated codec in offer/answer SDP`,
+    );
+  }
+
+  setupSenderTransform(sender, e2ee.key, e2ee.worker, codec);
+  e2eeAppliedSenders.add(sender);
+}
+
+/**
+ * Wire the decrypt transform onto a receiver, given the SDP-parsed codec info.
+ *
+ * Silently skips when the kind has no codec in the SDP — both "rejected
+ * m-line" and "no m-line at all" mean no media flows, so a transform would
+ * never fire either way. Already-wired receivers are skipped via the
+ * WeakSet guard.
+ */
+function wireReceiverTransform(
+  transceiver: RTCRtpTransceiver,
+  negotiated: NegotiatedCodecs,
+  e2ee: E2eeConfig,
+): void {
+  const receiver = transceiver.receiver;
+  if (e2eeAppliedReceivers.has(receiver)) return;
+
+  const kind = receiver.track.kind;
+  if (kind !== 'audio' && kind !== 'video') return;
+
+  const codec = negotiated.codecs[kind];
+  if (!codec) return;
+
+  setupReceiverTransform(receiver, e2ee.key, e2ee.worker, codec);
+  e2eeAppliedReceivers.add(receiver);
+}
+
+/**
+ * Pure version of {@link applyE2eeTransforms} that takes the E2EE config
+ * explicitly instead of looking it up through the module-private WeakMap.
+ * Behaves identically; lifted out so unit tests can drive the function
+ * with a mock peer connection without relying on the WeakMap registration.
+ *
+ * @internal Exported for testing.
+ */
+export function applyE2eeTransformsWithConfig(
+  pc: RTCPeerConnection,
+  sdp: string,
+  e2ee: E2eeConfig,
+): void {
+  const negotiated = parseNegotiatedCodecs(sdp);
+  for (const transceiver of pc.getTransceivers()) {
+    wireSenderTransform(transceiver, negotiated, e2ee);
+    wireReceiverTransform(transceiver, negotiated, e2ee);
+  }
+}
+
+/**
+ * Restrict every video transceiver on `pc` to VP8 (plus the RTX/red/ulpfec
+ * helpers some Safari versions expect to see alongside).
+ *
+ * Mesh-only — the SFU server router caps already enforce VP8-only. Throws
+ * when VP8 is missing from the browser's codec list: failing here is far
+ * better than letting the call set up only to negotiate an E2EE-incompatible
+ * codec. Must be called before any `createOffer`/`createAnswer`.
+ */
+function applyVp8VideoPreference(pc: RTCPeerConnection): void {
+  const caps = RTCRtpReceiver.getCapabilities('video');
+  if (!caps) {
+    throw new Error('[E2EE] RTCRtpReceiver.getCapabilities("video") returned null');
+  }
+  const vp8 = caps.codecs.filter((c) => /^video\/vp8$/i.test(c.mimeType));
+  if (vp8.length === 0) {
+    throw new Error('[E2EE] Browser does not advertise VP8 — cannot enforce E2EE-safe codec');
+  }
+  const helpers = caps.codecs.filter((c) => /^video\/(rtx|red|ulpfec)$/i.test(c.mimeType));
+  const ordered = [...vp8, ...helpers];
+
+  for (const t of pc.getTransceivers()) {
+    const kind = t.sender.track?.kind ?? t.receiver.track?.kind ?? null;
+    if (kind !== 'video') continue;
+    t.setCodecPreferences(ordered);
+  }
+}
 
 /** Apply buffered ICE candidates after remote description has been set */
 async function flushPendingCandidates(
@@ -77,6 +260,7 @@ interface PeerConnectionConfig {
  * @param ws - WebSocket for sending ICE candidates
  * @param dispatch - State machine dispatch function
  * @param targetPeerId - Remote peer this connection is for (used in signaling and actions)
+ * @param e2ee - Optional E2EE config for frame-level encryption on RTP streams
  * @returns Configured RTCPeerConnection instance
  */
 export function createPeerConnection(
@@ -85,18 +269,25 @@ export function createPeerConnection(
   ws: WebSocket | null,
   dispatch: Dispatch,
   targetPeerId: string,
+  e2ee?: E2eeConfig,
 ): RTCPeerConnection {
   console.log(`[RTC:${targetPeerId}] Creating peer connection`);
   console.log(`[RTC:${targetPeerId}] ICE transport policy:`, config.iceTransportPolicy);
 
-  const pc = new RTCPeerConnection({
+  // RTC_ENCODED_INSERTABLE_STREAMS is the Chrome-only flag that actually
+  // hooks RTCRtpScriptTransform up to the worker — see its doc-block in
+  // e2ee-transform.ts. Shared with the SFU `additionalSettings` so both
+  // topologies use the exact same shape and one place documents it.
+  const pcConfig: RTCConfiguration = {
     iceServers: config.iceServers.map((s) => ({
       urls: s.urls,
       ...(s.username !== undefined && { username: s.username }),
       ...(s.credential !== undefined && { credential: s.credential }),
     })),
     iceTransportPolicy: config.iceTransportPolicy,
-  });
+    ...RTC_ENCODED_INSERTABLE_STREAMS,
+  };
+  const pc = new RTCPeerConnection(pcConfig);
 
   if (localStream) {
     localStream.getTracks().forEach((track) => {
@@ -108,6 +299,19 @@ export function createPeerConnection(
       pc.addTransceiver('video', { direction: 'recvonly' });
       console.log(`[RTC:${targetPeerId}] Added recvonly video transceiver (audio-only mode)`);
     }
+  }
+
+  // Stash the E2EE config; applyE2eeTransforms wires up the actual sender/
+  // receiver transforms once SDP negotiation has settled the codec on this
+  // side (see applyE2eeTransforms — codec is unknown in mesh until the
+  // answer SDP is applied, so we can't set transforms here).
+  if (e2ee) {
+    e2eeConfigs.set(pc, e2ee);
+    // Restrict video to VP8 before any offer/answer is created. Safari's
+    // H264 path produces frame metadata that's incompatible with Chrome's
+    // E2EE pipeline, so we keep mesh on VP8 whenever E2EE is on. SFU side
+    // already enforces VP8 via mediasoup router caps.
+    applyVp8VideoPreference(pc);
   }
 
   pc.ontrack = (event: RTCTrackEvent) => {
@@ -230,6 +434,21 @@ async function acceptOfferAndAnswer(
 ): Promise<void> {
   const { peerConnections, dispatch } = ctx;
   try {
+    if (!offer.sdp) {
+      dispatch({
+        type: 'RTC_FAILED',
+        reason: 'Received offer has no SDP',
+        peerId: fromPeerId,
+      });
+      return;
+    }
+    // Wire E2EE transforms BEFORE setRemoteDescription. iOS Safari attaches
+    // its receive pipeline the moment SRD resolves; transforms set after
+    // that point are silently ignored on the receiver, so 0 frames ever
+    // get decrypted. Codec source is the offer's first PT — see
+    // applyE2eeTransforms doc-block for the codec-agreement assumption.
+    applyE2eeTransforms(pc, offer.sdp);
+
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     if (peerConnections.get(fromPeerId) !== pc) return;
     await flushPendingCandidates(pc, peerConnections, fromPeerId);
@@ -326,6 +545,17 @@ export async function handleAnswer(
   try {
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
     if (peerConnections.get(fromPeerId) !== pc) return;
+    if (!answer.sdp) {
+      dispatch({
+        type: 'RTC_FAILED',
+        reason: 'Received answer has no SDP',
+        peerId: fromPeerId,
+      });
+      return;
+    }
+    // Remote answer just locked in the codec on this side — wire E2EE transforms
+    // before ICE/DTLS open the data path.
+    applyE2eeTransforms(pc, answer.sdp);
     await flushPendingCandidates(pc, peerConnections, fromPeerId);
     if (peerConnections.get(fromPeerId) !== pc) return;
     console.log(`[RTC:${fromPeerId}] Answer received and set`);

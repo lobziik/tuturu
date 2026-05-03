@@ -16,6 +16,7 @@
  * @module state/effects/sfu
  */
 
+import type { types as msTypes } from 'mediasoup-client';
 import {
   createSfuSendTransport,
   createSfuRecvTransport,
@@ -28,6 +29,7 @@ import {
   createE2eeWorker,
   setupSenderTransform,
   setupReceiverTransform,
+  normalizeCodec,
 } from '../../e2ee/e2ee-transform';
 import { sendMessage } from '../../services/websocket';
 import type { EffectContext, EffectArgs } from './types';
@@ -36,6 +38,16 @@ import { getScreen, getIceConfig } from './types';
 /** Check if SFU mode is active in the current state. */
 function isSfuMode(args: EffectArgs): boolean {
   return args.newState.phase === 'room' && args.newState.sfuMode;
+}
+
+/**
+ * Check if the server requires E2EE for media. When false, we skip wiring
+ * RTCRtpScriptTransform on producers/consumers and the call runs as plain
+ * WebRTC (server-side mediasoup is fine with this — the script transform is
+ * purely a client-side concern).
+ */
+function isE2eeRequired(args: EffectArgs): boolean {
+  return args.newState.phase === 'room' && args.newState.e2eeMediaEnabled;
 }
 
 /** MEDIA_ACQUIRED → send join-call + sfu-join (first step: null caps to get router caps) */
@@ -69,8 +81,20 @@ function handleSfuRouterCaps(ctx: EffectContext, args: EffectArgs): void {
     try {
       const device = await dm.loadDevice(action.rtpCapabilities);
 
-      if (isE2eeSupported() && !refs.e2eeWorker.current) {
+      if (isE2eeRequired(args) && !refs.e2eeWorker.current) {
+        if (!isE2eeSupported()) {
+          // refuseUnsupportedBrowser at JOINED_ROOM should have caught this.
+          // Reaching here = the gate regressed. Mirror mesh's buildE2eeConfig
+          // throw so we never silently produce/consume in plaintext while the
+          // server policy says E2EE is required.
+          throw new Error(
+            '[E2EE] Server requires E2EE but RTCRtpScriptTransform is not available in this browser',
+          );
+        }
         refs.e2eeWorker.current = createE2eeWorker();
+        if (!refs.e2eeWorker.current) {
+          throw new Error('[E2EE] createE2eeWorker returned null despite feature detection');
+        }
       }
 
       sendMessage(refs.ws.current, {
@@ -149,11 +173,31 @@ function handleSfuTransportCreated(ctx: EffectContext, args: EffectArgs): void {
           for (const [kind, producer] of producers) {
             refs.sfuProducers.current.set(kind, producer);
 
-            if (refs.e2eeWorker.current && refs.aesKey.current && producer.rtpSender) {
+            if (isE2eeRequired(args)) {
+              // refuseUnsupportedBrowser + handleSfuRouterCaps already
+              // guaranteed worker + key by the time we get here. A missing
+              // rtpSender on a freshly-produced track would be a
+              // mediasoup-client API regression. Treat all three as
+              // assertion failures so the caller's catch surfaces them as
+              // RTC_FAILED rather than silently producing in plaintext
+              // while the server policy says E2EE is required.
+              if (!refs.e2eeWorker.current || !refs.aesKey.current) {
+                throw new Error(
+                  '[E2EE] producer transform: worker/key missing despite isE2eeRequired',
+                );
+              }
+              if (!producer.rtpSender) {
+                throw new Error('[E2EE] producer.rtpSender missing after produce()');
+              }
+              // mediasoup contract: rtpParameters.codecs is non-empty after
+              // produce(). Throws (caught below → RTC_FAILED) on any codec
+              // outside what the SFU router negotiates.
+              const codec = normalizeCodec(producer.rtpParameters.codecs[0]!.mimeType);
               setupSenderTransform(
                 producer.rtpSender,
                 refs.aesKey.current,
                 refs.e2eeWorker.current,
+                codec,
               );
             }
           }
@@ -196,8 +240,9 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
   }
 
   void (async () => {
+    let consumer: msTypes.Consumer | undefined;
     try {
-      const consumer = await createConsumer(recvTransport, {
+      consumer = await createConsumer(recvTransport, {
         peerId: action.peerId,
         producerId: action.producerId,
         consumerId: action.consumerId,
@@ -208,8 +253,32 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
 
       refs.sfuConsumers.current.set(consumer.id, consumer);
 
-      if (refs.e2eeWorker.current && refs.aesKey.current && consumer.rtpReceiver) {
-        setupReceiverTransform(consumer.rtpReceiver, refs.aesKey.current, refs.e2eeWorker.current);
+      if (isE2eeRequired(args)) {
+        // Mirrors the producer-side assertion — defense-in-depth for the
+        // case where the JOINED_ROOM gate or handleSfuRouterCaps regressed.
+        // Without these throws we'd silently consume in plaintext while
+        // the server requires E2EE.
+        if (!refs.e2eeWorker.current || !refs.aesKey.current) {
+          throw new Error('[E2EE] consumer transform: worker/key missing despite isE2eeRequired');
+        }
+        if (!consumer.rtpReceiver) {
+          throw new Error('[E2EE] consumer.rtpReceiver missing after consume()');
+        }
+        const codec = normalizeCodec(consumer.rtpParameters.codecs[0]!.mimeType);
+        // SRD-timing note: transport.consume() does addTransceiver + SRD
+        // under the hood, so we're attaching .transform AFTER SRD here.
+        // applyE2eeTransforms (mesh callee path) must wire transforms
+        // BEFORE SRD on iOS Safari to avoid losing 100% of decrypted
+        // frames; that constraint does NOT bite here, empirically. If you
+        // ever need to move this call site (or replace mediasoup-client),
+        // verify on a real iOS device first — a regression in this path
+        // looks like silent loss of incoming peer media.
+        setupReceiverTransform(
+          consumer.rtpReceiver,
+          refs.aesKey.current,
+          refs.e2eeWorker.current,
+          codec,
+        );
       }
 
       const existingStream = refs.remoteStreams.current.get(action.peerId) ?? null;
@@ -230,9 +299,29 @@ function handleSfuNewConsumer(ctx: EffectContext, args: EffectArgs): void {
         consumerId: consumer.id,
       });
     } catch (error) {
-      console.error(
-        `[SFU:Effects] Failed to create consumer: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[SFU:Effects] Failed to create consumer: ${message}`);
+      // Drop the half-built consumer if we got that far — without this it sits
+      // in sfuConsumers forever, the server-side consumer stays paused (we
+      // never sent sfu-consume-resume), and the peer slot in the UI never
+      // resolves.
+      if (consumer) {
+        refs.sfuConsumers.current.delete(consumer.id);
+        try {
+          consumer.close();
+        } catch {
+          // Already-closed / race during teardown — nothing to do.
+        }
+      }
+      // Surface the failure on the SPECIFIC peer, not 'sfu': the producer
+      // branch fails the SFU connection as a whole because produce()
+      // failures imply our upstream is broken; consume() failures are
+      // bound to one peer's track.
+      dispatch({
+        type: 'RTC_FAILED',
+        reason: `SFU consume failed for peer ${action.peerId}: ${message}`,
+        peerId: action.peerId,
+      });
     }
   })();
 }

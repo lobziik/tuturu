@@ -174,6 +174,8 @@ export function App() {
           callActive={roomState.callActive}
           remoteStreams={refs.remoteStreams.current}
           overlay={roomState.overlay}
+          e2eeMediaEnabled={roomState.e2eeMediaEnabled}
+          sfuMode={roomState.sfuMode}
           dispatch={dispatch}
         />
       );

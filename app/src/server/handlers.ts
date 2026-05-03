@@ -39,6 +39,8 @@ interface HandlerDeps {
   pongTimeoutMs: number;
   /** SFU peer handler — optional, SFU features disabled when absent. */
   sfuPeerHandler?: SfuPeerHandler;
+  /** Whether to require client-side E2EE (RTCRtpScriptTransform) for media. */
+  e2eeMediaEnabled: boolean;
 }
 
 /** Public handler interface used by the WS router */
@@ -181,6 +183,7 @@ export function createHandlers(deps: HandlerDeps): Handlers {
       iceServers,
       iceTransportPolicy: iceConfig.forceRelay ? 'relay' : 'all',
       sfuEnabled: !!deps.sfuPeerHandler,
+      e2eeMediaEnabled: deps.e2eeMediaEnabled,
     });
 
     // Send peers list to the new peer

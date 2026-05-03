@@ -40,34 +40,6 @@ export function normalizeCodec(mimeType: string): E2eeCodec {
   }
 }
 
-/**
- * Parse the negotiated codec per media kind out of an SDP.
- *
- * For each `m=audio`/`m=video` section, takes the first payload type in the
- * m-line and resolves it through the section's `a=rtpmap:` entry to a codec
- * name. In an answer SDP this PT is the agreed codec by definition. In an
- * offer SDP it is only the offerer's first preference — but we call it from
- * the callee path with the offer SDP, and that produces the right codec
- * **only because both sides force VP8 first via `setCodecPreferences` in
- * `services/webrtc.ts` before any offer is created**. If that invariant
- * ever breaks (e.g. mesh stops enforcing VP8, or a multi-codec future
- * arrives), callers using offer SDP must switch to answer SDP and accept
- * the AAD mismatch window during rollout.
- *
- * Exists because `RTCRtpSender.getParameters().codecs` / `...Receiver...`
- * return an empty array on iOS Safari right after SDP apply — the receiver
- * side never gets an E2EE transform attached, so decryption silently drops
- * 100% of frames. SDP always carries the negotiated PT, so it's a reliable
- * source in that window.
- *
- * Returns both the codec map AND the set of explicitly-rejected kinds
- * (port=0 m-lines). Callers need the rejection set to distinguish "no
- * m-line at all" (audio-only call, SDP defect) from "remote opted out"
- * — the sender side throws on the former, silent-skips on the latter.
- *
- * Throws on malformed SDP or unsupported codecs per the project's
- * fail-fast stance.
- */
 /** State threaded through the SDP scan: the current m-section and its first PT. */
 interface MSectionState {
   kind: 'audio' | 'video' | null;
@@ -136,6 +108,34 @@ export interface NegotiatedCodecs {
   rejected: Set<'audio' | 'video'>;
 }
 
+/**
+ * Parse the negotiated codec per media kind out of an SDP.
+ *
+ * For each `m=audio`/`m=video` section, takes the first payload type in the
+ * m-line and resolves it through the section's `a=rtpmap:` entry to a codec
+ * name. In an answer SDP this PT is the agreed codec by definition. In an
+ * offer SDP it is only the offerer's first preference — but we call it from
+ * the callee path with the offer SDP, and that produces the right codec
+ * **only because both sides force VP8 first via `setCodecPreferences` in
+ * `services/webrtc.ts` before any offer is created**. If that invariant
+ * ever breaks (e.g. mesh stops enforcing VP8, or a multi-codec future
+ * arrives), callers using offer SDP must switch to answer SDP and accept
+ * the AAD mismatch window during rollout.
+ *
+ * Exists because `RTCRtpSender.getParameters().codecs` / `...Receiver...`
+ * return an empty array on iOS Safari right after SDP apply — the receiver
+ * side never gets an E2EE transform attached, so decryption silently drops
+ * 100% of frames. SDP always carries the negotiated PT, so it's a reliable
+ * source in that window.
+ *
+ * Returns both the codec map AND the set of explicitly-rejected kinds
+ * (port=0 m-lines). Callers need the rejection set to distinguish "no
+ * m-line at all" (audio-only call, SDP defect) from "remote opted out"
+ * — the sender side throws on the former, silent-skips on the latter.
+ *
+ * Throws on malformed SDP or unsupported codecs per the project's
+ * fail-fast stance.
+ */
 export function parseNegotiatedCodecs(sdp: string): NegotiatedCodecs {
   const codecs: Partial<Record<'audio' | 'video', E2eeCodec>> = {};
   const rejected = new Set<'audio' | 'video'>();

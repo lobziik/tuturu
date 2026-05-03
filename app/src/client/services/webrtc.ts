@@ -104,6 +104,77 @@ function applyE2eeTransforms(pc: RTCPeerConnection, sdp: string): void {
   applyE2eeTransformsWithConfig(pc, sdp, e2ee);
 }
 
+/** Per-kind codec map returned by {@link parseNegotiatedCodecs}. */
+type CodecMap = Partial<Record<'audio' | 'video', 'opus' | 'vp8'>>;
+
+/**
+ * Wire the encrypt transform onto a sender, given the parsed codec map.
+ *
+ * Skips already-wired senders, recvonly transceivers, and the rejected-
+ * m-line case (no codec for this kind AND transceiver isn't going to send).
+ * Throws when the sender IS active but the SDP has no codec for it — the
+ * caller's try/catch surfaces this as RTC_FAILED.
+ */
+function wireSenderTransform(
+  transceiver: RTCRtpTransceiver,
+  codecs: CodecMap,
+  e2ee: E2eeConfig,
+): void {
+  const sender = transceiver.sender;
+  if (!sender.track || e2eeAppliedSenders.has(sender)) return;
+
+  const kind = sender.track.kind;
+  if (kind !== 'audio' && kind !== 'video') {
+    throw new Error(
+      `[E2EE] Sender has unexpected track kind: ${kind} (mid=${transceiver.mid ?? '?'})`,
+    );
+  }
+
+  const codec = codecs[kind];
+  if (!codec) {
+    // Codec missing for this kind. Two sub-cases:
+    //  1. The m-line was rejected (port=0) — currentDirection settles to
+    //     inactive/recvonly/stopped. No media will flow on this sender;
+    //     silent skip mirrors the receiver branch's port=0 behavior.
+    //  2. SDP genuinely lacks an rtpmap for an active sender. Fail loud
+    //     so the caller dispatches RTC_FAILED.
+    const willSend =
+      transceiver.currentDirection === 'sendrecv' || transceiver.currentDirection === 'sendonly';
+    if (!willSend) return;
+    throw new Error(
+      `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${kind}) has no negotiated codec in answer SDP`,
+    );
+  }
+
+  setupSenderTransform(sender, e2ee.key, e2ee.worker, codec);
+  e2eeAppliedSenders.add(sender);
+}
+
+/**
+ * Wire the decrypt transform onto a receiver, given the parsed codec map.
+ *
+ * Silently skips when the m-line was rejected (no codec for this kind) —
+ * no media flows, so a transform would never fire. Already-wired receivers
+ * are skipped via the WeakSet guard.
+ */
+function wireReceiverTransform(
+  transceiver: RTCRtpTransceiver,
+  codecs: CodecMap,
+  e2ee: E2eeConfig,
+): void {
+  const receiver = transceiver.receiver;
+  if (e2eeAppliedReceivers.has(receiver)) return;
+
+  const kind = receiver.track.kind;
+  if (kind !== 'audio' && kind !== 'video') return;
+
+  const codec = codecs[kind];
+  if (!codec) return;
+
+  setupReceiverTransform(receiver, e2ee.key, e2ee.worker, codec);
+  e2eeAppliedReceivers.add(receiver);
+}
+
 /**
  * Pure version of {@link applyE2eeTransforms} that takes the E2EE config
  * explicitly instead of looking it up through the module-private WeakMap.
@@ -118,50 +189,9 @@ export function applyE2eeTransformsWithConfig(
   e2ee: E2eeConfig,
 ): void {
   const codecs = parseNegotiatedCodecs(sdp);
-
   for (const transceiver of pc.getTransceivers()) {
-    const sender = transceiver.sender;
-    if (sender.track && !e2eeAppliedSenders.has(sender)) {
-      const kind = sender.track.kind;
-      if (kind !== 'audio' && kind !== 'video') {
-        throw new Error(
-          `[E2EE] Sender has unexpected track kind: ${kind} (mid=${transceiver.mid ?? '?'})`,
-        );
-      }
-      const codec = codecs[kind];
-      if (!codec) {
-        // Codec missing for this kind. Distinguish two sub-cases:
-        //  1. The m-line was rejected (port=0) — receiver-only / inactive
-        //     transceiver. No media will flow on this sender; wiring a
-        //     transform would no-op forever and throwing here would fail
-        //     the call on a perfectly legitimate audio-only-from-remote
-        //     scenario. Mirror the receiver branch's port=0 silent skip.
-        //  2. SDP genuinely lacks an rtpmap for this PT. Throw so the
-        //     caller's try/catch dispatches RTC_FAILED.
-        const willSend =
-          transceiver.currentDirection === 'sendrecv' ||
-          transceiver.currentDirection === 'sendonly';
-        if (!willSend) continue;
-        throw new Error(
-          `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${kind}) has no negotiated codec in answer SDP`,
-        );
-      }
-      setupSenderTransform(sender, e2ee.key, e2ee.worker, codec);
-      e2eeAppliedSenders.add(sender);
-    }
-
-    const receiver = transceiver.receiver;
-    if (!e2eeAppliedReceivers.has(receiver)) {
-      const kind = receiver.track.kind;
-      if (kind !== 'audio' && kind !== 'video') continue;
-      // Absent means the m-line was rejected (port=0) — typically a remote
-      // peer declining recvonly video on an audio-only call. No media
-      // flows, so skip wiring a transform that would never fire.
-      const codec = codecs[kind];
-      if (!codec) continue;
-      setupReceiverTransform(receiver, e2ee.key, e2ee.worker, codec);
-      e2eeAppliedReceivers.add(receiver);
-    }
+    wireSenderTransform(transceiver, codecs, e2ee);
+    wireReceiverTransform(transceiver, codecs, e2ee);
   }
 }
 

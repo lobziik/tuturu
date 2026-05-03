@@ -19,7 +19,7 @@ export function handleErrorEffects(ctx: EffectContext, args: EffectArgs): void {
     if (refs.errorTimeout.current !== null) {
       clearTimeout(refs.errorTimeout.current);
     }
-    refs.errorTimeout.current = window.setTimeout(() => {
+    refs.errorTimeout.current = globalThis.setTimeout(() => {
       dispatch({ type: 'DISMISS_ERROR' });
       refs.errorTimeout.current = null;
     }, 5000);

@@ -38,7 +38,7 @@ export function App() {
   const peerConnectionsRef = useRef(new Map<string, RTCPeerConnection>());
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamsRef = useRef(new Map<string, MediaStream>());
-  const errorTimeoutRef = useRef<number | null>(null);
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aesKeyRef = useRef<CryptoKey | null>(null);
   const dbRef = useRef<IDBDatabase | null>(null);
   const deadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

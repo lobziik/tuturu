@@ -29,7 +29,7 @@ export interface ResourceRefs {
   localStream: { current: MediaStream | null };
   /** Remote media streams keyed by peerId (mesh: one per peer) */
   remoteStreams: { current: Map<string, MediaStream> };
-  errorTimeout: { current: number | null };
+  errorTimeout: { current: ReturnType<typeof setTimeout> | null };
   aesKey: { current: CryptoKey | null };
   /** IndexedDB connection for chat protocol operations */
   db: { current: IDBDatabase | null };

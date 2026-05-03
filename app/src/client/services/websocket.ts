@@ -37,8 +37,8 @@ interface WsRefs {
 
 /** Create WebSocket connection to signaling server */
 export function createWebSocket(): WebSocket {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws`;
+  const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${globalThis.location.host}/ws`;
   console.log('[WS] Creating connection to', wsUrl);
   return new WebSocket(wsUrl);
 }

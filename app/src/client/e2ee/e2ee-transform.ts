@@ -104,6 +104,13 @@ export interface NegotiatedCodecs {
    * (caller reads answer SDP, callee reads offer SDP — both carry port=0
    * authoritatively, unlike `transceiver.currentDirection` which is `null`
    * before the first `setRemoteDescription`).
+   *
+   * **Only port=0 is captured here.** A non-zero port + `a=inactive`
+   * combination is also "no media will flow", but the codec parses
+   * normally and the kind ends up in `codecs`, not `rejected`. We don't
+   * model that today because no caller distinguishes it; if a future
+   * diagnostic needs to ("why are pipe counters at zero?"), parse the
+   * direction attribute alongside the m-line port.
    */
   rejected: Set<'audio' | 'video'>;
 }

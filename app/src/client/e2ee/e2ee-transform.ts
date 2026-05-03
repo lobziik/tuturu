@@ -63,49 +63,64 @@ export function normalizeCodec(mimeType: string): E2eeCodec {
  * to handle. Throws on malformed SDP or unsupported codecs per the
  * project's fail-fast stance.
  */
+/** State threaded through the SDP scan: the current m-section and its first PT. */
+interface MSectionState {
+  kind: 'audio' | 'video' | null;
+  pt: string | null;
+}
+
+/**
+ * Parse a single `m=<media> <port> <proto> <fmt>...` line into the section
+ * state used by {@link parseNegotiatedCodecs}. Rejected m-lines (port=0) and
+ * unsupported media types reset state — subsequent rtpmap lines are skipped
+ * by the caller's `!pt` guard.
+ */
+function parseMLine(line: string): MSectionState {
+  const parts = line.slice(2).split(' ');
+  const [media, port, , firstPt] = parts;
+  if ((media === 'audio' || media === 'video') && port !== '0' && firstPt) {
+    return { kind: media, pt: firstPt };
+  }
+  return { kind: null, pt: null };
+}
+
+/**
+ * Extract the codec name from an `a=rtpmap:<pt> <codec>/<rate>[/<channels>]`
+ * line if its PT matches `expectedPt`. Returns null when the line doesn't
+ * apply (different PT, malformed, etc.) — the caller continues scanning.
+ */
+function parseRtpmapCodec(line: string, expectedPt: string): string | null {
+  const rest = line.slice('a=rtpmap:'.length);
+  const spaceIdx = rest.indexOf(' ');
+  if (spaceIdx < 0) return null;
+  const pt = rest.slice(0, spaceIdx);
+  if (pt !== expectedPt) return null;
+  const remainder = rest.slice(spaceIdx + 1);
+  const slashIdx = remainder.indexOf('/');
+  return slashIdx >= 0 ? remainder.slice(0, slashIdx) : remainder;
+}
+
 export function parseNegotiatedCodecs(sdp: string): Partial<Record<'audio' | 'video', E2eeCodec>> {
   const result: Partial<Record<'audio' | 'video', E2eeCodec>> = {};
-  const lines = sdp.split(/\r?\n/);
+  let section: MSectionState = { kind: null, pt: null };
 
-  let currentKind: 'audio' | 'video' | null = null;
-  let currentPt: string | null = null;
-
-  for (const line of lines) {
+  for (const line of sdp.split(/\r?\n/)) {
     if (line.startsWith('m=')) {
-      // m=<media> <port> <proto> <fmt> ...
-      const parts = line.slice(2).split(' ');
-      const media = parts[0];
-      const port = parts[1];
-      const firstPt = parts[3];
-      // Skip rejected m-lines (port=0) — no media flows, nothing to wire.
-      if ((media === 'audio' || media === 'video') && port !== '0' && firstPt) {
-        currentKind = media;
-        currentPt = firstPt;
-      } else {
-        currentKind = null;
-        currentPt = null;
-      }
+      section = parseMLine(line);
       continue;
     }
-    if (!currentKind || !currentPt) continue;
+    if (!section.kind || !section.pt) continue;
     if (!line.startsWith('a=rtpmap:')) continue;
 
-    // a=rtpmap:<pt> <codec>/<rate>[/<channels>]
-    const rest = line.slice('a=rtpmap:'.length);
-    const spaceIdx = rest.indexOf(' ');
-    if (spaceIdx < 0) continue;
-    const pt = rest.slice(0, spaceIdx);
-    if (pt !== currentPt) continue;
+    const codecName = parseRtpmapCodec(line, section.pt);
+    if (codecName === null) continue;
 
-    const remainder = rest.slice(spaceIdx + 1);
-    const slashIdx = remainder.indexOf('/');
-    const codecName = slashIdx >= 0 ? remainder.slice(0, slashIdx) : remainder;
-    result[currentKind] = normalizeCodec(`${currentKind}/${codecName}`);
-    // Stop matching further rtpmap lines for this m-section. currentKind
+    result[section.kind] = normalizeCodec(`${section.kind}/${codecName}`);
+    // Stop matching further rtpmap lines for this m-section. section.kind
     // is intentionally NOT cleared — the next `m=` line resets it; until
-    // then the `if (!currentPt) continue` guard above skips any rtpmap
-    // entries from the same section.
-    currentPt = null;
+    // then the `!section.pt` guard above skips any rtpmap entries from
+    // the same section.
+    section = { kind: section.kind, pt: null };
   }
 
   return result;

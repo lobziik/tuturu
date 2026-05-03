@@ -81,10 +81,10 @@ function isMobileViewport(): boolean {
 function getSafeAreaInsets(): { top: number; right: number; bottom: number; left: number } {
   const style = getComputedStyle(document.documentElement);
   return {
-    top: parseInt(style.getPropertyValue('--sat') || '0', 10) || 0,
-    right: parseInt(style.getPropertyValue('--sar') || '0', 10) || 0,
-    bottom: parseInt(style.getPropertyValue('--sab') || '0', 10) || 0,
-    left: parseInt(style.getPropertyValue('--sal') || '0', 10) || 0,
+    top: Number.parseInt(style.getPropertyValue('--sat') || '0', 10) || 0,
+    right: Number.parseInt(style.getPropertyValue('--sar') || '0', 10) || 0,
+    bottom: Number.parseInt(style.getPropertyValue('--sab') || '0', 10) || 0,
+    left: Number.parseInt(style.getPropertyValue('--sal') || '0', 10) || 0,
   };
 }
 
@@ -209,8 +209,8 @@ function handlePointerDown(event: PointerEvent): void {
   startY = event.clientY;
 
   // Get current position from style
-  initialLeft = parseFloat(videoElement.style.left) || 0;
-  initialTop = parseFloat(videoElement.style.top) || 0;
+  initialLeft = Number.parseFloat(videoElement.style.left) || 0;
+  initialTop = Number.parseFloat(videoElement.style.top) || 0;
 
   // Disable transition during drag for immediate response
   videoElement.style.transition = 'none';
@@ -271,8 +271,8 @@ function handlePointerUp(event: PointerEvent): void {
   videoElement.releasePointerCapture(event.pointerId);
 
   // Get current position
-  const currentX = parseFloat(videoElement.style.left) || 0;
-  const currentY = parseFloat(videoElement.style.top) || 0;
+  const currentX = Number.parseFloat(videoElement.style.left) || 0;
+  const currentY = Number.parseFloat(videoElement.style.top) || 0;
 
   // Determine closest corner and snap
   const corner = getClosestCorner(videoElement, currentX, currentY);
@@ -303,8 +303,8 @@ function handlePointerCancel(event: PointerEvent): void {
   videoElement.classList.remove('pip-dragging');
 
   // Snap to nearest corner from current position
-  const currentX = parseFloat(videoElement.style.left) || 0;
-  const currentY = parseFloat(videoElement.style.top) || 0;
+  const currentX = Number.parseFloat(videoElement.style.left) || 0;
+  const currentY = Number.parseFloat(videoElement.style.top) || 0;
 
   const corner = getClosestCorner(videoElement, currentX, currentY);
   const targetPosition = getCornerPosition(videoElement, corner);
@@ -340,8 +340,8 @@ function handleResize(): void {
   if (!videoElement || isDragging) return;
 
   // Get current position
-  const currentX = parseFloat(videoElement.style.left) || 0;
-  const currentY = parseFloat(videoElement.style.top) || 0;
+  const currentX = Number.parseFloat(videoElement.style.left) || 0;
+  const currentY = Number.parseFloat(videoElement.style.top) || 0;
 
   // Find closest corner in new viewport
   const corner = getClosestCorner(videoElement, currentX, currentY);

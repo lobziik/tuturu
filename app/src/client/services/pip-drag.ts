@@ -387,8 +387,8 @@ export function setupPipDrag(element: HTMLVideoElement): void {
   element.addEventListener('pointercancel', handlePointerCancel);
 
   // Handle viewport resize
-  window.addEventListener('resize', handleResize);
-  window.addEventListener('orientationchange', handleResize);
+  globalThis.addEventListener('resize', handleResize);
+  globalThis.addEventListener('orientationchange', handleResize);
 }
 
 /**
@@ -404,8 +404,8 @@ export function cleanupPipDrag(): void {
   videoElement.removeEventListener('pointerup', handlePointerUp);
   videoElement.removeEventListener('pointercancel', handlePointerCancel);
 
-  window.removeEventListener('resize', handleResize);
-  window.removeEventListener('orientationchange', handleResize);
+  globalThis.removeEventListener('resize', handleResize);
+  globalThis.removeEventListener('orientationchange', handleResize);
 
   // Reset styles
   videoElement.style.left = '';

@@ -173,7 +173,7 @@ export function CallScreen({
   const statusBarRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hasMultiCams, setHasMultiCams] = useState(false);
-  const statusHideTimeoutRef = useRef<number | null>(null);
+  const statusHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isCall = screen.type === 'call';
   const isWaiting = screen.type === 'waiting-for-peer';
@@ -185,12 +185,12 @@ export function CallScreen({
 
   // Responsive layout
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    window.addEventListener('orientationchange', handleResize);
+    const handleResize = () => setIsMobile(globalThis.innerWidth < 768);
+    globalThis.addEventListener('resize', handleResize);
+    globalThis.addEventListener('orientationchange', handleResize);
     return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
+      globalThis.removeEventListener('resize', handleResize);
+      globalThis.removeEventListener('orientationchange', handleResize);
     };
   }, []);
 
@@ -220,7 +220,7 @@ export function CallScreen({
       if (statusHideTimeoutRef.current !== null) clearTimeout(statusHideTimeoutRef.current);
       const bar = statusBarRef.current;
       if (bar) bar.classList.remove('hidden-overlay');
-      statusHideTimeoutRef.current = window.setTimeout(() => {
+      statusHideTimeoutRef.current = globalThis.setTimeout(() => {
         if (bar) bar.classList.add('hidden-overlay');
         statusHideTimeoutRef.current = null;
       }, 3000);

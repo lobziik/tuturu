@@ -131,7 +131,7 @@ connection without decryption and forwards to a right backend.
                     │
                     │   TLS · :443
                     ▼
-   ┌── nginx  (SNI preread, no decryption) ──┐
+   ┌── nginx  (SNI preread, no decryption)  ──┐
    │                                          │
    │   SNI = a.<domain>  ──►  tuturu-app      │
    │                          :3000           │

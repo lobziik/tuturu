@@ -181,10 +181,14 @@ export function isE2eeSupported(): boolean {
  * Shared between mesh (`createPeerConnection` in `services/webrtc.ts`) and
  * SFU (`additionalSettings` on the WebRtcTransport in `sfu/transport.ts`).
  * Standard `RTCConfiguration` doesn't declare the flag, hence the cast.
+ *
+ * `Object.freeze`'d because both call sites spread it into a fresh
+ * configuration object, but a stray mutation in either consumer would
+ * silently affect every future PC/transport.
  */
-export const RTC_ENCODED_INSERTABLE_STREAMS: Partial<RTCConfiguration> = {
+export const RTC_ENCODED_INSERTABLE_STREAMS: Readonly<Partial<RTCConfiguration>> = Object.freeze({
   encodedInsertableStreams: true,
-} as Partial<RTCConfiguration>;
+} as Partial<RTCConfiguration>);
 
 /**
  * Create an E2EE Web Worker for frame-level encryption/decryption.

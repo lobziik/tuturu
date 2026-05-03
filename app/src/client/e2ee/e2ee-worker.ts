@@ -337,7 +337,13 @@ export function handleRtcTransformEvent(event: Event): void {
   );
 }
 
-// Wire up: the actual browser registration. Side-effecting on import; safe
-// because the worker file is loaded inside a dedicated worker context where
-// `addEventListener` is exactly the worker's event target.
-addEventListener('rtctransform', handleRtcTransformEvent);
+// Wire up: side-effecting on import. Guard against firing in non-worker
+// contexts (Bun test runtime, jsdom, etc.) where the file gets imported
+// purely to drive setupTransform/handleRtcTransformEvent in unit tests.
+// `importScripts` is a function only inside DedicatedWorkerGlobalScope —
+// the worker context check we want here. Reach for it via globalThis so
+// the symbol doesn't need to be in TS lib declarations for non-worker
+// builds.
+if (typeof (globalThis as { importScripts?: unknown }).importScripts === 'function') {
+  addEventListener('rtctransform', handleRtcTransformEvent);
+}

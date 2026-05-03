@@ -37,35 +37,17 @@ export function buildIceServers(clientId: string): IceServerConfig[] {
 
     console.log(`[ICE] Generated ephemeral credentials for ${clientId}, TTL: 4h`);
 
-    // Priority 1: TURNS on 443
-    // Routes through nginx SNI router to coturn:5349
-    iceServers.push({
-      urls: `turns:${domain}:443?transport=tcp`,
-      username,
-      credential,
-    });
-
-    // Priority 2: TURNS on standard TLS port 5349
-    // Direct connection to coturn (fallback if nginx routing fails)
-    iceServers.push({
-      urls: `turns:${domain}:5349?transport=tcp`,
-      username,
-      credential,
-    });
-
-    // Priority 3: TURN TCP on 3478 (unencrypted but standard port)
-    iceServers.push({
-      urls: `turn:${domain}:3478?transport=tcp`,
-      username,
-      credential,
-    });
-
-    // Priority 4: TURN UDP on 3478 (likely blocked in restrictive networks)
-    iceServers.push({
-      urls: `turn:${domain}:3478?transport=udp`,
-      username,
-      credential,
-    });
+    // TURN transports listed in priority order:
+    // 1. TURNS on 443 — routes through nginx SNI router to coturn:5349
+    // 2. TURNS on standard TLS port 5349 — direct fallback if nginx routing fails
+    // 3. TURN TCP on 3478 — unencrypted but standard port
+    // 4. TURN UDP on 3478 — likely blocked in restrictive networks
+    iceServers.push(
+      { urls: `turns:${domain}:443?transport=tcp`, username, credential },
+      { urls: `turns:${domain}:5349?transport=tcp`, username, credential },
+      { urls: `turn:${domain}:3478?transport=tcp`, username, credential },
+      { urls: `turn:${domain}:3478?transport=udp`, username, credential },
+    );
 
     console.log(`[ICE] Configured TURN server: ${domain} (4 transports)`);
   }

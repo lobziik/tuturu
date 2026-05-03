@@ -58,10 +58,15 @@ export function normalizeCodec(mimeType: string): E2eeCodec {
  * return an empty array on iOS Safari right after SDP apply — the receiver
  * side never gets an E2EE transform attached, so decryption silently drops
  * 100% of frames. SDP always carries the negotiated PT, so it's a reliable
- * source in that window. Missing m-lines (audio-only call, rejected
- * recvonly video) are represented by absent keys and left for the caller
- * to handle. Throws on malformed SDP or unsupported codecs per the
- * project's fail-fast stance.
+ * source in that window.
+ *
+ * Returns both the codec map AND the set of explicitly-rejected kinds
+ * (port=0 m-lines). Callers need the rejection set to distinguish "no
+ * m-line at all" (audio-only call, SDP defect) from "remote opted out"
+ * — the sender side throws on the former, silent-skips on the latter.
+ *
+ * Throws on malformed SDP or unsupported codecs per the project's
+ * fail-fast stance.
  */
 /** State threaded through the SDP scan: the current m-section and its first PT. */
 interface MSectionState {
@@ -69,19 +74,33 @@ interface MSectionState {
   pt: string | null;
 }
 
+/** Parsed m-line: section state for the scan + an optional rejected-kind flag. */
+interface ParsedMLine {
+  state: MSectionState;
+  /** Set when the m-line was port=0 — caller records the kind as rejected. */
+  rejectedKind: 'audio' | 'video' | null;
+}
+
 /**
- * Parse a single `m=<media> <port> <proto> <fmt>...` line into the section
- * state used by {@link parseNegotiatedCodecs}. Rejected m-lines (port=0) and
- * unsupported media types reset state — subsequent rtpmap lines are skipped
- * by the caller's `!pt` guard.
+ * Parse a single `m=<media> <port> <proto> <fmt>...` line. Tracks both the
+ * scan state for the rtpmap loop AND whether this line was a port=0
+ * rejection — callers need the latter to distinguish "remote opted out of
+ * this kind" (silent skip OK) from "SDP genuinely lacks this kind" (fail
+ * loud on the sender side).
  */
-function parseMLine(line: string): MSectionState {
+function parseMLine(line: string): ParsedMLine {
   const parts = line.slice(2).split(' ');
   const [media, port, , firstPt] = parts;
-  if ((media === 'audio' || media === 'video') && port !== '0' && firstPt) {
-    return { kind: media, pt: firstPt };
+  if (media !== 'audio' && media !== 'video') {
+    return { state: { kind: null, pt: null }, rejectedKind: null };
   }
-  return { kind: null, pt: null };
+  if (port === '0') {
+    return { state: { kind: null, pt: null }, rejectedKind: media };
+  }
+  if (!firstPt) {
+    return { state: { kind: null, pt: null }, rejectedKind: null };
+  }
+  return { state: { kind: media, pt: firstPt }, rejectedKind: null };
 }
 
 /**
@@ -100,13 +119,33 @@ function parseRtpmapCodec(line: string, expectedPt: string): string | null {
   return slashIdx >= 0 ? remainder.slice(0, slashIdx) : remainder;
 }
 
-export function parseNegotiatedCodecs(sdp: string): Partial<Record<'audio' | 'video', E2eeCodec>> {
-  const result: Partial<Record<'audio' | 'video', E2eeCodec>> = {};
+/** Result of {@link parseNegotiatedCodecs} — codecs by kind plus rejected-kind set. */
+export interface NegotiatedCodecs {
+  /** Resolved codec per media kind; absent key means no m-line at all. */
+  codecs: Partial<Record<'audio' | 'video', E2eeCodec>>;
+  /**
+   * Kinds whose m-line was explicitly rejected (port=0). Distinct from
+   * absent in `codecs`: rejected means the remote opted out and no media
+   * will flow on that kind, so a sender with a track for that kind can be
+   * silently skipped instead of failing loud. Used by `wireSenderTransform`
+   * in `services/webrtc.ts` and works on both caller and callee paths
+   * (caller reads answer SDP, callee reads offer SDP — both carry port=0
+   * authoritatively, unlike `transceiver.currentDirection` which is `null`
+   * before the first `setRemoteDescription`).
+   */
+  rejected: Set<'audio' | 'video'>;
+}
+
+export function parseNegotiatedCodecs(sdp: string): NegotiatedCodecs {
+  const codecs: Partial<Record<'audio' | 'video', E2eeCodec>> = {};
+  const rejected = new Set<'audio' | 'video'>();
   let section: MSectionState = { kind: null, pt: null };
 
   for (const line of sdp.split(/\r?\n/)) {
     if (line.startsWith('m=')) {
-      section = parseMLine(line);
+      const parsed = parseMLine(line);
+      section = parsed.state;
+      if (parsed.rejectedKind) rejected.add(parsed.rejectedKind);
       continue;
     }
     if (!section.kind || !section.pt) continue;
@@ -115,7 +154,7 @@ export function parseNegotiatedCodecs(sdp: string): Partial<Record<'audio' | 'vi
     const codecName = parseRtpmapCodec(line, section.pt);
     if (codecName === null) continue;
 
-    result[section.kind] = normalizeCodec(`${section.kind}/${codecName}`);
+    codecs[section.kind] = normalizeCodec(`${section.kind}/${codecName}`);
     // Stop matching further rtpmap lines for this m-section. section.kind
     // is intentionally NOT cleared — the next `m=` line resets it; until
     // then the `!section.pt` guard above skips any rtpmap entries from
@@ -123,7 +162,7 @@ export function parseNegotiatedCodecs(sdp: string): Partial<Record<'audio' | 'vi
     section = { kind: section.kind, pt: null };
   }
 
-  return result;
+  return { codecs, rejected };
 }
 
 /** Check if the browser supports Encoded Transforms (RTCRtpScriptTransform). */

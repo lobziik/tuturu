@@ -48,6 +48,12 @@ interface MockTransceiver {
   mid: string | null;
   sender: { track: { kind: 'audio' | 'video' } | null };
   receiver: { track: { kind: 'audio' | 'video' } };
+  /**
+   * Real RTCRtpTransceiver.currentDirection is `null` until the first
+   * setRemoteDescription. We retain it on the mock for parity, but
+   * applyE2eeTransformsWithConfig no longer reads it — the rejected-kinds
+   * decision is SDP-driven now.
+   */
   currentDirection: RTCRtpTransceiverDirection | null;
 }
 
@@ -83,6 +89,8 @@ describe('applyE2eeTransformsWithConfig', () => {
   };
 
   test('audio sender + rejected video sender: audio wired, video silently skipped', () => {
+    // currentDirection is set on the mock for realism, but the wire decision
+    // is now SDP-driven via parseNegotiatedCodecs's rejected set.
     const audioTx = buildTransceiver('audio', 'sendrecv');
     const videoTx = buildTransceiver('video', 'inactive');
     const pc = buildPc([audioTx, videoTx]);
@@ -91,15 +99,42 @@ describe('applyE2eeTransformsWithConfig', () => {
       applyE2eeTransformsWithConfig(pc, buildSdp({ audio: 'opus', video: 'rejected' }), e2ee),
     ).not.toThrow();
 
-    // Audio sender got a transform attached, video sender did not.
     expect((audioTx.sender as { transform?: unknown }).transform).toBeDefined();
     expect((videoTx.sender as { transform?: unknown }).transform).toBeUndefined();
   });
 
-  test('video sender with track but currentDirection=sendrecv and no codec: throws', () => {
-    // Genuine SDP defect: m=video present and active, but no rtpmap match.
-    // The function should fail loud rather than silently skip — the call
-    // can't proceed without the codec on a sending transceiver.
+  test('CALLEE PATH: currentDirection=null + active sender + no codec for kind: throws', () => {
+    // Regression coverage for the bug where a `currentDirection` gate
+    // silently skipped active senders on the callee path. On the callee
+    // path we apply transforms BEFORE setRemoteDescription (iOS Safari
+    // timing constraint), so currentDirection is still null. The throw
+    // must fire purely on SDP content, independent of currentDirection.
+    const audioTx = buildTransceiver('audio', null);
+    const videoTx = buildTransceiver('video', null);
+    const pc = buildPc([audioTx, videoTx]);
+
+    expect(() =>
+      applyE2eeTransformsWithConfig(pc, buildSdp({ audio: 'opus', video: null }), e2ee),
+    ).toThrow(/no negotiated codec/);
+  });
+
+  test('CALLEE PATH: currentDirection=null + rejected video m-line: silent skip, audio wired', () => {
+    // Same callee-path setup, but the SDP explicitly rejects video. The
+    // sender for video must NOT throw — the remote opted out cleanly.
+    const audioTx = buildTransceiver('audio', null);
+    const videoTx = buildTransceiver('video', null);
+    const pc = buildPc([audioTx, videoTx]);
+
+    expect(() =>
+      applyE2eeTransformsWithConfig(pc, buildSdp({ audio: 'opus', video: 'rejected' }), e2ee),
+    ).not.toThrow();
+    expect((audioTx.sender as { transform?: unknown }).transform).toBeDefined();
+    expect((videoTx.sender as { transform?: unknown }).transform).toBeUndefined();
+  });
+
+  test('CALLER PATH: currentDirection=sendrecv + active sender + no codec: throws', () => {
+    // Caller-path equivalent of the callee throw test, with a settled
+    // currentDirection. Same outcome — SDP-driven decision.
     const audioTx = buildTransceiver('audio', 'sendrecv');
     const videoTx = buildTransceiver('video', 'sendrecv');
     const pc = buildPc([audioTx, videoTx]);

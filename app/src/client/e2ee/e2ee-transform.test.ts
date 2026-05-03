@@ -28,7 +28,8 @@ describe('parseNegotiatedCodecs', () => {
         'a=rtpmap:97 rtx/90000',
       ),
     );
-    expect(result).toEqual({ audio: 'opus', video: 'vp8' });
+    expect(result.codecs).toEqual({ audio: 'opus', video: 'vp8' });
+    expect(result.rejected.size).toBe(0);
   });
 
   test('H264 video throws (unsupported under E2EE; mesh enforces VP8)', () => {
@@ -48,10 +49,12 @@ describe('parseNegotiatedCodecs', () => {
     const result = parseNegotiatedCodecs(
       sdp('m=audio 9 UDP/TLS/RTP/SAVPF 111', 'a=rtpmap:111 opus/48000/2'),
     );
-    expect(result).toEqual({ audio: 'opus' });
+    expect(result.codecs).toEqual({ audio: 'opus' });
+    // No video m-line at all — distinct from a port=0 rejection.
+    expect(result.rejected.size).toBe(0);
   });
 
-  test('rejected video m-line (port=0) is ignored', () => {
+  test('rejected video m-line (port=0) records video as rejected', () => {
     const result = parseNegotiatedCodecs(
       sdp(
         'm=audio 9 UDP/TLS/RTP/SAVPF 111',
@@ -60,7 +63,21 @@ describe('parseNegotiatedCodecs', () => {
         'a=rtpmap:96 VP8/90000',
       ),
     );
-    expect(result).toEqual({ audio: 'opus' });
+    expect(result.codecs).toEqual({ audio: 'opus' });
+    expect([...result.rejected]).toEqual(['video']);
+  });
+
+  test('rejected audio m-line (port=0) records audio as rejected', () => {
+    const result = parseNegotiatedCodecs(
+      sdp(
+        'm=audio 0 UDP/TLS/RTP/SAVPF 111',
+        'a=rtpmap:111 opus/48000/2',
+        'm=video 9 UDP/TLS/RTP/SAVPF 96',
+        'a=rtpmap:96 VP8/90000',
+      ),
+    );
+    expect(result.codecs).toEqual({ video: 'vp8' });
+    expect([...result.rejected]).toEqual(['audio']);
   });
 
   test('takes first PT in m-line, ignores subsequent rtpmap entries', () => {
@@ -68,7 +85,7 @@ describe('parseNegotiatedCodecs', () => {
     const result = parseNegotiatedCodecs(
       sdp('m=video 9 UDP/TLS/RTP/SAVPF 96 97', 'a=rtpmap:96 VP8/90000', 'a=rtpmap:97 H264/90000'),
     );
-    expect(result).toEqual({ video: 'vp8' });
+    expect(result.codecs).toEqual({ video: 'vp8' });
   });
 
   test('LF-only line endings (no CR) parse the same as CRLF', () => {
@@ -80,7 +97,7 @@ describe('parseNegotiatedCodecs', () => {
       'm=audio 9 UDP/TLS/RTP/SAVPF 111',
       'a=rtpmap:111 opus/48000/2',
     ].join('\n');
-    expect(parseNegotiatedCodecs(lf)).toEqual({ audio: 'opus' });
+    expect(parseNegotiatedCodecs(lf).codecs).toEqual({ audio: 'opus' });
   });
 
   test('throws on unsupported codec', () => {
@@ -97,6 +114,7 @@ describe('parseNegotiatedCodecs', () => {
         'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
       ),
     );
-    expect(result).toEqual({ audio: 'opus' });
+    expect(result.codecs).toEqual({ audio: 'opus' });
+    expect(result.rejected.size).toBe(0);
   });
 });

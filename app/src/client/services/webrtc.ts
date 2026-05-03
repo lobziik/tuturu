@@ -20,6 +20,7 @@ import {
   setupReceiverTransform,
   parseNegotiatedCodecs,
   RTC_ENCODED_INSERTABLE_STREAMS,
+  type NegotiatedCodecs,
 } from '../e2ee/e2ee-transform';
 
 type Dispatch = (action: Action) => void;
@@ -104,20 +105,26 @@ function applyE2eeTransforms(pc: RTCPeerConnection, sdp: string): void {
   applyE2eeTransformsWithConfig(pc, sdp, e2ee);
 }
 
-/** Per-kind codec map returned by {@link parseNegotiatedCodecs}. */
-type CodecMap = Partial<Record<'audio' | 'video', 'opus' | 'vp8'>>;
-
 /**
- * Wire the encrypt transform onto a sender, given the parsed codec map.
+ * Wire the encrypt transform onto a sender, given the SDP-parsed codec info.
  *
- * Skips already-wired senders, recvonly transceivers, and the rejected-
- * m-line case (no codec for this kind AND transceiver isn't going to send).
- * Throws when the sender IS active but the SDP has no codec for it — the
- * caller's try/catch surfaces this as RTC_FAILED.
+ * Skips already-wired senders. When the sender's kind has no codec in the
+ * SDP, distinguishes two sub-cases via the rejected-kinds set:
+ *  - kind in `negotiated.rejected` (m-line port=0) → silent skip; the
+ *    remote opted out, no media will flow on this sender.
+ *  - kind absent from `negotiated.codecs` AND not in `negotiated.rejected`
+ *    → SDP defect; fail loud so the caller's try/catch dispatches
+ *    RTC_FAILED.
+ *
+ * Crucially, this check is purely SDP-driven and works on both caller and
+ * callee paths. `transceiver.currentDirection` is `null` until the first
+ * `setRemoteDescription`, so any logic gated on it would silently miss
+ * defects on the callee path — exactly the case where applyE2eeTransforms
+ * is called BEFORE SRD on iOS Safari.
  */
 function wireSenderTransform(
   transceiver: RTCRtpTransceiver,
-  codecs: CodecMap,
+  negotiated: NegotiatedCodecs,
   e2ee: E2eeConfig,
 ): void {
   const sender = transceiver.sender;
@@ -130,17 +137,9 @@ function wireSenderTransform(
     );
   }
 
-  const codec = codecs[kind];
+  const codec = negotiated.codecs[kind];
   if (!codec) {
-    // Codec missing for this kind. Two sub-cases:
-    //  1. The m-line was rejected (port=0) — currentDirection settles to
-    //     inactive/recvonly/stopped. No media will flow on this sender;
-    //     silent skip mirrors the receiver branch's port=0 behavior.
-    //  2. SDP genuinely lacks an rtpmap for an active sender. Fail loud
-    //     so the caller dispatches RTC_FAILED.
-    const willSend =
-      transceiver.currentDirection === 'sendrecv' || transceiver.currentDirection === 'sendonly';
-    if (!willSend) return;
+    if (negotiated.rejected.has(kind)) return;
     throw new Error(
       `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${kind}) has no negotiated codec in answer SDP`,
     );
@@ -151,15 +150,16 @@ function wireSenderTransform(
 }
 
 /**
- * Wire the decrypt transform onto a receiver, given the parsed codec map.
+ * Wire the decrypt transform onto a receiver, given the SDP-parsed codec info.
  *
- * Silently skips when the m-line was rejected (no codec for this kind) —
- * no media flows, so a transform would never fire. Already-wired receivers
- * are skipped via the WeakSet guard.
+ * Silently skips when the kind has no codec in the SDP — both "rejected
+ * m-line" and "no m-line at all" mean no media flows, so a transform would
+ * never fire either way. Already-wired receivers are skipped via the
+ * WeakSet guard.
  */
 function wireReceiverTransform(
   transceiver: RTCRtpTransceiver,
-  codecs: CodecMap,
+  negotiated: NegotiatedCodecs,
   e2ee: E2eeConfig,
 ): void {
   const receiver = transceiver.receiver;
@@ -168,7 +168,7 @@ function wireReceiverTransform(
   const kind = receiver.track.kind;
   if (kind !== 'audio' && kind !== 'video') return;
 
-  const codec = codecs[kind];
+  const codec = negotiated.codecs[kind];
   if (!codec) return;
 
   setupReceiverTransform(receiver, e2ee.key, e2ee.worker, codec);
@@ -188,10 +188,10 @@ export function applyE2eeTransformsWithConfig(
   sdp: string,
   e2ee: E2eeConfig,
 ): void {
-  const codecs = parseNegotiatedCodecs(sdp);
+  const negotiated = parseNegotiatedCodecs(sdp);
   for (const transceiver of pc.getTransceivers()) {
-    wireSenderTransform(transceiver, codecs, e2ee);
-    wireReceiverTransform(transceiver, codecs, e2ee);
+    wireSenderTransform(transceiver, negotiated, e2ee);
+    wireReceiverTransform(transceiver, negotiated, e2ee);
   }
 }
 

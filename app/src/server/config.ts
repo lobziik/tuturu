@@ -53,7 +53,7 @@ const configSchema = z.object({
     .optional(),
 
   // External IP (for coturn server configuration, not sent to client)
-  externalIp: z.string().ipv4({ message: 'External IP must be a valid IPv4 address' }).optional(),
+  externalIp: z.ipv4({ message: 'External IP must be a valid IPv4 address' }).optional(),
 
   // Force relay mode (for TURN server validation)
   // When true, clients will ONLY use TURN relay candidates (no direct P2P or STUN)
@@ -83,10 +83,7 @@ const configSchema = z.object({
   /** IP for mediasoup WebRtcTransport to bind on. */
   sfuListenIp: z.string().default('0.0.0.0'),
   /** External IP announced in ICE candidates (for TURN relay). Falls back to EXTERNAL_IP. */
-  sfuAnnouncedIp: z
-    .string()
-    .ipv4({ message: 'SFU announced IP must be a valid IPv4 address' })
-    .optional(),
+  sfuAnnouncedIp: z.ipv4({ message: 'SFU announced IP must be a valid IPv4 address' }).optional(),
   /** Number of mediasoup workers to spawn. Defaults to CPU core count (max 8). */
   sfuNumWorkers: z.coerce.number().int().min(1).max(16).optional(),
 });

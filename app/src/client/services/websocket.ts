@@ -117,7 +117,7 @@ export function setupWebSocketHandlers(
 
 /** Send typed v2 message to server via WebSocket */
 export function sendMessage(ws: WebSocket | null, message: ClientToServerMessage): void {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
+  if (ws?.readyState !== WebSocket.OPEN) {
     console.error(`[WS] Cannot send '${message.type}': WebSocket not connected`);
     return;
   }

@@ -16,8 +16,12 @@ SyslogLevel=info
 StandardOutput=journal+console
 StandardError=journal+console
 
-# Pass environment variables from container to this service
-PassEnvironment=DOMAIN LETSENCRYPT_EMAIL EXTERNAL_IP TURN_SECRET TURN_MIN_PORT TURN_MAX_PORT LETSENCRYPT_STAGING FORCE_RELAY STUN_SERVERS
+# Pass environment variables from container env (docker --env-file) into
+# this service. systemd does NOT inherit container env automatically — any
+# variable that tuturu-init.sh wants to read MUST be listed here, otherwise
+# its ${VAR:-default} expansion falls back to the default and the operator's
+# host-side value is silently dropped.
+PassEnvironment=DOMAIN LETSENCRYPT_EMAIL EXTERNAL_IP TURN_SECRET TURN_MIN_PORT TURN_MAX_PORT LETSENCRYPT_STAGING FORCE_RELAY STUN_SERVERS DB_PATH BLOB_DIR BLOB_MAX_BYTES BLOB_UPLOAD_TOKEN RETENTION_DAYS HISTORY_BATCH_SIZE MAX_PARTICIPANTS TUTURU_SFU_ENABLED TUTURU_E2EE_MEDIA_ENABLED
 
 [Install]
 WantedBy=multi-user.target

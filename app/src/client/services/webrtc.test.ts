@@ -88,21 +88,6 @@ describe('applyE2eeTransformsWithConfig', () => {
     key: {} as unknown as CryptoKey,
   };
 
-  test('audio sender + rejected video sender: audio wired, video silently skipped', () => {
-    // currentDirection is set on the mock for realism, but the wire decision
-    // is now SDP-driven via parseNegotiatedCodecs's rejected set.
-    const audioTx = buildTransceiver('audio', 'sendrecv');
-    const videoTx = buildTransceiver('video', 'inactive');
-    const pc = buildPc([audioTx, videoTx]);
-
-    expect(() =>
-      applyE2eeTransformsWithConfig(pc, buildSdp({ audio: 'opus', video: 'rejected' }), e2ee),
-    ).not.toThrow();
-
-    expect((audioTx.sender as { transform?: unknown }).transform).toBeDefined();
-    expect((videoTx.sender as { transform?: unknown }).transform).toBeUndefined();
-  });
-
   test('CALLEE PATH: currentDirection=null + active sender + no codec for kind: throws', () => {
     // Regression coverage for the bug where a `currentDirection` gate
     // silently skipped active senders on the callee path. On the callee

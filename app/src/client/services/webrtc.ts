@@ -141,7 +141,7 @@ function wireSenderTransform(
   if (!codec) {
     if (negotiated.rejected.has(kind)) return;
     throw new Error(
-      `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${kind}) has no negotiated codec in answer SDP`,
+      `[E2EE] Sender (mid=${transceiver.mid ?? '?'}, kind=${kind}) has no negotiated codec in offer/answer SDP`,
     );
   }
 

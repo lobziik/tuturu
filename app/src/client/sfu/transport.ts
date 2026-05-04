@@ -47,6 +47,54 @@ function toRtcIceServers(servers: IceServerConfig[]): RTCIceServer[] {
 type PendingProduceCallbacks = { current: ((id: string) => void)[] };
 
 /**
+ * Build the mediasoup-client `TransportOptions` shared by send and recv
+ * transports. Centralised so the two factories can't drift on ICE setup or
+ * the encoded-insertable-streams gating.
+ *
+ * `additionalSettings` is only attached when E2EE is actually wired —
+ * Chrome silently drops media if encodedInsertableStreams is set without a
+ * transform attached. See DANGER note in e2ee-transform.ts.
+ * mediasoup-client forwards `additionalSettings` to `new RTCPeerConnection(...)`.
+ */
+function buildTransportOptions(
+  params: TransportParams,
+  iceConfig: TransportIceConfig,
+  e2eeEnabled: boolean,
+): msTypes.TransportOptions {
+  return {
+    id: params.id,
+    iceParameters: params.iceParameters,
+    iceCandidates: params.iceCandidates,
+    dtlsParameters: params.dtlsParameters,
+    ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
+    iceServers: toRtcIceServers(iceConfig.iceServers),
+    iceTransportPolicy: iceConfig.iceTransportPolicy,
+    ...(e2eeEnabled ? { additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS } : {}),
+  };
+}
+
+/**
+ * Wire the `connect` event handler that forwards DTLS parameters to the
+ * server. Identical for send and recv transports — server handles the
+ * DTLS connection asynchronously, so the callback resolves immediately.
+ */
+function wireConnectHandler(transport: msTypes.Transport, ws: WebSocket | null): void {
+  transport.on('connect', ({ dtlsParameters }, callback, errback) => {
+    try {
+      sendMessage(ws, {
+        type: 'sfu-connect-transport',
+        v: 1,
+        transportId: transport.id,
+        dtlsParameters: dtlsParameters as Record<string, unknown>,
+      });
+      callback();
+    } catch (error) {
+      errback(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
+/**
  * Create a mediasoup-client send transport, wired to server signaling.
  *
  * @param device - Loaded mediasoup-client Device.
@@ -69,36 +117,11 @@ export function createSfuSendTransport(
   e2eeEnabled: boolean,
   produceTimeoutMs: number = PRODUCE_TIMEOUT_MS,
 ): msTypes.Transport {
-  const transport = device.createSendTransport({
-    id: params.id,
-    iceParameters: params.iceParameters,
-    iceCandidates: params.iceCandidates,
-    dtlsParameters: params.dtlsParameters,
-    ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
-    iceServers: toRtcIceServers(iceConfig.iceServers),
-    iceTransportPolicy: iceConfig.iceTransportPolicy,
-    // Only attach `additionalSettings` when E2EE is actually wired on the
-    // producer side — Chrome silently drops media if encodedInsertableStreams
-    // is set without a transform attached. See DANGER note in
-    // e2ee-transform.ts. mediasoup-client forwards `additionalSettings` to
-    // `new RTCPeerConnection(...)`.
-    ...(e2eeEnabled ? { additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS } : {}),
-  });
+  const transport = device.createSendTransport(
+    buildTransportOptions(params, iceConfig, e2eeEnabled),
+  );
 
-  transport.on('connect', ({ dtlsParameters }, callback, errback) => {
-    try {
-      sendMessage(ws, {
-        type: 'sfu-connect-transport',
-        v: 1,
-        transportId: transport.id,
-        dtlsParameters: dtlsParameters as Record<string, unknown>,
-      });
-      // Resolve immediately — server handles DTLS connection asynchronously
-      callback();
-    } catch (error) {
-      errback(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
+  wireConnectHandler(transport, ws);
 
   transport.on('produce', ({ kind, rtpParameters }, callback, errback) => {
     // Enqueue callback — will be resolved in FIFO order when SFU_PRODUCER_CREATED arrives.
@@ -150,32 +173,11 @@ export function createSfuRecvTransport(
   iceConfig: TransportIceConfig,
   e2eeEnabled: boolean,
 ): msTypes.Transport {
-  const transport = device.createRecvTransport({
-    id: params.id,
-    iceParameters: params.iceParameters,
-    iceCandidates: params.iceCandidates,
-    dtlsParameters: params.dtlsParameters,
-    ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
-    iceServers: toRtcIceServers(iceConfig.iceServers),
-    iceTransportPolicy: iceConfig.iceTransportPolicy,
-    // See createSfuSendTransport and DANGER note in e2ee-transform.ts —
-    // Chrome silently drops media if this flag is set without a transform.
-    ...(e2eeEnabled ? { additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS } : {}),
-  });
+  const transport = device.createRecvTransport(
+    buildTransportOptions(params, iceConfig, e2eeEnabled),
+  );
 
-  transport.on('connect', ({ dtlsParameters }, callback, errback) => {
-    try {
-      sendMessage(ws, {
-        type: 'sfu-connect-transport',
-        v: 1,
-        transportId: transport.id,
-        dtlsParameters: dtlsParameters as Record<string, unknown>,
-      });
-      callback();
-    } catch (error) {
-      errback(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
+  wireConnectHandler(transport, ws);
 
   console.log(`[SFU:Transport] Created recv transport ${transport.id}`);
   return transport;

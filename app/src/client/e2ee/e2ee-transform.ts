@@ -182,11 +182,19 @@ export function isE2eeSupported(): boolean {
  * to RTCRtpScriptTransform. Without `encodedInsertableStreams: true`, the
  * `rtctransform` event fires but the readable stream stays empty, frames
  * bypass the worker entirely, and stats show 0 packets through the
- * transform. Safari accepts and ignores the unknown field — harmless when
- * E2EE is off, required when on.
+ * transform.
  *
- * Shared between mesh (`createPeerConnection` in `services/webrtc.ts`) and
- * SFU (`additionalSettings` on the WebRtcTransport in `sfu/transport.ts`).
+ * DANGER: do NOT set this flag unless an `RTCRtpScriptTransform` will be
+ * attached to every sender/receiver on the resulting peer connection.
+ * Chrome routes encoded frames into the insertable-streams pipeline as
+ * soon as the flag is set; if no transform consumes them, the pipeline
+ * silently drops every frame and the call produces no audio/video.
+ * Safari ignores the unknown field, so the bug only surfaces in Chromium.
+ *
+ * Spread conditionally — guarded by the same boolean that gates wiring
+ * the transform — at the two consumers:
+ *  - mesh: `createPeerConnection` in `services/webrtc.ts`
+ *  - SFU:  `additionalSettings` in `sfu/transport.ts`
  * Standard `RTCConfiguration` doesn't declare the flag, hence the cast.
  *
  * `Object.freeze`'d because both call sites spread it into a fresh

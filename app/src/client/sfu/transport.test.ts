@@ -81,7 +81,14 @@ describe('createSfuSendTransport', () => {
     const device = createMockDevice();
     const callbacks = { current: [] as ((id: string) => void)[] };
 
-    const transport = createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG);
+    const transport = createSfuSendTransport(
+      device,
+      null,
+      FAKE_PARAMS,
+      callbacks,
+      FAKE_ICE_CONFIG,
+      false,
+    );
 
     expect(transport).toBeDefined();
     expect((device.createSendTransport as ReturnType<typeof mock>).mock.calls.length).toBe(1);
@@ -90,7 +97,7 @@ describe('createSfuSendTransport', () => {
   test('connect event sends sfu-connect-transport message', () => {
     const device = createMockDevice();
     const callbacks = { current: [] as ((id: string) => void)[] };
-    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG);
+    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, false);
 
     const handlers = (device as unknown as { _sendHandlers: Map<string, EventHandler> })
       ._sendHandlers;
@@ -112,7 +119,7 @@ describe('createSfuSendTransport', () => {
   test('produce event pushes callback and sends sfu-produce message', () => {
     const device = createMockDevice();
     const callbacks = { current: [] as ((id: string) => void)[] };
-    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG);
+    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, false);
 
     const handlers = (device as unknown as { _sendHandlers: Map<string, EventHandler> })
       ._sendHandlers;
@@ -142,7 +149,15 @@ describe('createSfuSendTransport', () => {
     const device = createMockDevice();
     const callbacks = { current: [] as ((id: string) => void)[] };
     const SHORT_TIMEOUT = 50;
-    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, SHORT_TIMEOUT);
+    createSfuSendTransport(
+      device,
+      null,
+      FAKE_PARAMS,
+      callbacks,
+      FAKE_ICE_CONFIG,
+      false,
+      SHORT_TIMEOUT,
+    );
 
     const handlers = (device as unknown as { _sendHandlers: Map<string, EventHandler> })
       ._sendHandlers;
@@ -176,7 +191,15 @@ describe('createSfuSendTransport', () => {
     const device = createMockDevice();
     const callbacks = { current: [] as ((id: string) => void)[] };
     const SHORT_TIMEOUT = 50;
-    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, SHORT_TIMEOUT);
+    createSfuSendTransport(
+      device,
+      null,
+      FAKE_PARAMS,
+      callbacks,
+      FAKE_ICE_CONFIG,
+      false,
+      SHORT_TIMEOUT,
+    );
 
     const handlers = (device as unknown as { _sendHandlers: Map<string, EventHandler> })
       ._sendHandlers;
@@ -204,7 +227,7 @@ describe('createSfuRecvTransport', () => {
   test('creates transport via device.createRecvTransport', () => {
     const device = createMockDevice();
 
-    const transport = createSfuRecvTransport(device, null, FAKE_PARAMS, FAKE_ICE_CONFIG);
+    const transport = createSfuRecvTransport(device, null, FAKE_PARAMS, FAKE_ICE_CONFIG, false);
 
     expect(transport).toBeDefined();
     expect((device.createRecvTransport as ReturnType<typeof mock>).mock.calls.length).toBe(1);
@@ -212,7 +235,7 @@ describe('createSfuRecvTransport', () => {
 
   test('connect event sends sfu-connect-transport message', () => {
     const device = createMockDevice();
-    createSfuRecvTransport(device, null, FAKE_PARAMS, FAKE_ICE_CONFIG);
+    createSfuRecvTransport(device, null, FAKE_PARAMS, FAKE_ICE_CONFIG, false);
 
     const handlers = (device as unknown as { _recvHandlers: Map<string, EventHandler> })
       ._recvHandlers;
@@ -227,5 +250,45 @@ describe('createSfuRecvTransport', () => {
     const sentMsg = mockSendMessage.mock.calls[0]![1] as Record<string, unknown>;
     expect(sentMsg.type).toBe('sfu-connect-transport');
     expect(callbackFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('encoded-insertable-streams gating', () => {
+  // Chrome silently drops media if encodedInsertableStreams is set without an
+  // attached RTCRtpScriptTransform — these tests pin the behavior of both
+  // factories so the regression that broke E2EE-off calls cannot recur.
+
+  test('createSfuSendTransport omits additionalSettings when e2eeEnabled=false', () => {
+    const device = createMockDevice();
+    const callbacks = { current: [] as ((id: string) => void)[] };
+    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, false);
+    const opts = (device.createSendTransport as ReturnType<typeof mock>).mock
+      .calls[0]![0] as Record<string, unknown>;
+    expect(opts).not.toHaveProperty('additionalSettings');
+  });
+
+  test('createSfuSendTransport sets additionalSettings.encodedInsertableStreams when e2eeEnabled=true', () => {
+    const device = createMockDevice();
+    const callbacks = { current: [] as ((id: string) => void)[] };
+    createSfuSendTransport(device, null, FAKE_PARAMS, callbacks, FAKE_ICE_CONFIG, true);
+    const opts = (device.createSendTransport as ReturnType<typeof mock>).mock
+      .calls[0]![0] as Record<string, unknown>;
+    expect(opts.additionalSettings).toEqual({ encodedInsertableStreams: true });
+  });
+
+  test('createSfuRecvTransport omits additionalSettings when e2eeEnabled=false', () => {
+    const device = createMockDevice();
+    createSfuRecvTransport(device, null, FAKE_PARAMS, FAKE_ICE_CONFIG, false);
+    const opts = (device.createRecvTransport as ReturnType<typeof mock>).mock
+      .calls[0]![0] as Record<string, unknown>;
+    expect(opts).not.toHaveProperty('additionalSettings');
+  });
+
+  test('createSfuRecvTransport sets additionalSettings.encodedInsertableStreams when e2eeEnabled=true', () => {
+    const device = createMockDevice();
+    createSfuRecvTransport(device, null, FAKE_PARAMS, FAKE_ICE_CONFIG, true);
+    const opts = (device.createRecvTransport as ReturnType<typeof mock>).mock
+      .calls[0]![0] as Record<string, unknown>;
+    expect(opts.additionalSettings).toEqual({ encodedInsertableStreams: true });
   });
 });

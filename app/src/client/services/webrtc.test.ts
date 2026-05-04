@@ -11,7 +11,7 @@
  */
 
 import { describe, test, expect, beforeAll } from 'bun:test';
-import { applyE2eeTransformsWithConfig } from './webrtc';
+import { applyE2eeTransformsWithConfig, createPeerConnection } from './webrtc';
 
 // ============================================================================
 // Test fixtures
@@ -149,5 +149,75 @@ describe('applyE2eeTransformsWithConfig', () => {
     expect(() =>
       applyE2eeTransformsWithConfig(pc, buildSdp({ video: 'rejected' }), e2ee),
     ).not.toThrow();
+  });
+});
+
+describe('createPeerConnection: encodedInsertableStreams gating', () => {
+  // Chrome silently drops media if encodedInsertableStreams is set without
+  // an attached RTCRtpScriptTransform. These tests pin the mesh PC config
+  // so the regression that broke E2EE-off calls cannot recur.
+
+  type StubGlobals = {
+    RTCPeerConnection?: unknown;
+    RTCRtpReceiver?: unknown;
+    RTCRtpSender?: unknown;
+  };
+
+  function captureRtcConfig(): { configs: RTCConfiguration[] } {
+    const captured: RTCConfiguration[] = [];
+    (globalThis as unknown as StubGlobals).RTCPeerConnection = function MockRTCPeerConnection(
+      this: unknown,
+      cfg: RTCConfiguration,
+    ): unknown {
+      captured.push(cfg);
+      return {
+        addTrack: () => undefined,
+        addTransceiver: () => ({}),
+        getTransceivers: () => [],
+        close: () => undefined,
+      };
+    };
+    // applyVp8VideoPreference (only invoked when e2ee is provided) reads
+    // RTCRtpReceiver.getCapabilities('video'). Stub it to return a single
+    // VP8 codec so the function can run end-to-end in the e2ee-on test.
+    (globalThis as unknown as StubGlobals).RTCRtpReceiver = {
+      getCapabilities: () => ({ codecs: [{ mimeType: 'video/VP8' }], headerExtensions: [] }),
+    };
+    return { configs: captured };
+  }
+
+  test('omits encodedInsertableStreams when e2ee is undefined', () => {
+    const { configs } = captureRtcConfig();
+    createPeerConnection(
+      { iceServers: [], iceTransportPolicy: 'all' },
+      null,
+      null,
+      () => undefined,
+      'peer-1',
+      undefined,
+    );
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).not.toHaveProperty('encodedInsertableStreams');
+  });
+
+  test('sets encodedInsertableStreams=true when e2ee config is provided', () => {
+    const { configs } = captureRtcConfig();
+    const e2ee = {
+      worker: {} as unknown as Worker,
+      key: {} as unknown as CryptoKey,
+    };
+    createPeerConnection(
+      { iceServers: [], iceTransportPolicy: 'all' },
+      null,
+      null,
+      () => undefined,
+      'peer-1',
+      e2ee,
+    );
+    expect(configs).toHaveLength(1);
+    expect(
+      (configs[0] as RTCConfiguration & { encodedInsertableStreams?: boolean })
+        .encodedInsertableStreams,
+    ).toBe(true);
   });
 });

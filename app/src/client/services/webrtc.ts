@@ -274,10 +274,9 @@ export function createPeerConnection(
   console.log(`[RTC:${targetPeerId}] Creating peer connection`);
   console.log(`[RTC:${targetPeerId}] ICE transport policy:`, config.iceTransportPolicy);
 
-  // RTC_ENCODED_INSERTABLE_STREAMS is the Chrome-only flag that actually
-  // hooks RTCRtpScriptTransform up to the worker — see its doc-block in
-  // e2ee-transform.ts. Shared with the SFU `additionalSettings` so both
-  // topologies use the exact same shape and one place documents it.
+  // Only attach the encoded-insertable-streams flag when E2EE is actually
+  // wired below — Chrome silently drops media if the flag is set without
+  // a transform attached. See DANGER note in e2ee-transform.ts.
   const pcConfig: RTCConfiguration = {
     iceServers: config.iceServers.map((s) => ({
       urls: s.urls,
@@ -285,7 +284,7 @@ export function createPeerConnection(
       ...(s.credential !== undefined && { credential: s.credential }),
     })),
     iceTransportPolicy: config.iceTransportPolicy,
-    ...RTC_ENCODED_INSERTABLE_STREAMS,
+    ...(e2ee ? RTC_ENCODED_INSERTABLE_STREAMS : {}),
   };
   const pc = new RTCPeerConnection(pcConfig);
 

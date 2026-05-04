@@ -163,6 +163,7 @@ function handleSfuTransportCreated(ctx: EffectContext, args: EffectArgs): void {
       params,
       refs.pendingProduceCallbacks,
       transportIceConfig,
+      isE2eeRequired(args),
     );
     refs.sfuSendTransport.current = transport;
 
@@ -212,7 +213,13 @@ function handleSfuTransportCreated(ctx: EffectContext, args: EffectArgs): void {
       })();
     }
   } else {
-    const transport = createSfuRecvTransport(device, refs.ws.current, params, transportIceConfig);
+    const transport = createSfuRecvTransport(
+      device,
+      refs.ws.current,
+      params,
+      transportIceConfig,
+      isE2eeRequired(args),
+    );
     refs.sfuRecvTransport.current = transport;
   }
 }

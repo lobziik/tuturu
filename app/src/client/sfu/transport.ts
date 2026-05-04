@@ -54,6 +54,10 @@ type PendingProduceCallbacks = { current: ((id: string) => void)[] };
  * @param params - Transport parameters from server.
  * @param pendingProduceCallbacks - Ref for the pending produce callback queue.
  * @param iceConfig - ICE servers and transport policy (TURN relay support).
+ * @param e2eeEnabled - When true, request encoded-insertable-streams on the
+ *   underlying RTCPeerConnection so RTCRtpScriptTransform can deliver encrypt
+ *   frames. Must be false when E2EE is off — see DANGER note in
+ *   e2ee-transform.ts.
  * @param produceTimeoutMs - Timeout for produce callback (ms). Defaults to {@link PRODUCE_TIMEOUT_MS}.
  */
 export function createSfuSendTransport(
@@ -62,6 +66,7 @@ export function createSfuSendTransport(
   params: TransportParams,
   pendingProduceCallbacks: PendingProduceCallbacks,
   iceConfig: TransportIceConfig,
+  e2eeEnabled: boolean,
   produceTimeoutMs: number = PRODUCE_TIMEOUT_MS,
 ): msTypes.Transport {
   const transport = device.createSendTransport({
@@ -72,13 +77,12 @@ export function createSfuSendTransport(
     ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
     iceServers: toRtcIceServers(iceConfig.iceServers),
     iceTransportPolicy: iceConfig.iceTransportPolicy,
-    // Chrome requires `encodedInsertableStreams: true` on the underlying
-    // RTCPeerConnection for `RTCRtpScriptTransform` to actually deliver
-    // frames to the worker — without it, the transform event fires but
-    // the readable stream stays empty (frames bypass the worker entirely).
-    // Safari accepts and ignores the flag; harmless when E2EE is off.
-    // mediasoup-client forwards `additionalSettings` to `new RTCPeerConnection(...)`.
-    additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS,
+    // Only attach `additionalSettings` when E2EE is actually wired on the
+    // producer side — Chrome silently drops media if encodedInsertableStreams
+    // is set without a transform attached. See DANGER note in
+    // e2ee-transform.ts. mediasoup-client forwards `additionalSettings` to
+    // `new RTCPeerConnection(...)`.
+    ...(e2eeEnabled ? { additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS } : {}),
   });
 
   transport.on('connect', ({ dtlsParameters }, callback, errback) => {
@@ -134,12 +138,17 @@ export function createSfuSendTransport(
  * @param ws - WebSocket for sending signaling messages.
  * @param params - Transport parameters from server.
  * @param iceConfig - ICE servers and transport policy (TURN relay support).
+ * @param e2eeEnabled - When true, request encoded-insertable-streams on the
+ *   underlying RTCPeerConnection so RTCRtpScriptTransform can deliver decrypt
+ *   frames. Must be false when E2EE is off — see DANGER note in
+ *   e2ee-transform.ts.
  */
 export function createSfuRecvTransport(
   device: Device,
   ws: WebSocket | null,
   params: TransportParams,
   iceConfig: TransportIceConfig,
+  e2eeEnabled: boolean,
 ): msTypes.Transport {
   const transport = device.createRecvTransport({
     id: params.id,
@@ -149,9 +158,9 @@ export function createSfuRecvTransport(
     ...(params.sctpParameters ? { sctpParameters: params.sctpParameters } : {}),
     iceServers: toRtcIceServers(iceConfig.iceServers),
     iceTransportPolicy: iceConfig.iceTransportPolicy,
-    // See createSfuSendTransport — Chrome needs this flag on the underlying
-    // RTCPeerConnection for RTCRtpScriptTransform to deliver decrypt frames.
-    additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS,
+    // See createSfuSendTransport and DANGER note in e2ee-transform.ts —
+    // Chrome silently drops media if this flag is set without a transform.
+    ...(e2eeEnabled ? { additionalSettings: ENCODED_INSERTABLE_STREAMS_SETTINGS } : {}),
   });
 
   transport.on('connect', ({ dtlsParameters }, callback, errback) => {

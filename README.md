@@ -317,7 +317,8 @@ tuturu/
 
 ## Documentation
 
-TBD.
+- [Architecture](docs/ARCHITECTURE.md)
+- [Threat model](docs/THREAT-MODEL.md)
 
 ## License
 
